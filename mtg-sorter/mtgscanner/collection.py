@@ -13,13 +13,14 @@ from pathlib import Path
 from .database import Card
 
 COLUMNS = ["Name", "Quantity", "Set code", "Set name", "Collector number", "Foil", "Rarity",
-           "Scryfall ID", "Scryfall price USD", "Bin", "Scanned at"]
+           "Scryfall ID", "Price CAD", "Price source", "Bin", "Scanned at"]
 
 
-def add_card(path: Path, card: Card, foil: bool, bin_label: str) -> None:
+def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[float | None, str]) -> None:
+    """price is (CAD price, source), as returned by sorting.card_price()."""
     path.parent.mkdir(parents=True, exist_ok=True)
     is_new = not path.exists()
-    price = card.price_usd_foil if foil else card.price_usd
+    cad, source = price
     with path.open("a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         if is_new:
@@ -33,7 +34,8 @@ def add_card(path: Path, card: Card, foil: bool, bin_label: str) -> None:
             "foil" if foil else "normal",
             card.rarity,
             card.id,
-            "" if price is None else f"{price:.2f}",
+            "" if cad is None else f"{cad:.2f}",
+            source,
             bin_label,
             datetime.now().isoformat(timespec="seconds"),
         ])

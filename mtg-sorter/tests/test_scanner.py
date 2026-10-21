@@ -9,7 +9,8 @@ import pytest
 from mtgscanner import config
 from mtgscanner.collection import add_card
 from mtgscanner.database import Card, Matcher, connect
-from mtgscanner.sorting import choose_bin
+from mtgscanner.sorting import card_price, choose_bin
+from mtgscanner.vault_prices import VaultPrices
 from mtgscanner.vision import CARD_H, CARD_W, find_card, fingerprint
 from scan import identify
 
@@ -86,10 +87,41 @@ def test_price_bins(db):
 
 def test_csv_matches_manabox_columns(db, tmp_path):
     path = tmp_path / "collection.csv"
-    add_card(path, db.get_card("id1"), foil=True, bin_label="$1 - $10")
+    add_card(path, db.get_card("id1"), foil=True, bin_label="$1 - $10", price=(6.5, "Face to Face Games"))
     rows = list(csv.DictReader(path.open()))
     assert rows[0]["Name"] == "Card 1"
     assert rows[0]["Quantity"] == "1"
     assert rows[0]["Set code"] == "TST"
     assert rows[0]["Collector number"] == "1"
     assert rows[0]["Foil"] == "foil"
+    assert rows[0]["Price CAD"] == "6.50"
+
+
+# Made-up prices in the same shape Commander Vault saves them.
+VAULT = VaultPrices({
+    "date": "Oct 18, 2026",
+    "prices": {
+        "Card 0": {"f2f": [12.99, 1, 20.0], "401": [11.0, 1, None]},
+        "Card 1": {"401": [0.35, 1, None], "hob": [0.25, 0, 0.5]},
+    },
+    "printings": {"Card 1|TST|1|0": [3.49, 1, "Hobbiesville"]},
+})
+
+
+def test_vault_exact_printing_wins(db):
+    assert card_price(db.get_card("id1"), False, VAULT) == (3.49, "Hobbiesville")
+
+
+def test_vault_face_to_face_then_cheapest_store(db):
+    assert card_price(db.get_card("id0"), False, VAULT) == (12.99, "Face to Face Games")
+    assert card_price(db.get_card("id0"), True, VAULT) == (20.0, "Face to Face Games")
+    assert card_price(db.get_card("id1"), True, VAULT) == (0.5, "Hobbiesville")
+
+
+def test_falls_back_to_scryfall_usd_in_cad(db):
+    price, source = card_price(db.get_card("id2"), False, VAULT)
+    assert price == round(25.00 * config.USD_TO_CAD, 2) and "Scryfall" in source
+
+
+def test_bins_use_vault_prices(db):
+    assert choose_bin(db.get_card("id0"), False, VAULT)[0] == 3  # $12.99 CAD, though Scryfall says $0.10 USD

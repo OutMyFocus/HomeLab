@@ -4,7 +4,7 @@ Webcam mode:
     python scan.py
     python scan.py --camera 1      # if you have more than one camera
 
-    Hold a card under the camera on a plain, dark background.
+    Hold a card under the camera on a plain background (white paper works best).
     Keys:  SPACE = save card   F = toggle foil   A = toggle auto-save   Q = quit
 
 Photo mode (no webcam needed, good for testing):
@@ -18,8 +18,29 @@ import cv2
 from mtgscanner import config
 from mtgscanner.collection import add_card
 from mtgscanner.database import Card, Matcher, connect
-from mtgscanner.sorting import choose_bin
-from mtgscanner.vision import find_card, fingerprint
+from mtgscanner.sorting import card_price, choose_bin
+from mtgscanner.vault_prices import VaultPrices
+from mtgscanner.vision import find_card_candidates, fingerprint, grow, warp_card
+
+# Canadian prices from Commander Vault, loaded in main() if data/vault_prices.json exists.
+VAULT: VaultPrices | None = None
+
+
+def identify_frame(matcher: Matcher, frame):
+    """Find and recognize the card in a camera frame or photo.
+
+    Returns (corners, card, distance). corners is None if nothing card-shaped was
+    found. card is None if a shape was found but didn't match any known card.
+    Every outline the detector proposes is tried, and the best database match wins.
+    """
+    best = (None, None, 10**9)
+    for found in find_card_candidates(frame):
+        for factor in (1.0, 1.04, 1.08):
+            corners = grow(found, factor)
+            card, dist = identify(matcher, warp_card(frame, corners))
+            if dist < best[2]:
+                best = (corners, card, dist)
+    return best
 
 
 def identify(matcher: Matcher, card_img) -> tuple[Card | None, int]:
@@ -36,8 +57,8 @@ def identify(matcher: Matcher, card_img) -> tuple[Card | None, int]:
 
 
 def describe(card: Card, foil: bool) -> str:
-    price = card.price_usd_foil if foil else card.price_usd
-    price_txt = "no price" if price is None else f"${price:.2f}"
+    price, source = card_price(card, foil, VAULT)
+    price_txt = "no price" if price is None else f"${price:.2f} CAD ({source})"
     return f"{card.name} [{card.set_code.upper()} #{card.collector_number}]{' FOIL' if foil else ''} - {price_txt}"
 
 
@@ -47,18 +68,17 @@ def scan_images(matcher: Matcher, paths: list[str], foil: bool, save: bool) -> N
         if frame is None:
             print(f"{path}: could not open image")
             continue
-        _, card_img = find_card(frame)
-        if card_img is None:
+        corners, card, dist = identify_frame(matcher, frame)
+        if corners is None:
             print(f"{path}: no card found in photo")
             continue
-        card, dist = identify(matcher, card_img)
         if card is None:
             print(f"{path}: card not recognized (closest distance {dist})")
             continue
-        bin_no, bin_label = choose_bin(card, foil)
+        bin_no, bin_label = choose_bin(card, foil, VAULT)
         print(f"{path}: {describe(card, foil)} -> bin {bin_no} ({bin_label})  [distance {dist}]")
         if save:
-            add_card(config.COLLECTION_CSV, card, foil, bin_label)
+            add_card(config.COLLECTION_CSV, card, foil, bin_label, card_price(card, foil, VAULT))
 
 
 def scan_webcam(matcher: Matcher, camera: int) -> None:
@@ -76,12 +96,11 @@ def scan_webcam(matcher: Matcher, camera: int) -> None:
         ok, frame = cap.read()
         if not ok:
             break
-        corners, card_img = find_card(frame)
+        corners, card, dist = identify_frame(matcher, frame)
         locked: Card | None = None
 
-        if card_img is not None:
+        if corners is not None:
             frames_without_card = 0
-            card, dist = identify(matcher, card_img)
             card_id = card.id if card else None
             streak = streak + 1 if card_id == streak_id else 1
             streak_id = card_id
@@ -96,16 +115,16 @@ def scan_webcam(matcher: Matcher, camera: int) -> None:
                 saved_this_card = False
 
         if locked:
-            bin_no, bin_label = choose_bin(locked, foil)
+            bin_no, bin_label = choose_bin(locked, foil, VAULT)
             lines = [describe(locked, foil), f"-> BIN {bin_no}: {bin_label}"]
             if saved_this_card:
                 lines.append("saved!")
             if auto and not saved_this_card:
-                add_card(config.COLLECTION_CSV, locked, foil, bin_label)
+                add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT))
                 saved_this_card = True
                 print(f"saved: {describe(locked, foil)} -> bin {bin_no}")
         else:
-            lines = ["Looking for a card..." if card_img is None else "Recognizing..."]
+            lines = ["Looking for a card..." if corners is None else "Recognizing..."]
         lines.append(f"[SPACE] save  [F] foil: {'on' if foil else 'off'}  [A] auto: {'on' if auto else 'off'}  [Q] quit")
 
         for i, text in enumerate(lines):
@@ -122,8 +141,8 @@ def scan_webcam(matcher: Matcher, camera: int) -> None:
         elif key == ord("a"):
             auto = not auto
         elif key == ord(" ") and locked and not saved_this_card:
-            bin_no, bin_label = choose_bin(locked, foil)
-            add_card(config.COLLECTION_CSV, locked, foil, bin_label)
+            bin_no, bin_label = choose_bin(locked, foil, VAULT)
+            add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT))
             saved_this_card = True
             print(f"saved: {describe(locked, foil)} -> bin {bin_no}")
 
@@ -139,8 +158,14 @@ def main() -> None:
     parser.add_argument("--save", action="store_true", help="photo mode: add recognized cards to the collection CSV")
     args = parser.parse_args()
 
+    global VAULT
     matcher = Matcher(connect(config.DB_PATH))
     print(f"Loaded {len(matcher.ids)} cards from the database.")
+    VAULT = VaultPrices.load(config.VAULT_PRICES)
+    if VAULT:
+        print(f"Using Commander Vault prices from {VAULT.date}.")
+    else:
+        print("No Commander Vault prices found (data/vault_prices.json), using Scryfall prices.")
     if args.image:
         scan_images(matcher, args.image, args.foil, args.save)
     else:
