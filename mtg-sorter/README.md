@@ -97,8 +97,10 @@ Edit `PRICE_BINS` in `mtgscanner/config.py`. Defaults:
 ### Prices from Commander Vault
 
 The scanner can use the same weekly Canadian Near Mint prices that Commander Vault
-collects (Face to Face Games, then 401 Games, The Mythic Store and Hobbiesville). Save the
-Vault's price data as `data/vault_prices.json` and the scanner picks it up automatically. It
+collects (Face to Face Games, then 401 Games, The Mythic Store and Hobbiesville). In the
+Vault, open **Collection** and press **Save prices for scanner**. Put the saved
+`vault_prices.json` in this folder's `data/` folder, and the scanner picks it up automatically.
+Prices update weekly, so save a fresh copy now and then. It
 uses the exact printing's price when the Vault has one. Cards the Vault hasn't priced fall
 back to Scryfall's USD price times `USD_TO_CAD`. The `data/` folder is never committed,
 so your prices stay on your computer.
