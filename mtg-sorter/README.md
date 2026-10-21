@@ -52,7 +52,27 @@ python build_db.py --all
 
 Run the same command again later to **refresh prices** for cards you already have.
 
-## Scan cards
+## Scan cards with the app (easiest)
+
+```bash
+python app.py
+```
+
+Then open **http://localhost:5000** in your browser. You get:
+
+- **Live** tab: the camera with the card outlined, the recognized card's picture, its
+  price (CAD) and which bin it goes in. Press **Save card** (or Space). **Foil** (F) and
+  **Auto-save** (A) are toggles: with auto-save on, just swap cards and it saves each one.
+- **This session**: every card you've saved, with totals per bin, **Undo last**, and
+  **Download CSV** to import into Commander Vault.
+- **Photos** tab: drag in photos from your computer or phone (one card per photo) and add
+  the recognized cards to your collection.
+
+No webcam yet? `python app.py --demo path/to/photos` pretends the photos are a camera.
+On the Raspberry Pi, run `python app.py --host 0.0.0.0` and open `http://<the Pi's address>:5000`
+from your laptop or phone.
+
+## Scan cards from the command line
 
 ```bash
 python scan.py
