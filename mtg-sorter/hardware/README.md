@@ -82,9 +82,14 @@ openscad -D 'part="base"' -o stl/scan_station_base.stl scan_station.scad
 
 # Full sifter concept
 
-`sifter_concept.scad` is a picture of the whole machine, in the style of TCGplayer's
-Roca Sifter: a countertop box with a stack of cards at the back, a camera tower, and
-three bins at the front. It's a plan, not printable parts.
+Two pictures of the whole machine, in the style of TCGplayer's Roca Sifter: a countertop
+box with a stack of cards at the back, a camera arm over a scan bay, and three pull-out
+bins at the front. They're plans, not printable parts.
+
+| File | Shows |
+|---|---|
+| `sifter_concept.scad` | The outside: what the finished machine will look like |
+| `sifter_inside.scad` | The mechanism inside, as an open frame |
 
 Card path, back to front:
 
