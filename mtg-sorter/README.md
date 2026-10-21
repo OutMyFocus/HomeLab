@@ -59,7 +59,8 @@ python scan.py
 ```
 
 Put the card on a **plain, light-colored background** (white paper is perfect, since most
-cards have black borders) with even light. The outline turns green once the card is recognized.
+cards have black borders) with even, white light. It also works on a wood table, but
+less reliably, especially under warm yellow bulbs. The outline turns green once the card is recognized.
 
 | Key | Does |
 |---|---|
@@ -82,7 +83,7 @@ python scan.py --image card1.jpg card2.jpg --save
 import becomes its own source, so you can remove a bad session in one step. After
 importing, rename or delete `collection.csv` so the next session starts fresh.
 
-## Price bins
+## Price bins (CAD)
 
 Edit `PRICE_BINS` in `mtgscanner/config.py`. Defaults:
 
@@ -91,10 +92,16 @@ Edit `PRICE_BINS` in `mtgscanner/config.py`. Defaults:
 | 3 | $10 and up |
 | 2 | $1 – $10 |
 | 1 | Bulk, under $1 |
-| 0 | No price known |
+| 0 | No price known (most tokens) |
 
-Prices come from Scryfall and are in **USD**. Commander Vault shows CAD store prices, so
-treat these bins as a rough first sort for finding the valuable cards.
+### Prices from Commander Vault
+
+The scanner can use the same weekly Canadian Near Mint prices that Commander Vault
+collects (Face to Face Games, then 401 Games, The Mythic Store and Hobbiesville). Save the
+Vault's price data as `data/vault_prices.json` and the scanner picks it up automatically. It
+uses the exact printing's price when the Vault has one. Cards the Vault hasn't priced fall
+back to Scryfall's USD price times `USD_TO_CAD`. The `data/` folder is never committed,
+so your prices stay on your computer.
 
 ## Run the tests
 
@@ -107,6 +114,8 @@ pytest
 - **Same art, different set.** Reprints that reuse the exact same art and frame can look
   identical to the camera. The scanner picks one of them, so double-check the set on cards that matter.
 - **Foil glare** can hide the card. Tilt your light or use a diffuser.
+- **Low-contrast art** (hazy, pale artwork) under warm lighting can fail to match.
+  The camera rig's white LED and fixed card position fix most of this.
 - **Non-English cards** aren't in the default database.
 
 ---

@@ -38,37 +38,78 @@ def _order_corners(pts: np.ndarray) -> np.ndarray:
     return np.array([pts[s.argmin()], pts[d.argmin()], pts[s.argmax()], pts[d.argmax()]], dtype="float32")
 
 
-def find_card(frame_bgr: np.ndarray, min_area_frac: float = 0.05):
-    """Find the card in a photo.
+def _masks(small_bgr: np.ndarray):
+    """Different ways of separating the card from the background, black and white images.
+
+    No single trick works on every table, so we try several and let the card database
+    pick the winner (see find_card_candidates).
+    """
+    gray = cv2.GaussianBlur(cv2.cvtColor(small_bgr, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+    hsv = cv2.cvtColor(cv2.GaussianBlur(small_bgr, (9, 9), 0), cv2.COLOR_BGR2HSV)
+    k = np.ones((5, 5), np.uint8)
+
+    # 1. Edges: works on plain backgrounds (white paper, a plain mat).
+    edges = cv2.Canny(gray, 10, 50)
+    yield cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=2)
+
+    # 2. Low color saturation: a black card border on a colorful surface (wood, a playmat).
+    _, sat = cv2.threshold(hsv[..., 1], 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    yield cv2.morphologyEx(cv2.morphologyEx(sat, cv2.MORPH_OPEN, k, iterations=2), cv2.MORPH_CLOSE, k, iterations=3)
+
+    # 3. Darkness: a black border on a lighter surface.
+    _, dark = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    yield cv2.morphologyEx(cv2.morphologyEx(dark, cv2.MORPH_OPEN, k, iterations=2), cv2.MORPH_CLOSE, k, iterations=3)
+
+
+def find_card_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05) -> list[np.ndarray]:
+    """Return every card-shaped outline (4 corners each) found by any of the methods."""
+    # Work on a smaller copy for speed, then scale the corners back up.
+    scale = min(1.0, 1000 / max(frame_bgr.shape[:2]))
+    small = cv2.resize(frame_bgr, None, fx=scale, fy=scale) if scale < 1 else frame_bgr
+    min_area = min_area_frac * small.shape[0] * small.shape[1]
+
+    found = []
+    for mask in _masks(small):
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in sorted(contours, key=cv2.contourArea, reverse=True)[:3]:
+            if cv2.contourArea(c) < min_area:
+                break
+            # The hull wraps the outline like a rubber band, which smooths over any gaps.
+            hull = cv2.convexHull(c)
+            for eps in (0.02, 0.04, 0.06):
+                approx = cv2.approxPolyDP(hull, eps * cv2.arcLength(hull, True), True)
+                if len(approx) == 4:
+                    break
+            if len(approx) != 4:
+                continue
+            x, y, w, h = cv2.boundingRect(approx)
+            if x <= 2 or y <= 2 or x + w >= small.shape[1] - 2 or y + h >= small.shape[0] - 2:
+                continue  # touches the photo's edge: the whole background, not a card
+            corners = _order_corners(approx) / scale
+            if _looks_like_card(corners):
+                found.append(corners)
+    return found
+
+
+def grow(corners: np.ndarray, factor: float) -> np.ndarray:
+    """Push the 4 corners outward from the center (factor 1.04 = 4% bigger).
+
+    Detection often lands a little inside the card's real edge, and fingerprints
+    are sensitive to that, so the scanner also tries slightly bigger outlines.
+    """
+    center = corners.mean(axis=0)
+    return ((corners - center) * factor + center).astype("float32")
+
+
+def find_card(frame_bgr: np.ndarray):
+    """Find the card in a photo using the first outline found (no database needed).
 
     Returns (corners, card_image), or (None, None) if no card was found.
-    corners is a 4x2 array, handy for drawing an outline on screen.
     """
-    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
-    # Black-bordered cards on a dark surface give faint edges, so use low thresholds
-    # and then "close" small gaps so the card's outline becomes one connected shape.
-    edges = cv2.Canny(gray, 10, 50)
-    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=2)
-
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    min_area = min_area_frac * frame_bgr.shape[0] * frame_bgr.shape[1]
-
-    for c in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
-        if cv2.contourArea(c) < min_area:
-            break
-        # The hull wraps the outline like a rubber band, which smooths over any gaps.
-        hull = cv2.convexHull(c)
-        for eps in (0.02, 0.04, 0.06):
-            approx = cv2.approxPolyDP(hull, eps * cv2.arcLength(hull, True), True)
-            if len(approx) == 4:
-                break
-        if len(approx) != 4:
-            continue
-        corners = _order_corners(approx)
-        if _looks_like_card(corners):
-            return corners, warp_card(frame_bgr, corners)
-    return None, None
+    candidates = find_card_candidates(frame_bgr)
+    if not candidates:
+        return None, None
+    return candidates[0], warp_card(frame_bgr, candidates[0])
 
 
 def _looks_like_card(corners: np.ndarray) -> bool:
