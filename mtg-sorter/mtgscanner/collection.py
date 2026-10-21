@@ -16,6 +16,19 @@ COLUMNS = ["Name", "Quantity", "Set code", "Set name", "Collector number", "Foil
            "Scryfall ID", "Price CAD", "Price source", "Bin", "Scanned at"]
 
 
+def remove_last(path: Path) -> bool:
+    """Delete the most recently added card. Returns False if the file has no cards."""
+    if not path.exists():
+        return False
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    if len(rows) < 2:
+        return False
+    with path.open("w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerows(rows[:-1])
+    return True
+
+
 def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[float | None, str]) -> None:
     """price is (CAD price, source), as returned by sorting.card_price()."""
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -4,6 +4,7 @@ It's a single SQLite file (data/cards.db) that build_db.py creates.
 """
 
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,7 +41,8 @@ class Card:
 
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    # The app reads from both its camera thread and its web server, so allow sharing.
+    conn = sqlite3.connect(path, check_same_thread=False)
     conn.execute(SCHEMA)
     return conn
 
@@ -54,6 +56,7 @@ class Matcher:
 
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+        self._lock = threading.Lock()
         rows = conn.execute("SELECT id, fingerprint FROM cards").fetchall()
         if not rows:
             raise RuntimeError("The card database is empty. Run build_db.py first.")
@@ -68,9 +71,13 @@ class Matcher:
         return self.ids[i], int(dists[i])
 
     def get_card(self, card_id: str) -> Card:
-        row = self.conn.execute(
+        with self._lock:
+            row = self._card_row(card_id)
+        return Card(*row)
+
+    def _card_row(self, card_id: str):
+        return self.conn.execute(
             "SELECT id, name, set_code, set_name, collector_number, rarity, colors, price_usd, price_usd_foil "
             "FROM cards WHERE id = ?",
             (card_id,),
         ).fetchone()
-        return Card(*row)
