@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MTG Scanner</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span>MTG Scanner</div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="live" aria-selected="true">Live</button>
+    <button role="tab" data-tab="photos" aria-selected="false">Photos</button>
+  </nav>
+  <div class="meta" id="meta">Connecting…</div>
+</header>
+
+<main>
+  <!-- LIVE -->
+  <section id="tab-live" class="tab">
+    <div class="live">
+      <div class="camera">
+        <img id="stream" src="/stream.mjpg" alt="Live camera">
+        <div class="camera-status" id="camStatus">Starting camera…</div>
+      </div>
+
+      <aside class="current panel" id="current">
+        <div class="empty-card" id="emptyCard">
+          <div class="slot"></div>
+          <p>Put a card under the camera</p>
+        </div>
+        <div class="card-view" id="cardView" hidden>
+          <img id="cardImg" alt="">
+          <div class="card-text">
+            <h2 id="cardName"></h2>
+            <div class="sub" id="cardSet"></div>
+            <div class="price" id="cardPrice"></div>
+            <div class="sub" id="cardSource"></div>
+            <div class="bin" id="cardBin"></div>
+            <div class="match" id="cardMatch"></div>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="btn primary" id="saveBtn" disabled>Save card <kbd>Space</kbd></button>
+          <div class="toggles">
+            <button class="toggle" id="foilBtn" aria-pressed="false">Foil <kbd>F</kbd></button>
+            <button class="toggle" id="autoBtn" aria-pressed="false">Auto-save <kbd>A</kbd></button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="panel session">
+      <div class="session-head">
+        <h3>This session</h3>
+        <div class="totals" id="totals"></div>
+        <div class="actions">
+          <button class="btn" id="undoBtn">Undo last</button>
+          <a class="btn" id="csvBtn" href="/api/collection.csv">Download CSV</a>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Card</th><th>Set</th><th class="num">Price</th><th>Bin</th><th class="num">Time</th></tr></thead>
+        <tbody id="sessionRows"></tbody>
+      </table>
+      <p class="hint">Saved to <code>data/collection.csv</code>. In Commander Vault: Collection → Import a ManaBox CSV.</p>
+    </div>
+  </section>
+
+  <!-- PHOTOS -->
+  <section id="tab-photos" class="tab" hidden>
+    <label class="drop" id="drop">
+      <input type="file" id="photoInput" accept="image/*" multiple hidden>
+      <strong>Drop card photos here</strong>
+      <span>or click to choose them. One card per photo.</span>
+    </label>
+    <div class="photo-bar" id="photoBar" hidden>
+      <span id="photoSummary"></span>
+      <button class="btn primary" id="addAllBtn">Add all to collection</button>
+    </div>
+    <div class="photo-grid" id="photoGrid"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
