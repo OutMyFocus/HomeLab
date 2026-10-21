@@ -8,7 +8,7 @@ It has three parts, built in this order:
 | Phase | What | Status |
 |---|---|---|
 | 1. Scanner software | Webcam recognizes cards, saves a collection CSV | **Done (this folder)** |
-| 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Next |
+| 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Stand designed ([`hardware/`](hardware/)) |
 | 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
 
 ## How recognition works (plain English)
@@ -129,7 +129,7 @@ pytest
 | Part | Why | Approx. |
 |---|---|---|
 | Raspberry Pi 5 (4 GB) + power supply + 32 GB microSD | The brain. Runs this exact code | $110 |
-| Raspberry Pi Camera Module 3 | Sharp, autofocus | $35 |
+| Raspberry Pi Camera Module 3 + Pi 5 camera cable (300 mm) | Sharp, autofocus. The Pi 5 needs its own cable | $40 |
 | Small LED strip or ring light (5 V) | Even lighting is the #1 factor in accuracy | $10 |
 | 2× SG90 / MG90S servos | Bin selector + card pusher | $10 |
 | 1× N20 gear motor + rubber wheel, or a 28BYJ-48 stepper + ULN2003 board | Feeder that pulls one card off the stack | $8 |
@@ -138,8 +138,9 @@ pytest
 
 ### Phase 2: camera rig
 
-- Print a stand that holds the Pi camera about 15–20 cm above a white card bed, with the light
-  around the camera. The card always lands in the same spot, which makes recognition very reliable.
+- Print the scan station in [`hardware/`](hardware/). It holds the Pi camera 12 cm above a white
+  card pocket, with LED light from the sides. The card always lands in the same spot, which makes
+  recognition very reliable.
 - Install Raspberry Pi OS, copy this folder over, and run `scan.py` as-is.
 
 ### Phase 3: feeder and sorter
