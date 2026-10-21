@@ -2,6 +2,7 @@
 
 - [Scan station](#scan-station): camera stand, print this first
 - [Feeder test rig](#feeder-test-rig): the first piece of the full sifter
+- [Scan bed and chute](#scan-bed-and-chute): the middle of the sifter: stops the card for its photo, then sorts it into a bin
 - [Full sifter concept](#full-sifter-concept): where it's all heading
 
 # Scan station
@@ -161,3 +162,52 @@ should push out one card.
 
 Count how many cards out of 100 come out on their own. That number tells us whether
 the design works or what to change.
+
+# Scan bed and chute
+
+`bed_chute.scad`. The card comes off the feeder onto the scan bed, gets its photo, and
+drops into the chute, which sends it to one of three bins.
+
+1. **Scan bed** (white, sloped 20°): the card slides down until **two small pins** near
+   the front edge stop it, square under the camera. LED strips in both side walls light it.
+2. **Photo.** Then a servo swings the pins down below the bed, and the card slides off.
+3. **Chute**: a level tray above the bins catches it.
+   - **Bin 2 (middle):** two small trapdoors in the tray floor drop open, like bomb-bay
+     doors, and the card falls straight down. (Two half-width doors, because one full-width
+     door would swing down into the middle bin.)
+   - **Bin 1 or bin 3:** a servo tilts the whole tray 25° left or right and the card slides
+     off that end. The frame's side panels stop it flying past the bin.
+
+Every moving part was checked in OpenSCAD for collisions at both ends of its travel:
+the tray tilted both ways, the trapdoors open, and the pins up and down.
+
+### Parts to print (`stl/bed_chute_*.stl`)
+
+| File | How many | Colour | Notes |
+|---|---|---|---|
+| `bed_plate` | 1 | **white** | The surface the camera looks at |
+| `bed_side_left`, `bed_side_right` | 1 each | black | 236 mm tall, lie them flat. Right one has the camera socket |
+| `tower_post`, `camera_head` | 1 each | black | |
+| `pin_rocker` | 1 | any | The two stop pins |
+| `tilt_bracket` | 1 | black | |
+| `chute` | 1 | any | The tray |
+| `trapdoor`, `trapdoor_left` | 1 each | any | |
+| `trapdoor_mount`, `trapdoor_mount_left` | 1 each | any | |
+| `hinge_lug`, `hinge_lug_left` | 1 each | any | |
+| `frame_side` | **2** | black | |
+| `front_bar` | 1 | black | 235 mm long |
+| `bin` | **3** | black | About 250 cards each |
+
+All print flat, as they open, with no supports. 15–20% infill is fine.
+
+### Moving parts
+
+| Job | Part |
+|---|---|
+| Stop pins up / down | SG90 servo, on the left bed wall |
+| Tilt the tray | **MG90S** servo (metal gears), on the tilt bracket |
+| Trapdoors | 2× SG90 servos, under the front of the tray |
+
+A PCA9685 servo board connects all four servos to the Raspberry Pi. The feeder rig sits
+behind the bed on a taller stand (`stand_h = 203` in `feeder_test.scad`), so cards come
+off its exit shelf straight onto the bed.
