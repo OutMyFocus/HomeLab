@@ -106,7 +106,7 @@ built and tested on its own first.
 
 A roller with rubber O-rings sits under the stack and pokes 0.8 mm up through the floor.
 When it turns, it drags the bottom card forward under the **gate**: a plate whose bottom
-edge sits about 1.5 card thicknesses above the floor. One card fits under it, two don't.
+edge sits just over one card's thickness above the floor. One card fits under it, two don't.
 
 | File | Print | Notes |
 |---|---|---|
