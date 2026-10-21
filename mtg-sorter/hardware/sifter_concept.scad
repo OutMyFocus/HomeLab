@@ -33,8 +33,10 @@ head_y = bay_y - head_up * sin(bed_angle);
 head_z = body_h + head_up * cos(bed_angle);
 
 // --- Colours -----------------------------------------------------------------------------
-shell = "#f1f1ee";
-dark = "#2b2f36";
+shell = "#1c1e22";      // body
+dark = "#2e323a";       // drawers and camera arm, a shade lighter than the body
+inside = "#26292e";     // inside the hopper and scan bay
+trim = "#9aa0a8";       // drawer pulls
 accent = "#e8772e";
 glass = "#9fb7c4";
 
@@ -55,7 +57,7 @@ module body() {
         // drawer openings
         color(dark) for (i = [-1, 0, 1]) translate([i * (bin_w + bin_gap) - bin_w / 2, -body_d / 2 - 1, 14]) cube([bin_w, 30, bin_h]);
         // scan bay: a sloped well in the top
-        color("#d9d9d5") translate([0, bay_y, body_h]) rotate([bed_angle, 0, 0]) translate([-46, -60, -40]) cube([92, 120, 60]);
+        color(inside) translate([0, bay_y, body_h]) rotate([bed_angle, 0, 0]) translate([-46, -60, -40]) cube([92, 120, 60]);
     }
 }
 
@@ -63,7 +65,7 @@ module drawers() {
     for (i = [-1, 0, 1]) translate([i * (bin_w + bin_gap), -body_d / 2 + 4, 14]) {
         color(dark) translate([-bin_w / 2 + 1, 0, 1]) soft_box([bin_w - 2, 26, bin_h - 2], 4, 1.5);
         // finger pull
-        color(shell) translate([-14, -0.5, bin_h - 18]) cube([28, 2, 5]);
+        color(trim) translate([-14, -0.5, bin_h - 18]) cube([28, 2, 5]);
         // bin number, as dots
         for (n = [0 : i + 1]) color(accent) translate([-(i + 1) * 4 + n * 8, -0.6, 14]) rotate([-90, 0, 0]) cylinder(d = 4, h = 1);
     }
@@ -83,9 +85,9 @@ module hopper() {
     translate([0, 70, body_h - 2]) {
         difference() {
             color(shell) translate([-hop_w / 2, -hop_d / 2, 0]) soft_box([hop_w, hop_d, hop_h], 8, 3);
-            color("#d9d9d5") translate([-hop_w / 2 + 4, -hop_d / 2 + 4, 8]) cube([hop_w - 8, hop_d - 8, hop_h]);
+            color(inside) translate([-hop_w / 2 + 4, -hop_d / 2 + 4, 8]) cube([hop_w - 8, hop_d - 8, hop_h]);
             // window in the side to see how many cards are left
-            color("#d9d9d5") translate([hop_w / 2 - 5, -hop_d / 2 + 22, 18]) cube([10, hop_d - 44, hop_h - 34]);
+            color(inside) translate([hop_w / 2 - 5, -hop_d / 2 + 22, 18]) cube([10, hop_d - 44, hop_h - 34]);
         }
         color(glass, 0.6) translate([hop_w / 2 - 2.5, -hop_d / 2 + 22, 18]) cube([1, hop_d - 44, hop_h - 34]);
         // stack of cards inside
