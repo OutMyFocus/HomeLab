@@ -1,0 +1,147 @@
+# MTG Card Scanner & Sorter
+
+A machine that looks at your Magic: The Gathering cards, works out which card each one is,
+records it in your collection, and drops it into a bin by price.
+
+It has three parts, built in this order:
+
+| Phase | What | Status |
+|---|---|---|
+| 1. Scanner software | Webcam recognizes cards, saves a collection CSV | **Done (this folder)** |
+| 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Next |
+| 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
+
+## How recognition works (plain English)
+
+1. **Find the card.** The code looks for edges in the camera picture and finds the
+   biggest 4-cornered shape shaped like a card.
+2. **Straighten it.** It stretches that shape into a flat, upright rectangle, as if
+   the card had been scanned on a flatbed scanner.
+3. **Fingerprint it.** It shrinks the image and turns it into a 256-bit "perceptual
+   hash". Similar-looking images get similar fingerprints, even with blur or different lighting.
+4. **Look it up.** `build_db.py` already downloaded every card image from
+   [Scryfall](https://scryfall.com) and fingerprinted it. The scanner finds the closest
+   fingerprint. That gives the card name, set, collector number and price.
+
+## Setup (once)
+
+You need [Python 3.11 or newer](https://www.python.org/downloads/). In a terminal, from this folder:
+
+```bash
+python -m venv .venv
+# Windows:      .venv\Scripts\activate
+# Mac / Linux:  source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Build the card database
+
+Start small to try it out. This fetches two sets and takes under a minute:
+
+```bash
+python build_db.py --sets dmu,one
+```
+
+Set codes are the 3-letter codes on Scryfall (for example `mkm`, `blb`, `fdn`, `cmm`). When
+you're happy, fetch every card. It takes a few hours, and you can stop it and run it again
+to resume:
+
+```bash
+python build_db.py --all
+```
+
+Run the same command again later to **refresh prices** for cards you already have.
+
+## Scan cards
+
+```bash
+python scan.py
+```
+
+Put the card on a **plain, light-colored background** (white paper is perfect, since most
+cards have black borders) with even light. The outline turns green once the card is recognized.
+
+| Key | Does |
+|---|---|
+| `SPACE` | Save the recognized card to `data/collection.csv` |
+| `F` | Toggle foil (uses the foil price) |
+| `A` | Auto-save: saves each new card as soon as it's recognized. Swap cards and go. |
+| `Q` | Quit |
+
+No webcam yet? Scan photos from your phone instead:
+
+```bash
+python scan.py --image card1.jpg card2.jpg --save
+```
+
+## Importing into Commander Vault
+
+`data/collection.csv` uses ManaBox's column names (`Name`, `Quantity`, `Set code`,
+`Collector number`, `Foil`). Go to Commander Vault, open **Collection**, choose
+**Import a ManaBox CSV**, pick the file, and give the batch a name like "Scanner, Oct 21". Each
+import becomes its own source, so you can remove a bad session in one step. After
+importing, rename or delete `collection.csv` so the next session starts fresh.
+
+## Price bins
+
+Edit `PRICE_BINS` in `mtgscanner/config.py`. Defaults:
+
+| Bin | Cards |
+|---|---|
+| 3 | $10 and up |
+| 2 | $1 – $10 |
+| 1 | Bulk, under $1 |
+| 0 | No price known |
+
+Prices come from Scryfall and are in **USD**. Commander Vault shows CAD store prices, so
+treat these bins as a rough first sort for finding the valuable cards.
+
+## Run the tests
+
+```bash
+pytest
+```
+
+## Known limits (for now)
+
+- **Same art, different set.** Reprints that reuse the exact same art and frame can look
+  identical to the camera. The scanner picks one of them, so double-check the set on cards that matter.
+- **Foil glare** can hide the card. Tilt your light or use a diffuser.
+- **Non-English cards** aren't in the default database.
+
+---
+
+## Hardware roadmap
+
+### Shopping list (about $150–200 CAD to start)
+
+| Part | Why | Approx. |
+|---|---|---|
+| Raspberry Pi 5 (4 GB) + power supply + 32 GB microSD | The brain. Runs this exact code | $110 |
+| Raspberry Pi Camera Module 3 | Sharp, autofocus | $35 |
+| Small LED strip or ring light (5 V) | Even lighting is the #1 factor in accuracy | $10 |
+| 2× SG90 / MG90S servos | Bin selector + card pusher | $10 |
+| 1× N20 gear motor + rubber wheel, or a 28BYJ-48 stepper + ULN2003 board | Feeder that pulls one card off the stack | $8 |
+| Jumper wires, small breadboard | Connections | $10 |
+| PLA filament | Printed frame, hopper, bins | (you have a printer) |
+
+### Phase 2: camera rig
+
+- Print a stand that holds the Pi camera about 15–20 cm above a white card bed, with the light
+  around the camera. The card always lands in the same spot, which makes recognition very reliable.
+- Install Raspberry Pi OS, copy this folder over, and run `scan.py` as-is.
+
+### Phase 3: feeder and sorter
+
+The usual design people build:
+
+1. **Hopper.** Cards stack face-up in a printed tray.
+2. **Feeder.** A rubber wheel touches the top card and spins briefly to push one card out
+   through a slot that's only one card thick, so only one gets through.
+3. **Camera bay.** The card stops under the camera and the scanner recognizes it.
+4. **Sorter.** A servo turns a printed chute, or a "gate" arm, toward bin 0–3, then a
+   second wheel or a tilt drops the card in.
+
+When you get there, the code change is small. Where `scan.py` saves a card, it will also
+call a `send_to_bin(bin_number)` function that moves the servos with the
+[`gpiozero`](https://gpiozero.readthedocs.io) library.
