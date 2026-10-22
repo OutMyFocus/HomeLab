@@ -14,6 +14,7 @@ from your laptop or phone.
 """
 
 import argparse
+import logging
 import threading
 import time
 from pathlib import Path
@@ -54,6 +55,8 @@ class DemoSource:
 
     def __init__(self, folder: str, seconds: float = 4.0):
         exts = {".jpg", ".jpeg", ".png", ".webp"}
+        if not Path(folder).is_dir():
+            raise SystemExit(f"--demo needs a folder of photos, and {folder} isn't one.")
         self.frames = [cv2.imread(str(p)) for p in sorted(Path(folder).iterdir()) if p.suffix.lower() in exts]
         self.frames = [f for f in self.frames if f is not None]
         if not self.frames:
@@ -94,31 +97,41 @@ class Scanner:
 
     def run(self):
         while True:
-            frame = self.source.read()
-            if frame is None:
+            try:
+                self.step()
+            except Exception:   # one bad frame must not stop the camera for good
+                logging.exception("Skipping a camera frame")
                 time.sleep(0.2)
-                continue
-            corners, card, dist = identify_frame(self.matcher, frame)
-            if card and self.live:
-                self.live.prefetch(card.id)   # today's price, ready by the time the card locks
-            with self.lock:
-                self._update(corners, card, dist)
-                shown = frame.copy()
-                if corners is not None:
-                    color = (46, 119, 232) if self.status == "locked" else (200, 200, 200)
-                    cv2.polylines(shown, [corners.astype(int)], True, color, max(2, shown.shape[1] // 300))
-                h, w = shown.shape[:2]
-                if w > 960:
-                    shown = cv2.resize(shown, (960, int(h * 960 / w)))
-                self.jpeg = cv2.imencode(".jpg", shown, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+
+    def step(self):
+        """Grab one frame, recognize it, and update what the page shows."""
+        frame = self.source.read()
+        if frame is None or getattr(frame, "ndim", 0) != 3:   # no picture (camera unplugged or confused)
+            time.sleep(0.2)
+            return
+        corners, card, dist = identify_frame(self.matcher, frame)
+        if card and self.live:
+            self.live.prefetch(card.id)   # today's price, ready by the time the card locks
+        with self.lock:
+            self._update(corners, card, dist)
+            shown = frame.copy()
+            if corners is not None:
+                color = (46, 119, 232) if self.status == "locked" else (200, 200, 200)
+                cv2.polylines(shown, [corners.astype(int)], True, color, max(2, shown.shape[1] // 300))
+            h, w = shown.shape[:2]
+            if w > 960:
+                shown = cv2.resize(shown, (960, int(h * 960 / w)))
+            self.jpeg = cv2.imencode(".jpg", shown, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
 
     def _update(self, corners, card, dist):
         if corners is None:
             self._empty += 1
             self._streak_id, self._streak = None, 0
-            if self._empty > 8:    # card taken away: the next one can be saved
+            if self._empty == 9:   # card taken away: the next one can be saved
                 self.status, self.card, self.distance, self.saved_this_card = "looking", None, None, False
-                self.chosen = None
+                self.chosen = None    # (a card picked by name with nothing under the camera stays)
+            elif self._empty > 9:
+                self.status = "looking"
             return
         self._empty = 0
         card_id = card.id if card else None
@@ -162,7 +175,7 @@ class Scanner:
             shown = self.shown
             return {
                 "status": self.status,
-                "card": card_info(shown, self.foil, self.vault, self.live, None if self.chosen else self.distance) if shown else None,
+                "card": card_info(shown, self.foil, self.vault, self.live, None if self.chosen else self.distance, self.matcher) if shown else None,
                 "picked": self.chosen is not None,
                 "saved": self.saved_this_card,
                 "foil": self.foil,
@@ -172,7 +185,7 @@ class Scanner:
             }
 
 
-def card_info(card: Card, foil: bool, vault, live=None, distance=None) -> dict:
+def card_info(card: Card, foil: bool, vault, live=None, distance=None, matcher: Matcher | None = None) -> dict:
     price, source = card_price(card, foil, vault, live)
     bin_no, bin_label = bin_for_price(price)
     return {
@@ -190,6 +203,8 @@ def card_info(card: Card, foil: bool, vault, live=None, distance=None) -> dict:
         # Scryfall serves the card's picture straight from its id.
         "image": f"https://api.scryfall.com/cards/{card.id}?format=image&version=normal",
         "match": None if distance is None else ("good" if distance <= config.GOOD_MATCH_DISTANCE else "fair"),
+        # Other printings that look identical to the camera (same art): the user should check the set.
+        "lookalikes": len(matcher.lookalikes(card.id)) if matcher and distance is not None else 0,
     }
 
 
@@ -207,6 +222,11 @@ def create_app(scanner: Scanner) -> Flask:
 
     def missing():
         return jsonify({"error": "Unknown card"}), 404
+
+    def body() -> dict:
+        """The request's JSON object, or {} if there isn't one."""
+        js = request.get_json(force=True, silent=True)
+        return js if isinstance(js, dict) else {}
 
     @app.get("/")
     def index():
@@ -241,21 +261,21 @@ def create_app(scanner: Scanner) -> Flask:
 
     @app.post("/api/settings")
     def settings():
-        body = request.get_json(force=True)
+        js = body()
         with scanner.lock:
             for key in ("foil", "auto"):
-                if key in body:
-                    setattr(scanner, key, bool(body[key]))
+                if key in js:
+                    setattr(scanner, key, bool(js[key]))
         return state()
 
     @app.post("/api/add")
     def add():
-        body = request.get_json(force=True)
-        card = lookup(str(body.get("id", "")))
+        js = body()
+        card = lookup(str(js.get("id", "")))
         if card is None:
             return missing()
         with scanner.lock:
-            scanner._save(card, bool(body.get("foil")))
+            scanner._save(card, bool(js.get("foil")))
             if scanner.shown and scanner.shown.id == card.id:
                 scanner.saved_this_card = True
         return state()
@@ -264,8 +284,7 @@ def create_app(scanner: Scanner) -> Flask:
     def choose():
         """Use a different printing for the card under the camera (or name an unrecognized one).
         If the card was already saved, its row is swapped for the new printing."""
-        body = request.get_json(force=True)
-        card = lookup(str(body.get("id", "")))
+        card = lookup(str(body().get("id", "")))
         if card is None:
             return missing()
         with scanner.lock:
@@ -316,9 +335,10 @@ def create_app(scanner: Scanner) -> Flask:
     def photos():
         results = []
         for f in request.files.getlist("photos"):
-            frame = cv2.imdecode(np.frombuffer(f.read(), np.uint8), cv2.IMREAD_COLOR)
+            data = f.read()
+            frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) if data else None
             if frame is None:
-                results.append({"file": f.filename, "error": "Couldn't open this file"})
+                results.append({"file": f.filename, "error": "Couldn't open this file (JPG, PNG or WebP only; iPhone HEIC photos need converting)"})
                 continue
             corners, card, dist = identify_frame(scanner.matcher, frame)
             if corners is None:
@@ -328,7 +348,7 @@ def create_app(scanner: Scanner) -> Flask:
             else:
                 if live:
                     live.card_json(card.id)
-                results.append({"file": f.filename, "card": card_info(card, False, scanner.vault, live, dist)})
+                results.append({"file": f.filename, "card": card_info(card, False, scanner.vault, live, dist, scanner.matcher)})
         return jsonify(results)
 
     @app.get("/api/collection.csv")

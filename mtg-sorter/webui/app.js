@@ -36,6 +36,7 @@
       const b = $("cardBin"); b.textContent = `Bin ${c.bin} · ${c.bin_label}`; b.className = "bin bin-" + c.bin;
       const m = $("cardMatch");
       if (s.picked) { m.textContent = "Printing picked by you"; m.className = "match good"; }
+      else if (c.lookalikes) { m.textContent = `Same art in ${c.lookalikes + 1} printings: check the set`; m.className = "match fair"; }
       else { m.textContent = c.match === "good" ? "Good match" : "Fair match: check the set"; m.className = "match " + c.match; }
     } else shownId = null;
 
@@ -102,7 +103,9 @@
 
   async function loadPrintings(name) {
     $("printings").innerHTML = '<li class="empty">Looking up printings…</li>';
-    const list = await api(`/api/printings?name=${encodeURIComponent(name)}&foil=${pick.foil ? 1 : 0}`);
+    let list;
+    try { list = await api(`/api/printings?name=${encodeURIComponent(name)}&foil=${pick.foil ? 1 : 0}`); }
+    catch (e) { $("printings").innerHTML = '<li class="empty">Couldn\'t look up printings. Is app.py still running?</li>'; return; }
     $("printings").innerHTML = list.length ? list.map(c => `<li><button data-id="${esc(c.id)}" class="${c.id === pick.currentId ? "current" : ""}">
         <span class="p-set">${esc(c.set_name)}</span><span class="p-price">${money(c.price)}</span>
         <span class="p-num">${esc(c.set)} #${esc(c.number)} · ${esc(c.rarity)}${c.id === pick.currentId ? " · current" : ""}</span>
@@ -114,7 +117,7 @@
     clearTimeout(searchT);
     const q = e.target.value.trim();
     searchT = setTimeout(async () => {
-      const names = q.length < 2 ? [] : await api(`/api/search?q=${encodeURIComponent(q)}`);
+      const names = q.length < 2 ? [] : await api(`/api/search?q=${encodeURIComponent(q)}`).catch(() => []);
       $("pickerNames").innerHTML = names.map(n => `<option value="${esc(n)}">`).join("");
     }, 250);
   });
@@ -153,7 +156,7 @@
     $("photoGrid").innerHTML = photoResults.map((p, i) => p.card ? `<div class="panel photo">
         <img src="${esc(p.card.image)}" alt="${esc(p.card.name)}" loading="lazy">
         <div class="name">${esc(p.card.name)}</div>
-        <div class="sub">${esc(p.card.set)} #${esc(p.card.number)}${p.card.match === "fair" ? " · check the set" : ""}</div>
+        <div class="sub">${esc(p.card.set)} #${esc(p.card.number)}${p.card.match === "fair" || p.card.lookalikes ? " · check the set" : ""}</div>
         ${p.added ? "" : `<button class="link" data-print="${i}">Wrong printing?</button>`}
         <div class="row"><b>${money(p.card.price)}</b><span class="pill bin-${p.card.bin}">Bin ${p.card.bin}</span></div>
         <div class="row"><label><input type="checkbox" data-foil="${i}" ${p.foil ? "checked" : ""} ${p.added ? "disabled" : ""}> Foil</label>
@@ -174,7 +177,8 @@
   // Re-price a photo's card after changing its foil box or printing.
   async function setPhotoCard(i, id) {
     const p = photoResults[i];
-    p.card = await api(`/api/card?id=${encodeURIComponent(id)}&foil=${p.foil ? 1 : 0}`);
+    try { p.card = await api(`/api/card?id=${encodeURIComponent(id)}&foil=${p.foil ? 1 : 0}`); }
+    catch (e) { toast("Couldn't look up that card"); return; }
     delete p.error;
     renderPhotos();
   }
