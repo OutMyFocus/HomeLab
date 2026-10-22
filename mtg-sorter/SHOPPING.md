@@ -7,7 +7,7 @@ details. Prices are rough, in CAD.
 **Total: roughly $400–450**, most of it the Pi kit and camera. To spread it out, buy in
 two rounds:
 
-- **Round 1, the feeder test (about $55):** items 6, 11, 12, 14 and 19. With the printer,
+- **Round 1, the feeder test (about $55):** items 6, 11, 12, 14 and 19. Ordered 2026-10-22. With the printer,
   that's enough to build and test the feeder.
 - **Round 2, the camera and sorting:** everything else.
 
@@ -21,7 +21,7 @@ two rounds:
 
 - [ ] 4. [MG90S servo, 4-pack](https://www.amazon.ca/s?k=mg90s+servo+4+pack): metal gears. One each for the stop pins and the chute tilt, two for the trapdoors. About $20.
 - [ ] 5. [PCA9685 servo driver board](https://www.amazon.ca/s?k=pca9685+16+channel+servo+driver): lets the Pi run all four servos. About $12.
-- [ ] 6. [N20 gear motor, 6 V, 150 RPM](https://www.amazon.ca/s?k=n20+gear+motor+6v+150rpm): needs a 3 mm D-shaft. Turns the feeder roller. Get a 2-pack for a spare. About $15.
+- [x] 6. [N20 gear motor, 6 V, 150 RPM](https://www.amazon.ca/s?k=n20+gear+motor+6v+150rpm): needs a 3 mm D-shaft. Turns the feeder roller. Get a 2-pack for a spare. About $15.
 - [ ] 7. [DRV8833 motor driver](https://www.amazon.ca/s?k=drv8833+motor+driver): lets the Pi switch the feeder motor on and off. About $10.
 
 ## Power and light
@@ -32,10 +32,10 @@ two rounds:
 
 ## Small hardware
 
-- [ ] 11. [Metric nitrile O-ring assortment](https://www.amazon.ca/s?k=metric+nitrile+o+ring+assortment+kit): check it includes **20 mm inside diameter × 3 mm thick**, the feeder roller's tyres. About $15.
-- [ ] 12. [M2 + M3 self-tapping screw assortment](https://www.amazon.ca/s?k=m2+m3+self+tapping+screw+assortment): servos, camera, brackets, hinge pins. About $15.
+- [x] 11. [Metric nitrile O-ring assortment](https://www.amazon.ca/s?k=metric+nitrile+o+ring+assortment+kit): check it includes **20 mm inside diameter × 3 mm thick**, the feeder roller's tyres. About $15.
+- [x] 12. [M2 + M3 self-tapping screw assortment](https://www.amazon.ca/s?k=m2+m3+self+tapping+screw+assortment): servos, camera, brackets, hinge pins. About $15.
 - [ ] 13. [Dupont jumper wire kit](https://www.amazon.ca/s?k=dupont+jumper+wire+kit): about $10.
-- [ ] 14. [Small zip ties](https://www.amazon.ca/s?k=small+zip+ties): about $5.
+- [x] 14. [Small zip ties](https://www.amazon.ca/s?k=small+zip+ties): about $5.
 
 ## Filament
 
@@ -48,7 +48,7 @@ You're getting 2 rolls of Bambu PLA Tough with the printer. On top of those:
 
 - [ ] 17. [Digital calipers](https://www.amazon.ca/s?k=digital+calipers): for measuring parts and checking fits. About $20.
 - [ ] 18. [99% isopropyl alcohol](https://www.amazon.ca/s?k=99+isopropyl+alcohol): wipe the build plate so prints stick. About $10.
-- [ ] 19. [4×AA battery holder with switch](https://www.amazon.ca/s?k=4+aa+battery+holder+with+switch): test the feeder before the Pi is set up. About $5.
+- [x] 19. [4×AA battery holder with switch](https://www.amazon.ca/s?k=4+aa+battery+holder+with+switch): test the feeder before the Pi is set up. About $5.
 
 ## Already have
 
