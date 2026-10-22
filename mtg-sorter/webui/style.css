@@ -110,6 +110,27 @@ td:nth-child(2), td.num { white-space: nowrap; }
 .photo .btn { padding: 7px; font-size: .88rem; }
 .photo label { font-size: .85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 
+/* printing picker */
+.link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: .85rem; text-align: left; align-self: start; margin-top: 6px; }
+.link:hover { text-decoration: underline; }
+.picker { width: min(560px, calc(100vw - 32px)); max-height: min(640px, calc(100vh - 48px)); padding: 18px 20px; color: var(--text);
+  display: flex; flex-direction: column; gap: 10px; }
+.picker:not([open]) { display: none; }
+.picker::backdrop { background: rgba(0, 0, 0, .6); }
+.picker-head { display: flex; align-items: center; justify-content: space-between; }
+.picker-head .link { margin: 0; }
+.picker-search input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--raised); }
+.picker .sub { margin: 0; }
+.printings { list-style: none; margin: 0; padding: 0; overflow-y: auto; border-top: 1px solid var(--line); }
+.printings button { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 6px; border: 0;
+  border-bottom: 1px solid var(--line); background: none; cursor: pointer; text-align: left; }
+.printings button:hover, .printings button.current { background: var(--raised); }
+.printings .p-set { font-weight: 600; }
+.printings .p-num { color: var(--muted); font-size: .85rem; }
+.printings .p-price { text-align: right; font-variant-numeric: tabular-nums; }
+.printings .empty { color: var(--muted); padding: 16px 6px; }
+.photo .link { margin-top: 0; }
+
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg);
   padding: 10px 16px; border-radius: 10px; font-weight: 600; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
 
