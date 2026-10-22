@@ -67,6 +67,16 @@ Then open **http://localhost:5000** in your browser. You get:
   **Download CSV** to import into Commander Vault.
 - **Photos** tab: drag in photos from your computer or phone (one card per photo) and add
   the recognized cards to your collection.
+- **Wrong printing?** Reprints often share the same art, so the camera can land on the
+  wrong set (and the wrong price). Click **Wrong printing?** under the card to see every
+  printing with its price and pick the one in your hand. If the card was already saved,
+  its row is switched. A card the scanner doesn't recognize at all can be looked up with
+  **Find a card by name**.
+
+Prices are looked up live: today's Scryfall price, converted at the Bank of Canada's
+rate for the day (shown at the top of the page). Recognition itself never needs the
+internet. Without a connection, or with `python app.py --offline`, the app uses the
+prices saved when you ran `build_db.py` and the fixed `USD_TO_CAD` rate.
 
 No webcam yet? `python app.py --demo path/to/photos` pretends the photos are a camera.
 On the Raspberry Pi, run `python app.py --host 0.0.0.0` and open `http://<the Pi's address>:5000`
@@ -114,6 +124,10 @@ Edit `PRICE_BINS` in `mtgscanner/config.py`. Defaults:
 | 1 | Bulk, under $1 |
 | 0 | No price known (most tokens) |
 
+If a card has no price in the finish you picked (a foil-only promo with Foil off, or an
+etched foil), the price of its other finish is used and the price source says so.
+The CSV's `Bin number` column holds the bin, for the sorter.
+
 ### Prices from Commander Vault
 
 The scanner can use the same weekly Canadian Near Mint prices that Commander Vault
@@ -122,7 +136,7 @@ Vault, open **Collection** and press **Save prices for scanner**. Put the saved
 `vault_prices.json` in this folder's `data/` folder, and the scanner picks it up automatically.
 Prices update weekly, so save a fresh copy now and then. It
 uses the exact printing's price when the Vault has one. Cards the Vault hasn't priced fall
-back to Scryfall's USD price times `USD_TO_CAD`. The `data/` folder is never committed,
+back to Scryfall's USD price, converted to CAD. The `data/` folder is never committed,
 so your prices stay on your computer.
 
 ## Run the tests
