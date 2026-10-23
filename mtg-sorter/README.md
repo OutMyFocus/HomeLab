@@ -71,6 +71,8 @@ Then open **http://localhost:5000** in your browser. You get:
 No webcam yet? `python app.py --demo path/to/photos` pretends the photos are a camera.
 On the Raspberry Pi, run `python app.py --host 0.0.0.0` and open `http://<the Pi's address>:5000`
 from your laptop or phone.
+To start it on boot and open it from anywhere (Tailscale, or your own domain through
+Cloudflare), see [`deploy/REMOTE_ACCESS.md`](deploy/REMOTE_ACCESS.md).
 
 ## Scan cards from the command line
 
