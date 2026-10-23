@@ -52,14 +52,16 @@ def identify_frame(matcher: Matcher, frame):
     return best
 
 
-def find_cards(frame) -> list[list[np.ndarray]]:
+def find_cards(frame, min_area: float | None = None) -> list[list[np.ndarray]]:
     """Every card in the picture, as a list of outlines per card.
 
     The detector often outlines the same card more than once (each of its methods
     finds it a little differently), so outlines whose centers sit inside each other
-    are grouped as one card. The biggest outline of each card comes first.
+    are grouped as one card. The biggest outline of each card comes first. min_area
+    is the smallest card to look for, as a share of the picture (config.MIN_CARD_AREA).
     """
-    candidates = sorted(find_card_candidates(frame, config.MIN_CARD_AREA), key=cv2.contourArea, reverse=True)
+    candidates = find_card_candidates(frame, config.MIN_CARD_AREA if min_area is None else min_area)
+    candidates = sorted(candidates, key=cv2.contourArea, reverse=True)
     cards: list[list[np.ndarray]] = []
     for c in candidates:
         center = tuple(map(float, c.mean(axis=0)))
@@ -70,6 +72,42 @@ def find_cards(frame) -> list[list[np.ndarray]]:
         else:
             cards.append([c])
     return cards
+
+
+def find_card_in_slot(frame, slot: list[float]) -> list[np.ndarray] | None:
+    """The card in one slot of the picture (the app's Slots mode).
+
+    slot is [x0, y0, x1, y1] as shares of the frame's width and height. The detector
+    looks just inside the slot (plus a little around it) and the card's outlines come
+    back as from find_cards. If it can't outline the card (a card in a box, a glossy
+    sleeve) but something is clearly there, the slot itself is the outline. None means
+    the slot is empty.
+    """
+    h, w = frame.shape[:2]
+    x0, y0, x1, y1 = slot[0] * w, slot[1] * h, slot[2] * w, slot[3] * h
+    mx, my = (x1 - x0) * config.SLOT_MARGIN, (y1 - y0) * config.SLOT_MARGIN
+    ax, ay = max(0, int(x0 - mx)), max(0, int(y0 - my))
+    bx, by = min(w, int(x1 + mx) + 1), min(h, int(y1 + my) + 1)
+    if bx - ax < 8 or by - ay < 8:
+        return None
+    rect = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.float32)
+    for outlines in find_cards(frame[ay:by, ax:bx], config.SLOT_MIN_CARD):
+        moved = [(o + (ax, ay)).astype(np.float32) for o in outlines]
+        if cv2.pointPolygonTest(rect, tuple(map(float, moved[0].mean(axis=0))), False) >= 0:
+            return moved
+    return [rect] if slot_occupied(frame[int(y0):int(y1) + 1, int(x0):int(x1) + 1]) else None
+
+
+def slot_occupied(crop) -> bool:
+    """Whether anything is in a slot: a card is full of edges (border, text, art),
+    plain table or cardboard has almost none."""
+    if crop.size == 0:
+        return False
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    scale = 160 / max(gray.shape)
+    if scale < 1:
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    return cv2.Canny(gray, 50, 150).mean() / 255 >= config.SLOT_OCCUPIED_EDGES
 
 
 def _size(outline: np.ndarray) -> float:

@@ -149,6 +149,26 @@ main { max-width: 1320px; margin: 0 auto; padding: calc(var(--gap) + 4px) 24px 6
 .card-outline:hover polygon { fill: color-mix(in oklab, var(--c) 12%, transparent); }
 .card-outline circle { fill: var(--c); stroke: rgba(0, 0, 0, .3); stroke-width: 1px; }
 .card-outline text { fill: var(--ink); font-family: var(--font); font-weight: 700; text-anchor: middle; dominant-baseline: central; user-select: none; }
+/* Slots mode: the boxes you drew, dashed while empty; drawing happens on the overlay. */
+.cam-tools { position: absolute; left: 14px; bottom: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: calc(100% - 28px); }
+.cam-btn { display: inline-flex; align-items: center; gap: 7px; height: 33px; padding: 0 12px; border-radius: 999px; color: #fff; font-size: .82rem; font-weight: 550;
+  background: rgba(10, 12, 15, .6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, .12); cursor: pointer;
+  transition: background var(--speed), border-color var(--speed), color var(--speed); }
+.cam-btn:hover { background: rgba(10, 12, 15, .78); border-color: color-mix(in oklab, var(--accent) 70%, transparent); }
+.cam-btn svg { width: 16px; height: 16px; opacity: .85; }
+.cam-btn[aria-pressed="true"] { border-color: color-mix(in oklab, var(--accent) 80%, transparent); color: var(--accent); }
+.cam-btn[aria-pressed="true"] svg { opacity: 1; }
+.cam-hint { color: #fff; font-size: .8rem; opacity: .85; text-shadow: 0 1px 2px rgba(0, 0, 0, .7); }
+.camera.slots .finder { display: none; }
+.overlay.editing { pointer-events: all; cursor: crosshair; touch-action: none; }
+.overlay.editing .card-outline { pointer-events: none; }
+.slot rect { fill: transparent; stroke: rgba(255, 255, 255, .6); stroke-width: 2px; }
+.slot circle { fill: rgba(10, 12, 15, .55); stroke: rgba(255, 255, 255, .6); stroke-width: 1px; }
+.slot text { fill: #fff; opacity: .85; font-family: var(--font); font-weight: 650; text-anchor: middle; dominant-baseline: central; user-select: none; }
+.slot .del { cursor: pointer; }
+.slot .del circle { fill: var(--bad); stroke: none; }
+.slot .del path { fill: none; stroke: #fff; stroke-width: 2px; stroke-linecap: round; }
+.overlay .drawing { fill: color-mix(in oklab, var(--accent) 15%, transparent); stroke: var(--accent); stroke-width: 2px; }
 .finder { position: absolute; inset: 7%; pointer-events: none; }
 .finder i { position: absolute; width: 34px; height: 34px; border: 3px solid rgba(255, 255, 255, .55); transition: border-color var(--speed); }
 .finder i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 10px; }

@@ -8,6 +8,10 @@ The page shows the live camera, the card it recognizes with its price and bin, t
 session's cards, and a Photos tab where you can drop in pictures to scan. Cards are
 saved to data/collection.csv, the same file scan.py uses (ready for Commander Vault).
 
+It looks for cards anywhere in the picture. In Slots mode you draw a box for each card
+position instead (a tray, an open box, spots marked on the mat) and it looks only there,
+which also works for cards whose edges it can't find, like a card sitting in a box.
+
 On the Raspberry Pi, run it with --host 0.0.0.0 and open http://<pi's address>:5000
 from your laptop or phone.
 """
@@ -31,7 +35,7 @@ from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.exchange import load_rate
-from mtgscanner.recognize import Match, find_cards, identify_outlines
+from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.tracking import Track, free_number, pair_up
 from mtgscanner.training import forget_all, ready_to_learn, train
@@ -91,6 +95,8 @@ class Scanner:
         self._ids = itertools.count(1)
         self.foil = False
         self.auto = False
+        self.mode = "auto"          # "auto": cards anywhere in the picture; "slots": only in the boxes you drew
+        self.slots: list[list[float]] = []   # each [x0, y0, x1, y1], as shares of the picture's width and height
         self.outline = (46, 119, 232)  # BGR; kept for scan.py-style drawing, the page draws its own outlines
         self.session: list[dict] = []
         self._next_source = None
@@ -108,6 +114,20 @@ class Scanner:
             pending, self._next_source = self._next_source, source
         if pending is not None:     # switched twice before the first one took over
             pending.release()
+
+    def restore(self, saved: dict):
+        """Settings kept from last time (see SETTINGS_FILE)."""
+        self.collect, self.learn = bool(saved.get("collect")), bool(saved.get("learn", True))
+        self.mode = saved["mode"] if saved.get("mode") in ("auto", "slots") else "auto"
+        self.slots = clean_slots(saved.get("slots") or []) or []
+
+    def _find(self, frame):
+        """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
+        if self.mode != "slots" or not self.slots:
+            cards = find_cards(frame)
+            return cards, [None] * len(cards)
+        found = [(find_card_in_slot(frame, slot), n) for n, slot in enumerate(self.slots, 1)]
+        return [c for c, _ in found if c], [n for c, n in found if c]
 
     def run(self):
         while True:
@@ -128,7 +148,7 @@ class Scanner:
     def process(self, frame):
         """Find every card in one camera picture and update what's known about each."""
         t0 = time.perf_counter()
-        cards = find_cards(frame)
+        cards, numbers = self._find(frame)
         t1 = time.perf_counter()
         now = time.monotonic()
         with self.lock:
@@ -146,7 +166,8 @@ class Scanner:
             for t, outlines, check in todo:
                 self._update(t, outlines, next(results) if check else None, frame)
             for outlines in new:
-                t = Track(next(self._ids), free_number(self.tracks), outlines[0])
+                number = next((n for c, n in zip(cards, numbers) if c is outlines), None)
+                t = Track(next(self._ids), number or free_number(self.tracks), outlines[0])
                 self.tracks.append(t)
                 self._update(t, outlines, next(results), frame)
             for t in gone:
@@ -295,6 +316,8 @@ class Scanner:
                 } for t in visible],
                 "foil": self.foil,
                 "auto": self.auto,
+                "mode": self.mode,
+                "slots": self.slots,
                 "camera": camera_info(self._next_source or self.source),
                 "collect": self.collect,
                 "learn": self.learn,
@@ -303,6 +326,21 @@ class Scanner:
                 "totals": totals,
                 "perf": {k: (None if v is None else round(v, 1)) for k, v in self.perf.items()},
             }
+
+
+def clean_slots(raw) -> list[list[float]] | None:
+    """Slots as the page sends them, [x0, y0, x1, y1] each as shares of the picture,
+    tidied up: clamped, corners in order, too-small ones dropped. None if malformed."""
+    try:
+        slots = []
+        for s in raw:
+            x0, y0, x1, y1 = (min(1.0, max(0.0, float(v))) for v in s)
+            (x0, x1), (y0, y1) = sorted((x0, x1)), sorted((y0, y1))
+            if x1 - x0 >= 0.02 and y1 - y0 >= 0.02:
+                slots.append([round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)])
+        return slots
+    except (TypeError, ValueError):
+        return None
 
 
 def camera_info(source) -> dict | None:
@@ -386,6 +424,16 @@ def create_app(scanner: Scanner) -> Flask:
                     scanner.finish_capture(t)
             if "collect" in body or "learn" in body:
                 save_settings(collect=scanner.collect, learn=scanner.learn)
+            if "slots" in body:
+                slots = clean_slots(body["slots"])
+                if slots is None:
+                    return jsonify({"error": "Slots must be [x0, y0, x1, y1] each, as shares of the picture"}), 400
+                scanner.slots = slots
+            if body.get("mode") in ("auto", "slots"):
+                scanner.mode = body["mode"]
+            if "slots" in body or "mode" in body:
+                scanner.forget_tracks()         # the cards on the table get their numbers afresh
+                save_settings(mode=scanner.mode, slots=scanner.slots)
             outline = str(body.get("outline", ""))
             if len(outline) == 7 and outline[0] == "#":
                 try:
@@ -611,8 +659,7 @@ def main():
         print(f"Camera: {source.name}, {source.size[0]}x{source.size[1]} {source.format}"
               + ("" if source.format == "MJPG" else " (not MJPG: expect a low frame rate)"))
     scanner = Scanner(matcher, vault, source)
-    saved = load_settings()
-    scanner.collect, scanner.learn = bool(saved.get("collect")), bool(saved.get("learn", True))
+    scanner.restore(load_settings())
     threading.Thread(target=scanner.run, daemon=True).start()
 
     print(f"Loaded {matcher.card_count} cards ({matcher.learned_count} learned scans). Open http://localhost:{args.port} in your browser.")

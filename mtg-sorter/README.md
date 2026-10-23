@@ -72,6 +72,11 @@ Then open **http://localhost:5000** in your browser. You get:
   photo) and add the recognized cards to your collection.
 - **Camera picker** (top right of the camera view): switch between webcams by name. The app
   remembers your choice for next time.
+- **Auto / Slots** (bottom left of the camera view, or S): by default the scanner looks for
+  cards anywhere in the picture. In **Slots** mode you drag a box around each card position
+  (a tray, an open box, spots marked on the mat) and it looks only there. A card gets its slot's
+  number, and a card the detector can't outline, like one sitting in a box, is still read from
+  the slot. **Edit slots** to draw more or remove one (the red ×); slots are kept for next time.
 - **Wrong card?** (W): pick the right card by name. It's saved instead, and remembered for training.
 - **Train** tab: teach the scanner from your own scans (see below).
 - **Customize** (the sliders button, or C): light/dark/black theme, accent color, bin colors,

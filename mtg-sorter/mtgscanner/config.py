@@ -70,6 +70,20 @@ IDENTIFY_THREADS = 0
 # table sees each card at about 1-2% of the picture, so it needs a lower number.
 MIN_CARD_AREA = 0.01
 
+# --- Slots mode (app.py) ---------------------------------------------------
+# Instead of looking for cards anywhere, the app can look only in boxes you draw on
+# the picture, one per card position (a tray, an open box, spots marked on the mat).
+# Each slot is searched with a little extra around it, as a share of its size.
+SLOT_MARGIN = 0.08
+# A card has to fill at least this share of its slot. Smaller shapes in a slot (a
+# finger, a corner of the box, a dice) aren't cards.
+SLOT_MIN_CARD = 0.15
+# When the detector can't outline the card in a slot (a card in a box, a glossy
+# sleeve), the slot itself is used as the outline, as long as something is in it.
+# That's judged by how much of the slot is edges: plain table or cardboard shows
+# almost none (under 0.01), a card shows plenty (0.10 and up).
+SLOT_OCCUPIED_EDGES = 0.04
+
 # Camera picture size to ask for. A webcam that can't do it picks its closest size.
 # Bigger means sharper pictures of small cards, at a bit more work per frame.
 CAMERA_SIZE = (1920, 1080)
