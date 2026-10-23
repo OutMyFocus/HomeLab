@@ -204,3 +204,18 @@ def test_correcting_a_saved_card_replaces_it(db, tmp_path, monkeypatch):  # noqa
     state = client.post("/api/correct", json={"id": "id3", "track": track}).get_json()
     assert [e["id"] for e in state["session"]] == ["id3"]
     assert [r["Scryfall ID"] for r in csv.DictReader(config.COLLECTION_CSV.open())] == ["id3"]
+
+
+def test_state_has_card_corners_for_the_page(db, tmp_path, monkeypatch):  # noqa: F811
+    """The page draws each card's outline from its corners, given as fractions of the frame."""
+    scanner, client = table_app(db, tmp_path, monkeypatch)
+    show(scanner, photograph(fake_card(2)), config.STABLE_FRAMES + 2)
+    state = client.get("/api/state").get_json()
+    assert state["frame"] == {"w": 960, "h": 720}
+    (card,) = state["cards"]
+    assert len(card["corners"]) == 4
+    assert all(0 <= x <= 1 and 0 <= y <= 1 for x, y in card["corners"])
+    # photograph() puts the card at about x 190-560, y 90-590 of a 960x720 picture.
+    xs, ys = zip(*card["corners"])
+    assert 0.15 < min(xs) < 0.3 and 0.5 < max(xs) < 0.65
+    assert 0.08 < min(ys) < 0.2 and 0.75 < max(ys) < 0.9

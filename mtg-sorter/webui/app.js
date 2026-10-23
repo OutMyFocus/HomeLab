@@ -46,7 +46,7 @@
     return .2126 * r + .7152 * g + .0722 * b > .42 ? "#121417" : "#ffffff";
   }
 
-  function applyLook(sendOutline = true) {
+  function applyLook() {
     const root = document.documentElement, css = root.style;
     root.dataset.theme = look.theme;
     root.dataset.layout = look.layout;
@@ -61,8 +61,7 @@
     try { localStorage.setItem(LOOK_KEY, JSON.stringify(look)); } catch (e) {}
     syncControls();
     moveTabIndicator();
-    // The card outline in the camera picture is drawn by the scanner, so tell it the color too.
-    if (sendOutline) api("/api/settings", { outline: look.accent }).catch(() => {});
+    if (state) drawOutlines(state);     // the outlines follow the accent color
   }
 
   function syncControls() {
@@ -84,15 +83,14 @@
       `<label><span><span class="pill bin-${i}">Bin ${i}</span>${BIN_NAMES[i]}</span><input type="color" data-bin="${i}"></label>`).join("");
 
     $("accentSwatches").onclick = e => { const s = e.target.closest(".swatch"); if (s) { look.accent = s.dataset.c; applyLook(); } };
-    $("accentCustom").oninput = e => { look.accent = e.target.value; applyLook(false); };
-    $("accentCustom").onchange = () => applyLook();
-    $("binColors").oninput = e => { const i = e.target.dataset.bin; if (i != null) { look.bins = [...look.bins]; look.bins[i] = e.target.value; applyLook(false); } };
+    $("accentCustom").oninput = e => { look.accent = e.target.value; applyLook(); };
+    $("binColors").oninput = e => { const i = e.target.dataset.bin; if (i != null) { look.bins = [...look.bins]; look.bins[i] = e.target.value; applyLook(); } };
     for (const seg of document.querySelectorAll(".drawer .seg"))
-      seg.onclick = e => { const b = e.target.closest("button"); if (b) { look[seg.dataset.key] = b.dataset.v; applyLook(false); } };
+      seg.onclick = e => { const b = e.target.closest("button"); if (b) { look[seg.dataset.key] = b.dataset.v; applyLook(); } };
     for (const inp of document.querySelectorAll(".switch input"))
-      inp.onchange = () => { look[inp.dataset.key] = inp.checked; applyLook(false); };
+      inp.onchange = () => { look[inp.dataset.key] = inp.checked; applyLook(); };
     for (const inp of document.querySelectorAll(".slider input"))
-      inp.oninput = () => { look[inp.dataset.key] = +inp.value; applyLook(false); };
+      inp.oninput = () => { look[inp.dataset.key] = +inp.value; applyLook(); };
     $("resetLook").onclick = () => { look = { ...DEFAULT_LOOK }; applyLook(); toast("Look reset"); };
   }
 
@@ -117,6 +115,27 @@
     return c;
   }
 
+  // Each card's outline and number over the camera picture. The scanner gives the
+  // corners as fractions of the frame; with the SVG's viewBox set to the frame and
+  // "meet" fitting it like object-fit: contain fits the picture, they land on the cards
+  // at any page size. The number badge is sized in screen pixels, then converted.
+  function drawOutlines(s) {
+    const svg = $("overlay"), { w, h } = s.frame, box = svg.parentElement;
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    const shown = Math.min(box.clientWidth, box.clientHeight * w / h) || w;   // the picture's width on screen
+    const k = w / shown;                                                      // frame pixels per screen pixel
+    const f = v => v.toFixed(1);
+    svg.innerHTML = s.cards.map(x => {
+      const pts = x.corners.map(([cx, cy]) => [cx * w, cy * h]);
+      const mx = pts.reduce((a, p) => a + p[0], 0) / pts.length, my = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+      const cls = `card-outline s-${x.status}${x.saved ? " saved" : ""}${x.track === selected ? " sel" : ""}`;
+      return `<g class="${cls}" data-track="${x.track}">
+        <polygon points="${pts.map(p => f(p[0]) + "," + f(p[1])).join(" ")}" vector-effect="non-scaling-stroke"/>
+        <circle cx="${f(mx)}" cy="${f(my)}" r="${f(13 * k)}" vector-effect="non-scaling-stroke"/>
+        <text x="${f(mx)}" y="${f(my)}" font-size="${f(14 * k)}">${x.number}</text></g>`;
+    }).join("");
+  }
+
   function render(s) {
     state = s;
     $("meta").classList.remove("down");
@@ -125,6 +144,7 @@
     document.querySelector(".camera").classList.toggle("locked", s.status === "locked");
 
     const sel = selectedCard(s), c = sel?.card;
+    drawOutlines(s);
     $("emptyCard").hidden = !!c; $("cardView").hidden = !c;
     $("whichBtn").hidden = !sel || sel.status !== "unknown";
     $("emptyText").textContent = !sel ? "Lay cards on the table under the camera"
@@ -213,9 +233,13 @@
       render(await api("/api/add", { id: x.card.id, foil: state.foil, track: x.track }));
       return toast(`Saved ${x.card.name}`);
     }
-    selected = +row.dataset.track; render(state);
-    if (state.cards.find(c => c.track === selected)?.status === "unknown") openPicker({ live: true, track: selected });
+    pickCard(+row.dataset.track);
   };
+  $("overlay").onclick = e => { const g = e.target.closest("[data-track]"); if (g) pickCard(+g.dataset.track); };
+  function pickCard(track) {
+    selected = track; render(state);
+    if (state.cards.find(c => c.track === selected)?.status === "unknown") openPicker({ live: true, track: selected });
+  }
   const setting = (key) => api("/api/settings", { [key]: !state[key] }).then(render);
 
   $("saveBtn").onclick = saveCurrent;
