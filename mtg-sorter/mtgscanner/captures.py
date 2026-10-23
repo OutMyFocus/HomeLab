@@ -24,7 +24,8 @@ import cv2
 from .database import Card
 from .vision import fingerprint, warp_card
 
-COLUMNS = ["time", "camera", "result", "card_id", "name", "set", "number", "distance", "verdict", "correct_id", "crop", "frame"]
+COLUMNS = ["time", "camera", "result", "card_id", "name", "set", "number", "distance", "verdict", "correct_id", "crop", "frame",
+           "corners"]   # where the card was in the frame, as fractions of its width/height (so detection can be re-tested later)
 
 
 def true_card(row: dict, include_auto: bool = True) -> str | None:
@@ -73,6 +74,7 @@ class CaptureLog:
         card_img = warp_card(frame, corners)
         cv2.imwrite(str(self.folder / crop), card_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
         h, w = frame.shape[:2]
+        where = " ".join(f"{x / w:.4f},{y / h:.4f}" for x, y in corners)
         if w > 1600:
             frame = cv2.resize(frame, (1600, int(h * 1600 / w)))
         cv2.imwrite(str(self.folder / whole), frame, [cv2.IMWRITE_JPEG_QUALITY, 88])
@@ -89,6 +91,7 @@ class CaptureLog:
             "correct_id": "",
             "crop": crop,
             "frame": whole,
+            "corners": where,
             "_fp": fingerprint(card_img),   # kept in memory only, for learning right away
         }
 

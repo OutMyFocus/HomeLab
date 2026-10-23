@@ -106,6 +106,7 @@ EMPTY = np.full((720, 960, 3), 170, np.uint8)
 
 def table_app(db, tmp_path, monkeypatch, **settings):  # noqa: F811
     import app
+    monkeypatch.setattr(config, "GONE_SECONDS", 0)      # tests show frames instantly
     monkeypatch.setattr(config, "COLLECTION_CSV", tmp_path / "collection.csv")
     monkeypatch.setattr(config, "CAPTURES_DIR", tmp_path / "captures")
     monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")

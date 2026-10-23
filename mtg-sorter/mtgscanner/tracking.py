@@ -6,17 +6,23 @@ are matched between frames by position, so a card keeps its number and its
 "saved" mark while it stays where it is.
 
 Recognizing a card takes a few milliseconds, so a card that's already recognized
-is only checked again every few frames, or when it moves.
+is only checked again every couple of seconds, or when it moves.
 """
 
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import config
 from .database import Card
 
-RECHECK_EVERY = 10   # frames between checks of a card that's already recognized
-GONE_AFTER = 8       # frames a card can be missing (a hand over it) before it's forgotten
+GONE_AFTER = 8       # frames a card can be missing (a hand over it) before it's forgotten...
+
+# How many checks in a row must agree before the answer is shown, by how sure the
+# recognizer is of it. A clear match needs fewer looks than a doubtful one.
+CHECKS_NEEDED = {"sure": 1, "likely": 2, "unsure": 3, "unknown": 3}
+RANK = {"unknown": 0, "unsure": 1, "likely": 2, "sure": 3}
 
 
 @dataclass
@@ -25,13 +31,18 @@ class Track:
     number: int                     # shown on the picture and in the list
     corners: np.ndarray
     card: Card | None = None        # the card shown for it, once recognized
-    status: str = "recognizing"     # "recognizing", "locked" or "unknown"
+    status: str = "recognizing"     # "recognizing", "locked", "unsure" or "unknown"
     distance: int | None = None
+    margin: int | None = None
+    confidence: str | None = None   # "sure", "likely" or "unsure" for the card shown
+    candidates: list = field(default_factory=list)   # [(Card, distance)] other possible cards
     streak_key: str | None = None   # what the last checks found (card id or "unknown")...
     streak: int = 0                 # ...and how many checks in a row
+    streak_conf: str = "unknown"    # the best confidence seen during the streak
     missing: int = 0                # frames in a row it wasn't seen
-    since_check: int = 0            # frames since it was last recognized
-    checked_at: np.ndarray | None = None   # where it was then
+    missing_since: float = 0.0      # and since when (time.monotonic)
+    checked_at: np.ndarray | None = None   # where it was when last recognized
+    checked_time: float = 0.0       # and when
     saved: bool = False
     capture: dict | None = None     # its collected scan (see captures.py)
     capture_key: str | None = None
@@ -45,13 +56,33 @@ class Track:
     def size(self) -> float:
         return float(np.linalg.norm(self.corners[0] - self.corners[2]))
 
-    def needs_check(self) -> bool:
-        if self.status != "locked" or self.since_check >= RECHECK_EVERY or self.checked_at is None:
+    def needs_check(self, now: float | None = None) -> bool:
+        if self.status == "recognizing" or self.checked_at is None:
             return True
-        expected = self.fix[0] if self.fix else self.card.id
+        now = time.monotonic() if now is None else now
+        if now - self.checked_time >= config.RECHECK_SECONDS:
+            return True
+        expected = self.fix[0] if self.fix else (self.card.id if self.card else "unknown")
         if self.streak_key != expected:     # the last check disagreed: settle it quickly
             return True
         return float(np.linalg.norm(self.center - self.checked_at)) > 0.08 * self.size
+
+    def gone(self, now: float | None = None) -> bool:
+        """True once the card has been out of sight long enough to count as taken away:
+        GONE_AFTER frames and config.GONE_SECONDS, so neither a hand passing over the
+        table nor one dropped frame makes a card lose its number and its saved mark."""
+        now = time.monotonic() if now is None else now
+        return self.missing > GONE_AFTER and now - self.missing_since >= config.GONE_SECONDS
+
+    def note_check(self, key: str, confidence: str) -> bool:
+        """Record one recognition result. Returns True once the answer is settled enough to show."""
+        if key == self.streak_key:
+            self.streak += 1
+            if RANK[confidence] > RANK[self.streak_conf]:
+                self.streak_conf = confidence
+        else:
+            self.streak_key, self.streak, self.streak_conf = key, 1, confidence
+        return self.streak >= CHECKS_NEEDED[self.streak_conf]
 
 
 def pair_up(tracks: list[Track], cards: list[list[np.ndarray]]):
