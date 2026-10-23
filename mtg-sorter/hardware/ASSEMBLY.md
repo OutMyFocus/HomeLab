@@ -153,11 +153,10 @@ only ever has one place to hide.
 
 This gets recognition working on the real camera before any moving parts.
 
-1. Set up the Pi 5 (item 1). A bare board, without the kit, also needs the **official 27 W
-   USB-C power supply** (5 V 5 A) and a **32 GB+ microSD card**. Flash Raspberry Pi OS (64-bit) to the microSD with
-   Raspberry Pi Imager, put the Pi in its case, boot it, connect it to Wi-Fi.
-2. Copy the `mtg-sorter/` folder to the Pi and do the **Setup** and **Build the card
-   database** steps in the main [`README.md`](../README.md).
+1. Set up the Pi and the scanner software: follow [Raspberry Pi setup](#raspberry-pi-setup)
+   below. You can do all of it before the camera cable arrives.
+2. Check the camera is seen: `rpicam-hello --list-cameras` should list an `imx708`
+   (that's the Camera Module 3).
 3. Print the scan station (base in **white**) and assemble it as in
    [`hardware/README.md`](README.md#putting-it-together):
    - Camera (item 2) onto the head with 4× M2 × 6 mm screws, **lens pointing down**.
@@ -166,8 +165,97 @@ This gets recognition working on the real camera before any moving parts.
      in straight, press the latch down.
    - LED strip (item 10): cut two ~10 cm pieces, stick them in the light-wall grooves,
      power them from a Pi USB port or a USB charger.
-4. Run `python app.py --host 0.0.0.0` and open `http://<the Pi's address>:5000` on your laptop
-   or phone. Put cards in the pocket and check they're recognized. Try a foil too.
+4. Start the app and open it from your laptop or phone (step 7 of the setup below). Put cards in
+   the pocket and check they're recognized. Try a foil too.
+
+> **The app can't read the Pi camera yet.** `app.py` opens the camera with OpenCV's
+> `VideoCapture`, which works with USB webcams but not with the Camera Module 3 on a Pi 5
+> (that goes through `libcamera` / `picamera2`). It needs a small code change, a
+> `picamera2` camera source, before this stage works with the ribbon-cable camera. Until
+> then, a USB webcam plugged into the Pi works as-is.
+
+### Raspberry Pi setup
+
+**What you need:** the Pi 5, the **official 27 W USB-C power supply** (5 V 5 A; a phone
+charger will make it throttle or reboot), a **32 GB or bigger microSD card**, and a computer
+with an SD card slot or a USB card reader. A case with a fan is a good idea, since the Pi 5
+runs hot under load.
+
+**1. Flash the SD card** (on your computer)
+
+1. Install [Raspberry Pi Imager](https://www.raspberrypi.com/software/) and open it.
+2. **Device:** Raspberry Pi 5. **OS:** Raspberry Pi OS (64-bit). **Storage:** your microSD card.
+3. When it asks to apply OS customisation settings, choose **Edit settings**:
+   - **General:** hostname `mtgsorter`; a username and password you'll remember;
+     your Wi-Fi name and password; Wi-Fi country **CA**; your time zone and keyboard layout.
+   - **Services:** turn on **Enable SSH**, with password authentication.
+4. Save, then **Yes** to write. It takes a few minutes.
+
+**2. First boot**
+
+Put the card in the Pi (slot underneath, contacts facing up toward the board), plug in the
+power, and wait about 2 minutes. Then, from a terminal on your computer (PowerShell on Windows,
+Terminal on a Mac):
+
+```bash
+ssh <your username>@mtgsorter.local
+```
+
+Type `yes` the first time, then your password. If `mtgsorter.local` isn't found, look up the
+Pi's address in your router's device list and use that instead.
+
+**3. Update and install system packages** (on the Pi)
+
+```bash
+sudo apt update && sudo apt full-upgrade -y
+sudo apt install -y git python3-venv python3-picamera2 rpicam-apps i2c-tools
+sudo reboot
+```
+
+Wait a minute, then `ssh` back in. (The camera packages are usually already installed; this
+just makes sure.)
+
+**4. Turn on I²C** (for the servo board later)
+
+```bash
+sudo raspi-config nonint do_i2c 0
+```
+
+**5. Get the scanner code and its Python packages**
+
+```bash
+git clone https://github.com/OutMyFocus/HomeLab.git
+cd HomeLab/mtg-sorter
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+`--system-site-packages` lets the virtual environment see `picamera2`, which is installed by
+`apt`, not `pip`. The `pip install` takes a few minutes on the Pi.
+
+**6. Build the card database**
+
+```bash
+python build_db.py --sets dmu,one      # quick test, under a minute
+python build_db.py --all               # every card: a few hours, safe to stop and resume
+```
+
+**7. Start the app**
+
+With no camera yet, use phone photos of cards. Copy them to the Pi from your computer
+(`scp *.jpg <your username>@mtgsorter.local:~/photos/` after `mkdir ~/photos` on the Pi), then:
+
+```bash
+cd ~/HomeLab/mtg-sorter && source .venv/bin/activate
+python app.py --host 0.0.0.0 --demo ~/photos
+```
+
+Once there's a camera, drop `--demo ~/photos`. On your laptop or phone (same Wi-Fi), open
+**http://mtgsorter.local:5000**. Press Ctrl+C in the terminal to stop it.
+
+**Getting updates later:** `cd ~/HomeLab && git pull`, then `pip install -r mtg-sorter/requirements.txt`
+inside the virtual environment.
 
 ## Stage B: print the scan bed and chute
 
