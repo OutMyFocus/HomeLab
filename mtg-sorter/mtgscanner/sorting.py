@@ -12,7 +12,7 @@ def card_price(card: Card, foil: bool, vault: VaultPrices | None = None) -> tupl
     usd = card.price_usd_foil if foil else card.price_usd
     if usd is None:
         return None, ""
-    return round(usd * config.USD_TO_CAD, 2), "Scryfall (USD converted)"
+    return round(usd * config.USD_TO_CAD, 2), f"Scryfall US price × {config.USD_TO_CAD:.2f}"
 
 
 def choose_bin(card: Card, foil: bool = False, vault: VaultPrices | None = None) -> tuple[int, str]:

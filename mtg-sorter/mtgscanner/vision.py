@@ -50,7 +50,12 @@ def _masks(small_bgr: np.ndarray):
 
     # 1. Edges: works on plain backgrounds (white paper, a plain mat).
     edges = cv2.Canny(gray, 10, 50)
-    yield cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=2)
+    closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=2)
+    yield closed
+
+    # 1b. The same, with thin lines erased: on a table, a seam or a cable touching the
+    # card would otherwise join onto its shape.
+    yield cv2.morphologyEx(closed, cv2.MORPH_OPEN, np.ones((11, 11), np.uint8))
 
     # 2. Low color saturation: a black card border on a colorful surface (wood, a playmat).
     _, sat = cv2.threshold(hsv[..., 1], 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -70,8 +75,11 @@ def find_card_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05) -> 
 
     found = []
     for mask in _masks(small):
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for c in sorted(contours, key=cv2.contourArea, reverse=True)[:3]:
+        # RETR_LIST also returns shapes inside other shapes: a card in a sleeve, or a card
+        # whose outline merged with its neighbours on a crowded table.
+        contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        # Look at plenty of shapes: on a busy table, dice boxes and sleeves can be bigger than the cards.
+        for c in sorted(contours, key=cv2.contourArea, reverse=True)[:60]:
             if cv2.contourArea(c) < min_area:
                 break
             # The hull wraps the outline like a rubber band, which smooths over any gaps.
@@ -81,7 +89,12 @@ def find_card_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05) -> 
                 if len(approx) == 4:
                     break
             if len(approx) != 4:
-                continue
+                # Not a clean 4-cornered shape (a sleeve's rounded, shiny edge, say). If it
+                # nearly fills the tightest rectangle around it, that rectangle is the card.
+                (_, _), (rw, rh), _ = rect = cv2.minAreaRect(c)
+                if rw * rh == 0 or cv2.contourArea(c) / (rw * rh) < 0.85:
+                    continue
+                approx = cv2.boxPoints(rect)
             x, y, w, h = cv2.boundingRect(approx)
             if x <= 2 or y <= 2 or x + w >= small.shape[1] - 2 or y + h >= small.shape[0] - 2:
                 continue  # touches the photo's edge: the whole background, not a card

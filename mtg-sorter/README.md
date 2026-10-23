@@ -60,17 +60,50 @@ python app.py
 
 Then open **http://localhost:5000** in your browser. You get:
 
-- **Live** tab: the camera with the card outlined, the recognized card's picture, its
-  price (CAD) and which bin it goes in. Press **Save card** (or Space). **Foil** (F) and
-  **Auto-save** (A) are toggles: with auto-save on, just swap cards and it saves each one.
+- **Live** tab: point the camera at a table with as many cards as you like. Every card gets
+  a number on the picture and a row in **On the table**, with its price (CAD) and bin. Click a
+  row to see that card big. **Save all** (Space) saves every recognized card, or save them one
+  at a time with the check button. **Foil** (F) and **Auto-save** (A) are toggles: with
+  auto-save on, each card is saved as soon as it's recognized. Spread the cards out so they
+  don't overlap. Cards in a pile or cut off at the edge of the picture can't be read.
 - **This session**: every card you've saved, with totals per bin, **Undo last**, and
   **Download CSV** to import into Commander Vault.
-- **Photos** tab: drag in photos from your computer or phone (one card per photo) and add
-  the recognized cards to your collection.
+- **Photos** tab: drag in photos from your computer or phone (one card or a whole table per
+  photo) and add the recognized cards to your collection.
+- **Camera picker** (top right of the camera view): switch between webcams by name. The app
+  remembers your choice for next time.
+- **Wrong card?** (W): pick the right card by name. It's saved instead, and remembered for training.
+- **Train** tab: teach the scanner from your own scans (see below).
+- **Customize** (the sliders button, or C): light/dark/black theme, accent color, bin colors,
+  layout, spacing, font and which details to show. Saved in your browser.
 
 No webcam yet? `python app.py --demo path/to/photos` pretends the photos are a camera.
 On the Raspberry Pi, run `python app.py --host 0.0.0.0` and open `http://<the Pi's address>:5000`
 from your laptop or phone.
+
+## Teach the scanner (Train tab)
+
+Out of the box the scanner knows each card from one clean Scryfall picture. Your camera,
+lighting and sleeves make cards look different, so it gets better when it learns from your scans:
+
+1. **Collect.** Turn on **Collect scans** (R). Each card you put down is kept once in
+   `data/captures/`: the straightened card, the whole camera picture, and what it guessed.
+2. **Confirm.** Saving a card tells it the guess was right. When it's wrong, press
+   **Wrong card?** and pick the right one. In the Train tab you can also label scans it
+   didn't recognize, confirm guesses, or skip bad pictures.
+3. **Train.** With **Keep learning** on (the default), each card you save or correct is
+   learned as soon as you take it away. **Train now** catches up on everything else, such as
+   scans you labeled in the Train tab. Each confirmed scan becomes an extra fingerprint for its
+   card, so that card, and other copies of it, match much more closely from then on.
+   **Forget all training** undoes it. It never learns from guesses you didn't check, so its
+   mistakes don't become habits.
+
+To measure how recognition is doing (for example after changing `config.py` or the code):
+
+```bash
+python evaluate.py --list    # with what it learned
+python evaluate.py --plain   # the stock database only, to compare
+```
 
 ## Scan cards from the command line
 
@@ -122,8 +155,10 @@ Vault, open **Collection** and press **Save prices for scanner**. Put the saved
 `vault_prices.json` in this folder's `data/` folder, and the scanner picks it up automatically.
 Prices update weekly, so save a fresh copy now and then. It
 uses the exact printing's price when the Vault has one. Cards the Vault hasn't priced fall
-back to Scryfall's USD price times `USD_TO_CAD`. The `data/` folder is never committed,
-so your prices stay on your computer.
+back to Scryfall's USD price, converted with the Bank of Canada's exchange rate for the
+day. The rate is fetched once a day and saved in `data/usd_cad.json`. Offline, it uses the
+last saved rate, or `USD_TO_CAD` in `config.py`. The `data/` folder is never committed, so
+your prices stay on your computer.
 
 ## Run the tests
 
