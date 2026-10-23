@@ -1,0 +1,19 @@
+# Starts the web app when the Pi boots, and restarts it if it crashes.
+# Install: sudo cp deploy/mtg-sorter.service /etc/systemd/system/
+#          sudo systemctl enable --now mtg-sorter
+[Unit]
+Description=MTG sorter web app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=nic
+WorkingDirectory=/home/nic/HomeLab/mtg-sorter
+# Only listens on the Pi itself. Tailscale Serve and the Cloudflare tunnel pass traffic in.
+# Until the camera is here, add: --demo /home/nic/photos
+ExecStart=/home/nic/HomeLab/mtg-sorter/.venv/bin/python app.py --host 127.0.0.1 --port 5000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
