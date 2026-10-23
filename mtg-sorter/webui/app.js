@@ -107,6 +107,7 @@
   // ---------- live ----------
   const STATUS = { starting: "Starting camera…", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
   let selected = null;     // the card shown big: its track id
+  let editing = false, drag = null;   // Slots mode: drawing boxes on the picture, and the box being dragged
 
   function selectedCard(s) {
     const cards = s.cards;
@@ -115,25 +116,38 @@
     return c;
   }
 
-  // Each card's outline and number over the camera picture. The scanner gives the
-  // corners as fractions of the frame; with the SVG's viewBox set to the frame and
-  // "meet" fitting it like object-fit: contain fits the picture, they land on the cards
-  // at any page size. The number badge is sized in screen pixels, then converted.
+  // Each card's outline and number over the camera picture, and in Slots mode the
+  // slots too. The scanner gives corners as fractions of the frame; with the SVG's
+  // viewBox set to the frame and "meet" fitting it like object-fit: contain fits the
+  // picture, they land on the cards at any page size. Badges are sized in screen
+  // pixels, then converted (k = frame pixels per screen pixel).
   function drawOutlines(s) {
     const svg = $("overlay"), { w, h } = s.frame, box = svg.parentElement;
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     const shown = Math.min(box.clientWidth, box.clientHeight * w / h) || w;   // the picture's width on screen
-    const k = w / shown;                                                      // frame pixels per screen pixel
+    const k = w / shown;
     const f = v => v.toFixed(1);
-    svg.innerHTML = s.cards.map(x => {
+    const badge = (x, y, n, r) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(r * k)}" vector-effect="non-scaling-stroke"/><text x="${f(x)}" y="${f(y)}" font-size="${f(14 * k)}">${n}</text>`;
+    const dashes = `stroke-dasharray="${f(8 * k)} ${f(6 * k)}"`;
+    const taken = new Set(s.cards.map(x => x.number));
+    const slots = s.mode !== "slots" ? "" : s.slots.map((sl, i) => {
+      if (taken.has(i + 1) && !editing) return "";      // the card in it shows its own outline
+      const x0 = sl[0] * w, y0 = sl[1] * h, x1 = sl[2] * w, y1 = sl[3] * h;
+      const del = !editing ? "" : `<g class="del" data-del="${i}" transform="translate(${f(x1)} ${f(y0)}) scale(${k.toFixed(3)})"><circle r="9"/><path d="M-3.5 -3.5 3.5 3.5M3.5 -3.5 -3.5 3.5" vector-effect="non-scaling-stroke"/></g>`;
+      return `<g class="slot"><rect x="${f(x0)}" y="${f(y0)}" width="${f(x1 - x0)}" height="${f(y1 - y0)}" vector-effect="non-scaling-stroke" ${dashes}/>${badge((x0 + x1) / 2, (y0 + y1) / 2, i + 1, 11)}${del}</g>`;
+    }).join("");
+    const cards = s.cards.map(x => {
       const pts = x.corners.map(([cx, cy]) => [cx * w, cy * h]);
       const mx = pts.reduce((a, p) => a + p[0], 0) / pts.length, my = pts.reduce((a, p) => a + p[1], 0) / pts.length;
       const cls = `card-outline s-${x.status}${x.saved ? " saved" : ""}${x.track === selected ? " sel" : ""}`;
-      return `<g class="${cls}" data-track="${x.track}">
-        <polygon points="${pts.map(p => f(p[0]) + "," + f(p[1])).join(" ")}" vector-effect="non-scaling-stroke"/>
-        <circle cx="${f(mx)}" cy="${f(my)}" r="${f(13 * k)}" vector-effect="non-scaling-stroke"/>
-        <text x="${f(mx)}" y="${f(my)}" font-size="${f(14 * k)}">${x.number}</text></g>`;
+      return `<g class="${cls}" data-track="${x.track}"><polygon points="${pts.map(p => f(p[0]) + "," + f(p[1])).join(" ")}" vector-effect="non-scaling-stroke"/>${badge(mx, my, x.number, 13)}</g>`;
     }).join("");
+    let drawing = "";
+    if (drag) {
+      const [ax, ay] = drag.from, [bx, by] = drag.to;
+      drawing = `<rect class="drawing" x="${f(Math.min(ax, bx) * w)}" y="${f(Math.min(ay, by) * h)}" width="${f(Math.abs(bx - ax) * w)}" height="${f(Math.abs(by - ay) * h)}" vector-effect="non-scaling-stroke" ${dashes}/>`;
+    }
+    svg.innerHTML = slots + cards + drawing;
   }
 
   function render(s) {
@@ -142,12 +156,23 @@
     $("metaText").textContent = `${s.db_count.toLocaleString()} cards` + (s.learned ? ` + ${s.learned.toLocaleString()} learned` : "") + ` · ${s.prices}`;
     const st = $("camStatus"); st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status;
     document.querySelector(".camera").classList.toggle("locked", s.status === "locked");
+    const slotsOn = s.mode === "slots";
+    if (!slotsOn) editing = false;
+    document.querySelector(".camera").classList.toggle("slots", slotsOn);
+    $("modeBtn").setAttribute("aria-pressed", slotsOn);
+    $("modeText").textContent = slotsOn ? "Slots" : "Auto";
+    $("editSlotsBtn").hidden = !slotsOn;
+    $("editSlotsBtn").textContent = editing ? "Done" : "Edit slots";
+    $("editSlotsBtn").setAttribute("aria-pressed", editing);
+    $("clearSlotsBtn").hidden = !editing || !s.slots.length;
+    $("slotHint").hidden = !editing;
+    $("overlay").classList.toggle("editing", editing);
 
     const sel = selectedCard(s), c = sel?.card;
     drawOutlines(s);
     $("emptyCard").hidden = !!c; $("cardView").hidden = !c;
     $("whichBtn").hidden = !sel || sel.status !== "unknown";
-    $("emptyText").textContent = !sel ? "Lay cards on the table under the camera"
+    $("emptyText").textContent = !sel ? (!slotsOn ? "Lay cards on the table under the camera" : s.slots.length ? "Put a card in a slot" : "Draw a box around each card spot: Edit slots, under the picture")
       : sel.status === "unknown" ? `Card ${sel.number} isn't recognized` : `Recognizing card ${sel.number}…`;
     if (c) {
       if (shownId !== c.id) { $("cardImg").src = c.image; $("cardImg").alt = c.name; shownId = c.id; }
@@ -240,6 +265,40 @@
     selected = track; render(state);
     if (state.cards.find(c => c.track === selected)?.status === "unknown") openPicker({ live: true, track: selected });
   }
+
+  // ---------- slots: boxes you draw on the picture, one per card position ----------
+  function setEditing(on) { editing = on; drag = null; if (state) render(state); }
+  $("modeBtn").onclick = async () => {
+    const mode = state?.mode === "slots" ? "auto" : "slots";
+    render(await api("/api/settings", { mode }));
+    setEditing(mode === "slots" && !state.slots.length);     // nothing drawn yet: start drawing
+    toast(mode === "slots" ? "Looking for cards in the slots only" : "Looking for cards anywhere");
+  };
+  $("editSlotsBtn").onclick = () => setEditing(!editing);
+  $("clearSlotsBtn").onclick = async () => { render(await api("/api/settings", { slots: [] })); toast("Slots cleared"); };
+  // Where on the camera frame the pointer is, as fractions of its width and height.
+  function framePoint(e) {
+    const svg = $("overlay"), p = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+    return [Math.min(1, Math.max(0, p.x / state.frame.w)), Math.min(1, Math.max(0, p.y / state.frame.h))];
+  }
+  const overlay = $("overlay");
+  overlay.onpointerdown = async e => {
+    if (!editing || !state || e.button) return;
+    const del = e.target.closest("[data-del]");
+    if (del) { render(await api("/api/settings", { slots: state.slots.filter((_, i) => i !== +del.dataset.del) })); return; }
+    drag = { from: framePoint(e), to: framePoint(e) };
+    overlay.setPointerCapture(e.pointerId); e.preventDefault();
+    drawOutlines(state);
+  };
+  overlay.onpointermove = e => { if (drag) { drag.to = framePoint(e); drawOutlines(state); } };
+  overlay.onpointerup = async e => {
+    if (!drag) return;
+    const [ax, ay] = drag.from, [bx, by] = framePoint(e); drag = null;
+    const slot = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
+    if (slot[2] - slot[0] < 0.02 || slot[3] - slot[1] < 0.02) return drawOutlines(state);   // a click, not a box
+    render(await api("/api/settings", { slots: [...state.slots, slot] }));
+  };
+  overlay.onpointercancel = () => { drag = null; if (state) drawOutlines(state); };
   const setting = (key) => api("/api/settings", { [key]: !state[key] }).then(render);
 
   $("saveBtn").onclick = saveCurrent;
@@ -256,6 +315,7 @@
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && !$("pick").hidden) return closePicker();
     if (e.key === "Escape" && drawerOpen()) return setDrawer(false);
+    if (e.key === "Escape" && editing) return setEditing(false);
     if (e.target.matches("input, textarea") || e.metaKey || e.ctrlKey || e.altKey || drawerOpen() || !$("pick").hidden) return;
     if (e.key === "c" || e.key === "C") return setDrawer(true);
     if ($("tab-live").hidden) return;
@@ -263,6 +323,7 @@
     else if (e.key === "f" || e.key === "F") setting("foil");
     else if (e.key === "a" || e.key === "A") setting("auto");
     else if (e.key === "r" || e.key === "R") $("collectBtn").click();
+    else if (e.key === "s" || e.key === "S") $("modeBtn").click();
     else if ((e.key === "w" || e.key === "W") && selected != null) markWrong();
   });
 

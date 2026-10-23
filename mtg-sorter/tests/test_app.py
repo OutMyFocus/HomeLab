@@ -219,3 +219,66 @@ def test_state_has_card_corners_for_the_page(db, tmp_path, monkeypatch):  # noqa
     xs, ys = zip(*card["corners"])
     assert 0.15 < min(xs) < 0.3 and 0.5 < max(xs) < 0.65
     assert 0.08 < min(ys) < 0.2 and 0.75 < max(ys) < 0.9
+
+
+# --- Slots mode: boxes you draw on the picture, one per card position ---
+
+def card_at(table, seed, x, y, w=200, h=280):
+    """Lay a fake card flat on the table, top-left corner at (x, y)."""
+    table[y:y + h, x:x + w] = cv2.resize(fake_card(seed), (w, h))
+
+
+def test_slots_mode_looks_only_in_the_slots(db, tmp_path, monkeypatch):  # noqa: F811
+    import json
+    scanner, client = table_app(db, tmp_path, monkeypatch)
+    table = EMPTY.copy()
+    card_at(table, 2, 100, 100)        # in slot 1
+    card_at(table, 0, 650, 100)        # outside every slot: ignored
+    slots = [[0.08, 0.1, 0.34, 0.56], [0.4, 0.1, 0.62, 0.56]]     # slot 2 is empty
+    state = client.post("/api/settings", json={"mode": "slots", "slots": slots}).get_json()
+    assert state["mode"] == "slots" and state["slots"] == slots
+    show(scanner, table, config.STABLE_FRAMES + 2)
+    (c,) = client.get("/api/state").get_json()["cards"]
+    assert c["number"] == 1 and c["card"]["id"] == "id2"     # numbered by slot, not by order found
+    assert 0.08 < c["corners"][0][0] < 0.15                   # the card's own edges, inside the slot
+    assert json.loads((tmp_path / "settings.json").read_text())["slots"] == slots   # kept for next time
+
+    show(scanner, EMPTY, 10)
+    assert client.get("/api/state").get_json()["cards"] == []
+    assert client.post("/api/settings", json={"mode": "auto"}).get_json()["mode"] == "auto"
+    show(scanner, table, config.STABLE_FRAMES + 2)
+    assert len(client.get("/api/state").get_json()["cards"]) == 2     # Auto mode sees both again
+
+
+def test_the_slot_is_the_outline_when_the_card_has_no_findable_edges(db, tmp_path, monkeypatch):  # noqa: F811
+    from mtgscanner import recognize
+    slot = [100 / 960, 100 / 720, 300 / 960, 380 / 720]
+    scanner, client = table_app(db, tmp_path, monkeypatch, mode="slots", slots=[slot])
+    table = EMPTY.copy()
+    card_at(table, 2, 100, 100)
+    monkeypatch.setattr(recognize, "find_cards", lambda frame, *a: [])   # as with a card in a box or a shiny sleeve
+    show(scanner, table, config.STABLE_FRAMES + 2)
+    (c,) = client.get("/api/state").get_json()["cards"]
+    assert c["card"]["id"] == "id2"
+    assert c["corners"][0] == pytest.approx(slot[:2], abs=0.03) and c["corners"][2] == pytest.approx(slot[2:], abs=0.03)
+
+    show(scanner, EMPTY, 10)             # card taken away: an empty slot isn't a card
+    assert client.get("/api/state").get_json()["cards"] == []
+
+
+def test_slots_are_remembered_and_checked(db, tmp_path, monkeypatch):  # noqa: F811
+    import json
+    scanner, client = table_app(db, tmp_path, monkeypatch, mode="slots", slots=[[0.5, 0.9, 0.1, 0.1], [0.2, 0.2, 0.21, 0.21]])
+    assert scanner.slots == [[0.1, 0.1, 0.5, 0.9]]      # corners put in order, the tiny one dropped
+    again = Scanner(db, None, source=None)
+    again.restore(json.loads((tmp_path / "settings.json").read_text()))
+    assert again.mode == "slots" and again.slots == [[0.1, 0.1, 0.5, 0.9]]
+    assert client.post("/api/settings", json={"slots": "nonsense"}).status_code == 400
+    assert client.post("/api/settings", json={"slots": [[0, 0, "x", 1]]}).status_code == 400
+
+
+def test_slot_occupied_tells_a_card_from_plain_table():
+    from mtgscanner.recognize import slot_occupied
+    assert slot_occupied(cv2.resize(fake_card(1), (200, 280)))
+    assert not slot_occupied(EMPTY[100:380, 100:300])
+    assert not slot_occupied(EMPTY[0:0, 0:0])
