@@ -35,15 +35,35 @@ USD_TO_CAD = 1.38
 # --- Recognition tuning ---------------------------------------------------
 # Each card image turns into a 256-bit "fingerprint". The distance between two
 # fingerprints counts the bits that differ (0 means identical). Two unrelated
-# cards usually land around 128.
+# cards usually land around 128; a blurry webcam picture of the right card lands
+# around 30-60 from its stock picture.
 MAX_MATCH_DISTANCE = 90
+# The scanner also looks at the MARGIN: how many more bits away the closest card
+# with a *different* name is. A small margin means two cards look alike to it, so
+# the answer is shown as "unsure" (never auto-saved) with the other candidates.
+SURE_DISTANCE = 50     # this close, with this much margin, and the card is "sure"...
+SURE_MARGIN = 10
+LIKELY_MARGIN = 4      # ...otherwise "likely" with at least this margin, else "unsure"
+CANDIDATE_DISTANCE = 100   # other cards no further than this are offered as alternatives
 # Scans learned in the Train tab come from your own camera, so they share its light
 # and background with every new scan, which can make unrelated cards look a little
 # alike. A match to a learned scan therefore has to be closer than this.
 MAX_LEARNED_DISTANCE = 60
 
-# How many camera frames in a row must agree on the same card before we trust it.
-STABLE_FRAMES = 5
+# The detector's outline often lands a little inside or outside the card's real edge
+# (a sleeve adds a margin), and fingerprints are sensitive to that. Each outline is
+# tried scaled by these factors; the closest match wins.
+OUTLINE_FACTORS = (1.0, 1.04, 1.08)
+
+# How many camera frames in a row must agree on a card before we trust it (used by
+# scan.py; app.py needs fewer looks the surer the match is, see tracking.py).
+STABLE_FRAMES = 3
+# A recognized card that hasn't moved is looked at again this often (seconds).
+RECHECK_SECONDS = 2.0
+# A card out of sight for this long (a hand over it is shorter) counts as taken away.
+GONE_SECONDS = 0.8
+# Cards are recognized in parallel; 0 means one thread per CPU core (at most 8).
+IDENTIFY_THREADS = 0
 
 # The smallest card the camera looks for, as a share of the whole picture. 0.05 (5%)
 # suits a camera close to the card, like the scan station. A camera high above a

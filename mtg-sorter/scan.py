@@ -16,6 +16,7 @@ import argparse
 import cv2
 
 from mtgscanner import config
+from mtgscanner.camera import describe, open_camera
 from mtgscanner.collection import add_card
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.exchange import load_rate
@@ -53,9 +54,12 @@ def scan_images(matcher: Matcher, paths: list[str], foil: bool, save: bool) -> N
 
 
 def scan_webcam(matcher: Matcher, camera: int) -> None:
-    cap = cv2.VideoCapture(camera)
-    if not cap.isOpened():
+    try:
+        cap = open_camera(camera)
+    except RuntimeError:
         raise SystemExit(f"Could not open camera {camera}. Try --camera 1")
+    fmt, size = describe(cap)
+    print(f"Camera {camera}: {size[0]}x{size[1]} {fmt}" + ("" if fmt == "MJPG" else " (not MJPG: expect a low frame rate)"))
 
     foil = False
     auto = False

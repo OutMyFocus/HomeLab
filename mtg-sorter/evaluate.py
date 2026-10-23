@@ -5,101 +5,130 @@
     python evaluate.py --plain   # without what the Train tab taught it, to compare
 
 Turn on "Collect scans" in app.py and scan normally. Every card you Save tells the
-scanner it was right, and every card you correct tells it the right answer. This script runs
-the *current* recognition code over all those camera pictures, so after changing
+scanner it was right, and every card you correct tells it the right answer. This script
+runs the *current* recognition code over each of those card pictures, so after changing
 the code (or config.py) you can see whether it got better or worse.
+
+Scans the scanner auto-saved on its own are NOT counted as truth (they're its guesses),
+unless you pass --include-auto. You can also give it your own answers: a CSV file
+data/captures/labels.csv with columns  crop,name  (the crop file name from log.csv and
+the card's printed name) counts as truth too, by name.
 
 Scans you've trained on will match themselves, so compare against --plain to see
 what training adds, and judge code changes with --plain.
 """
 
 import argparse
+import csv
 import statistics
+from collections import Counter
 
 import cv2
 
 from mtgscanner import config
 from mtgscanner.captures import CaptureLog, true_card
-from mtgscanner.database import Matcher, connect
-from mtgscanner.recognize import identify_frame
+from mtgscanner.database import Matcher, _name_key, connect
+from mtgscanner.recognize import identify_crop
+
+LABELS_CSV = config.CAPTURES_DIR / "labels.csv"
+
+
+def load_labels() -> dict[str, str]:
+    """crop -> card name, from data/captures/labels.csv (optional)."""
+    if not LABELS_CSV.exists():
+        return {}
+    with LABELS_CSV.open(newline="", encoding="utf-8") as f:
+        return {r["crop"]: r["name"] for r in csv.DictReader(f) if r.get("crop") and r.get("name")}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--list", action="store_true", help="list each scan it gets wrong")
     parser.add_argument("--plain", action="store_true", help="leave out the fingerprints learned in the Train tab")
+    parser.add_argument("--include-auto", action="store_true", help="also trust scans Auto-save stored unchecked")
     args = parser.parse_args()
 
     log = config.CAPTURES_DIR / "log.csv"
     if not log.exists():
         raise SystemExit('No scans collected yet. Turn on "Collect scans" in app.py first.')
     rows = CaptureLog(config.CAPTURES_DIR).rows()
+    labels = load_labels()
     matcher = Matcher(connect(config.DB_PATH))
     if args.plain:     # learned fingerprints come after the cards
-        ids, hashes = matcher._table
-        matcher._table = ids[:matcher.card_count], hashes[:matcher.card_count]
+        ids, hashes, names = matcher._table
+        n = matcher.card_count
+        matcher._table = ids[:n], hashes[:n], names[:n]
+        matcher.learned_count = 0
 
-    right, wrong = [], []        # distances, for scans whose true card we know
-    confirmed = fixed = still_wrong = no_outline = newly_found = 0
+    # What each scan really shows: your own answers first, then what you saved or corrected.
+    truth: dict[str, tuple[str, str]] = {}      # crop -> (kind, value): ("name", name) or ("id", card id)
+    for row in rows:
+        if row["verdict"] == "ignore":
+            continue
+        if row["crop"] in labels:
+            truth[row["crop"]] = ("name", labels[row["crop"]])
+        elif (card_id := true_card(row, include_auto=args.include_auto)):
+            truth[row["crop"]] = ("id", card_id)
+
+    right, wrong, unknown = [], [], []
+    by_conf = {c: Counter() for c in ("sure", "likely", "unsure")}
     problems = []
     for row in rows:
-        frame = cv2.imread(str(config.CAPTURES_DIR / row["frame"]))
-        if frame is None:
+        if row["crop"] not in truth:
             continue
-        corners, card, dist = identify_frame(matcher, frame)
-        if corners is None:
-            no_outline += 1
-        got = card.id if card else ""
-        name = card.name if card else "nothing"
+        img = cv2.imread(str(config.CAPTURES_DIR / row["crop"]))
+        if img is None:
+            continue
+        kind, value = truth[row["crop"]]
+        m = identify_crop(matcher, img)
+        if kind == "id":
+            real = matcher.get_card(value)
+            ok = m.card is not None and _name_key(m.card.name) == _name_key(real.name)
+            real_text = f"{real.name} ({real.set_code.upper()})"
+        else:
+            ok = m.card is not None and _name_key(m.card.name) == _name_key(value)
+            real_text = value
+        if m.card is None:
+            unknown.append(m.distance)
+            problems.append(f"  {row['crop']}: is {real_text}, found nothing (closest {m.distance}, margin {m.margin})")
+            continue
+        (right if ok else wrong).append(m)
+        by_conf[m.confidence][ok] += 1
+        if not ok:
+            problems.append(f"  {row['crop']}: is {real_text}, says {m.card.name} ({m.card.set_code.upper()}) "
+                            f"distance {m.distance}, margin {m.margin}, {m.confidence}")
 
-        if (truth := true_card(row)) and row["verdict"] != "ignore":
-            confirmed += 1
-            if got == truth:
-                right.append(dist)
-            else:
-                if card:
-                    wrong.append(dist)
-                real = matcher.get_card(truth)
-                problems.append(f"  {row['crop']}: is {real.name} ({real.set_code.upper()}), now finds {name} (distance {dist})")
-        elif row["verdict"] == "wrong" and not row["correct_id"]:
-            if got == row["card_id"]:
-                still_wrong += 1
-                wrong.append(dist)
-                problems.append(f"  {row['crop']}: still says {row['name']} (distance {dist}), which you marked wrong")
-            else:
-                fixed += 1
-        elif row["result"] == "unknown" and card:
-            newly_found += 1
-
-    marked_wrong = sum(r["verdict"] == "wrong" and not r["correct_id"] for r in rows)
-    unknown = sum(r["result"] == "unknown" for r in rows)
-    print(f"{len(rows)} scans collected ({confirmed} with a known card, {marked_wrong} marked wrong, {unknown} not recognized)")
+    total = len(right) + len(wrong) + len(unknown)
+    print(f"{len(rows)} scans collected, {total} with a known answer"
+          + (f" ({len(labels)} from labels.csv)" if labels else "")
+          + (" (auto-saved guesses trusted)" if args.include_auto else ""))
     print("Using the plain card database.\n" if args.plain else f"Using {matcher.learned_count} learned scans too (try --plain to compare).\n")
-    if confirmed:
-        print(f"Confirmed cards found correctly: {len(right)} of {confirmed} ({100 * len(right) / confirmed:.0f}%)")
-    if marked_wrong:
-        print(f"Marked-wrong cards now different:  {fixed} of {marked_wrong}")
-    if unknown:
-        print(f"Unrecognized scans now matched:    {newly_found} of {unknown} (check these by eye)")
-    if no_outline:
-        print(f"Scans where no card outline is found now: {no_outline}")
+    if not total:
+        print("Nothing to score yet: save or correct some cards while collecting, or add data/captures/labels.csv.")
+        return
+    print(f"Right: {len(right)} of {total} ({100 * len(right) / total:.0f}%)   wrong: {len(wrong)}   not recognized: {len(unknown)}")
+    locked = by_conf["sure"] + by_conf["likely"]
+    if sum(locked.values()):
+        print(f"Of the cards it would save on its own (sure + likely): {100 * locked[True] / sum(locked.values()):.0f}% right "
+              f"({locked[False]} wrong)")
+    for conf in ("sure", "likely", "unsure"):
+        c = by_conf[conf]
+        if sum(c.values()):
+            print(f"  {conf:6}: {c[True]:4} right, {c[False]:3} wrong")
 
     print(f"\nMatch distance (lower is closer). Cards count as recognized up to {config.MAX_MATCH_DISTANCE}.")
     if right:
-        print(f"  correct matches: typical {statistics.median(right):.0f}, worst {max(right)}")
+        print(f"  right: typical {statistics.median(m.distance for m in right):.0f}, worst {max(m.distance for m in right)}, "
+              f"typical margin {statistics.median(m.margin for m in right):.0f}")
     if wrong:
-        print(f"  wrong matches:   best {min(wrong)}, typical {statistics.median(wrong):.0f}")
-    if right and wrong:
-        if max(right) < min(wrong):
-            print(f"  -> Any MAX_MATCH_DISTANCE from {max(right)} to {min(wrong) - 1} separates them in config.py.")
-        else:
-            print("  -> Right and wrong matches overlap, so a threshold alone can't fix these; better lighting or code changes can.")
+        print(f"  wrong: best {min(m.distance for m in wrong)}, typical {statistics.median(m.distance for m in wrong):.0f}, "
+              f"typical margin {statistics.median(m.margin for m in wrong):.0f}")
 
     if problems and args.list:
         print("\nScans it gets wrong (pictures are in data/captures):")
         print("\n".join(problems))
     elif problems:
-        print(f"\n{len(problems)} scans are still wrong. Run with --list to see them.")
+        print(f"\n{len(problems)} scans are wrong or unrecognized. Run with --list to see them.")
 
 
 if __name__ == "__main__":

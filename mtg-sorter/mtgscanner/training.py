@@ -22,9 +22,13 @@ def ready_to_learn(matcher: Matcher, captures: CaptureLog, include_auto: bool) -
     return [r for r in captures.rows() if r["verdict"] != "ignore" and true_card(r, include_auto) and r["crop"] not in learned]
 
 
-def train(matcher: Matcher, captures: CaptureLog, include_auto: bool = True) -> dict:
+def train(matcher: Matcher, captures: CaptureLog, include_auto: bool = False) -> dict:
     """Add every confirmed scan not learned yet, and forget scans you've since marked
-    wrong or skipped. Returns how many were added and removed."""
+    wrong or skipped. Returns how many were added and removed.
+
+    include_auto=True also learns from scans that Auto-save stored without anyone
+    checking them. That teaches the scanner its own guesses, right or wrong, so a
+    mistake it keeps making becomes a habit: leave it off unless you've reviewed them."""
     rows = captures.rows()
     new = []
     for row in ready_to_learn(matcher, captures, include_auto):

@@ -15,6 +15,7 @@ import gzip
 import io
 import json
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Iterator
@@ -41,7 +42,7 @@ def cards_from_sets(set_codes: list[str]) -> Iterator[dict]:
             page = resp.json()
             yield from page["data"]
             url = page.get("next_page")
-            time.sleep(0.1)  # Scryfall asks for at most 10 requests/second
+            THROTTLE.wait()  # Scryfall asks for at most 10 requests/second
 
 
 def cards_from_bulk() -> Iterator[dict]:
@@ -85,11 +86,49 @@ def price(card: dict, key: str) -> float | None:
     return float(value) if value else None
 
 
+class Throttle:
+    """Lets at most `rate` requests a second through, across all download threads.
+    Scryfall asks for 50-100 ms between requests; going faster gets you blocked."""
+
+    def __init__(self, rate: float):
+        self.gap, self.next_at, self.lock = 1.0 / rate, 0.0, threading.Lock()
+
+    def wait(self):
+        with self.lock:
+            now = time.monotonic()
+            self.next_at = max(now, self.next_at) + self.gap
+            delay = self.next_at - self.gap - now
+        if delay > 0:
+            time.sleep(delay)
+
+
+THROTTLE = Throttle(9)
+SESSION = requests.Session()
+SESSION.headers["User-Agent"] = config.USER_AGENT
+
+
+def fetch_image(url: str) -> bytes | None:
+    """Download one card picture, politely, retrying when Scryfall is busy."""
+    for attempt in range(5):
+        THROTTLE.wait()
+        try:
+            resp = SESSION.get(url, timeout=30)
+            if resp.status_code in (429, 500, 502, 503, 504):
+                time.sleep(2 * (attempt + 1))
+                continue
+            resp.raise_for_status()
+            return resp.content
+        except requests.RequestException as e:
+            if attempt == 4:
+                print(f"  skipped {url}: {e}", file=sys.stderr)
+            time.sleep(1 + attempt)
+    return None
+
+
 def fetch_fingerprint(url: str) -> bytes | None:
     try:
-        resp = requests.get(url, headers={"User-Agent": config.USER_AGENT}, timeout=30)
-        resp.raise_for_status()
-        return fingerprint_pil(Image.open(io.BytesIO(resp.content)))
+        data = fetch_image(url)
+        return fingerprint_pil(Image.open(io.BytesIO(data))) if data else None
     except Exception as e:  # one bad image shouldn't stop the whole build
         print(f"  skipped {url}: {e}", file=sys.stderr)
         return None
