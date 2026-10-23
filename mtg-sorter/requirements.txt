@@ -1,4 +1,5 @@
 opencv-python>=4.8
+cv2_enumerate_cameras>=1.1
 numpy>=1.26
 pillow>=10.0
 imagehash>=4.3

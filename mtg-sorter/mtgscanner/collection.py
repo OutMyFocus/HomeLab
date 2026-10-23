@@ -29,11 +29,28 @@ def remove_last(path: Path) -> bool:
     return True
 
 
-def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[float | None, str]) -> None:
-    """price is (CAD price, source), as returned by sorting.card_price()."""
+def remove_entry(path: Path, card_id: str, scanned_at: str) -> bool:
+    """Delete one particular saved card (matched by Scryfall ID and time saved)."""
+    if not path.exists():
+        return False
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    for i in range(len(rows) - 1, 0, -1):
+        if rows[i][7] == card_id and rows[i][11] == scanned_at:
+            del rows[i]
+            with path.open("w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerows(rows)
+            return True
+    return False
+
+
+def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[float | None, str]) -> str:
+    """price is (CAD price, source), as returned by sorting.card_price(). Returns the
+    time it was saved, which remove_entry() uses to find it again."""
     path.parent.mkdir(parents=True, exist_ok=True)
     is_new = not path.exists()
     cad, source = price
+    scanned_at = datetime.now().isoformat(timespec="seconds")
     with path.open("a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         if is_new:
@@ -50,5 +67,6 @@ def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[fl
             "" if cad is None else f"{cad:.2f}",
             source,
             bin_label,
-            datetime.now().isoformat(timespec="seconds"),
+            scanned_at,
         ])
+    return scanned_at

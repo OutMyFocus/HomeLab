@@ -18,6 +18,7 @@ import cv2
 from mtgscanner import config
 from mtgscanner.collection import add_card
 from mtgscanner.database import Card, Matcher, connect
+from mtgscanner.exchange import load_rate
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.vault_prices import VaultPrices
 from mtgscanner.recognize import identify, identify_frame
@@ -130,8 +131,9 @@ def main() -> None:
 
     global VAULT
     matcher = Matcher(connect(config.DB_PATH))
-    print(f"Loaded {len(matcher.ids)} cards from the database.")
+    print(f"Loaded {matcher.card_count} cards from the database.")
     VAULT = VaultPrices.load(config.VAULT_PRICES)
+    load_rate()
     if VAULT:
         print(f"Using Commander Vault prices from {VAULT.date}.")
     else:
