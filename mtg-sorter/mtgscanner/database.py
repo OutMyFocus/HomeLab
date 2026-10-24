@@ -47,6 +47,8 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+_CARD_COLUMNS = "id, name, set_code, set_name, collector_number, rarity, colors, price_usd, price_usd_foil"
+
 # Lookup table: how many 1-bits are in each possible byte value (0-255).
 _POPCOUNT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint16)
 
@@ -70,14 +72,29 @@ class Matcher:
         i = int(dists.argmin())
         return self.ids[i], int(dists[i])
 
-    def get_card(self, card_id: str) -> Card:
+    def get_card(self, card_id: str) -> Card | None:
+        """The card with this Scryfall id, or None if it isn't in the database."""
         with self._lock:
             row = self._card_row(card_id)
-        return Card(*row)
+        return Card(*row) if row else None
+
+    def printings(self, name: str) -> list[Card]:
+        """Every printing of this card name in the database."""
+        with self._lock:
+            rows = self.conn.execute(f"SELECT {_CARD_COLUMNS} FROM cards WHERE name = ? ORDER BY set_name", (name,)).fetchall()
+        return [Card(*r) for r in rows]
+
+    def search_names(self, text: str, limit: int = 20) -> list[str]:
+        """Card names containing this text (used when there's no internet for Scryfall's search)."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT DISTINCT name FROM cards WHERE name LIKE ? ORDER BY name LIKE ? DESC, name LIMIT ?",
+                (f"%{text}%", f"{text}%", limit),
+            ).fetchall()
+        return [r[0] for r in rows]
 
     def _card_row(self, card_id: str):
         return self.conn.execute(
-            "SELECT id, name, set_code, set_name, collector_number, rarity, colors, price_usd, price_usd_foil "
-            "FROM cards WHERE id = ?",
+            f"SELECT {_CARD_COLUMNS} FROM cards WHERE id = ?",
             (card_id,),
         ).fetchone()
