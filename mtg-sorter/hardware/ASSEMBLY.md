@@ -172,8 +172,8 @@ This gets recognition working on the real camera before any moving parts.
 > available" with the cable seated properly, the Pi's auto-detect may be missing it. Edit
 > `/boot/firmware/config.txt`: change `camera_auto_detect=1` to `camera_auto_detect=0`, and
 > add `dtoverlay=imx708` and `dtoverlay=imx708,cam0` under `[all]` at the end. Reboot.
-> The app uses the Pi camera automatically when there is one (`--camera pi` forces it,
-> `--camera 0` uses a USB webcam instead).
+> The app uses the Pi camera automatically when there is one. You can switch to a USB webcam
+> on the page, or start it with `--camera 0`.
 
 ### Raspberry Pi setup
 

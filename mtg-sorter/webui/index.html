@@ -1,19 +1,42 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="system">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>MTG Scanner</title>
 <link rel="stylesheet" href="/static/style.css">
+<!-- Apply saved look before first paint, so the page doesn't flash the default theme. -->
+<script>try { const l = JSON.parse(localStorage.getItem("mtg-scanner-look")); if (l && l.theme) document.documentElement.dataset.theme = l.theme; } catch (e) {}</script>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18"/><path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-photos" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10" r="1.8" fill="currentColor"/><path d="m4 17 5-4.5 4 3.5 3-2.5 4.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="15" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z" fill="currentColor"/><path d="M19 15c.3 1.8 1.2 2.7 3 3-1.8.3-2.7 1.2-3 3-.3-1.8-1.2-2.7-3-3 1.8-.3 2.7-1.2 3-3Z" fill="currentColor" opacity=".7"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9 4.5a3 3 0 0 0-3 3 3 3 0 0 0-2 5.2A3 3 0 0 0 7 17.5a2.5 2.5 0 0 0 5 .5V6a2 2 0 0 0-3-1.5ZM15 4.5a3 3 0 0 1 3 3 3 3 0 0 1 2 5.2 3 3 0 0 1-3 4.8 2.5 2.5 0 0 1-5 .5V6a2 2 0 0 1 3-1.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-slots" viewBox="0 0 24 24"><rect x="3.5" y="5" width="7" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-dasharray="3 2"/><rect x="13.5" y="5" width="7" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-dasharray="3 2"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V5m-5 5 5-5 5 5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
 <header class="top">
-  <div class="brand"><span class="dot"></span>MTG Scanner</div>
+  <div class="brand"><svg class="logo"><use href="#i-logo"/></svg><span>MTG Scanner</span></div>
   <nav class="tabs" role="tablist">
-    <button role="tab" data-tab="live" aria-selected="true">Live</button>
-    <button role="tab" data-tab="photos" aria-selected="false">Photos</button>
+    <span class="tab-ind" id="tabInd"></span>
+    <button role="tab" data-tab="live" aria-selected="true"><svg><use href="#i-camera"/></svg>Live</button>
+    <button role="tab" data-tab="photos" aria-selected="false"><svg><use href="#i-photos"/></svg>Photos</button>
+    <button role="tab" data-tab="train" aria-selected="false"><svg><use href="#i-brain"/></svg>Train</button>
   </nav>
-  <div class="meta" id="meta">Connecting…</div>
+  <div class="meta" id="meta"><span class="pulse"></span><span id="metaText">Connecting…</span></div>
+  <button class="icon-btn" id="lookBtn" aria-label="Customize the look" title="Customize (C)"><svg><use href="#i-sliders"/></svg></button>
 </header>
 
 <main>
@@ -22,51 +45,125 @@
     <div class="live">
       <div class="camera">
         <img id="stream" src="/stream.mjpg" alt="Live camera">
+        <svg id="overlay" class="overlay" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+        <div class="finder" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
         <div class="camera-status" id="camStatus">Starting camera…</div>
+        <label class="cam-pick" id="camPick" title="Choose camera">
+          <svg><use href="#i-camera"/></svg>
+          <select id="camSelect" aria-label="Camera"><option>Camera</option></select>
+          <svg class="chev" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </label>
+        <div class="cam-tools">
+          <button class="cam-btn" id="modeBtn" aria-pressed="false" title="Where to look for cards: anywhere, or only in slots you draw (S)"><svg><use href="#i-slots"/></svg><span id="modeText">Auto</span></button>
+          <button class="cam-btn" id="editSlotsBtn" aria-pressed="false" hidden>Edit slots</button>
+          <button class="cam-btn" id="clearSlotsBtn" hidden>Clear</button>
+          <span class="cam-hint" id="slotHint" hidden>Drag a box around each card spot</span>
+        </div>
       </div>
 
       <aside class="current panel" id="current">
+        <div class="table-head">
+          <h3>On the table <span class="count" id="tableCount"></span></h3>
+          <span class="sub" id="tableValue"></span>
+        </div>
         <div class="empty-card" id="emptyCard">
-          <div class="slot"></div>
-          <p id="emptyText">Put a card under the camera</p>
-          <button class="btn" id="findBtn">Find a card by name</button>
+          <div class="slot"><svg><use href="#i-logo"/></svg></div>
+          <p id="emptyText">Lay cards on the table under the camera</p>
+          <button class="btn ghost" id="whichBtn" hidden><svg><use href="#i-search"/></svg>Tell it which card</button>
         </div>
         <div class="card-view" id="cardView" hidden>
-          <img id="cardImg" alt="">
+          <div class="card-art" id="cardArt"><img id="cardImg" alt=""></div>
           <div class="card-text">
             <h2 id="cardName"></h2>
             <div class="sub" id="cardSet"></div>
             <div class="price" id="cardPrice"></div>
-            <div class="sub" id="cardSource"></div>
-            <div class="bin" id="cardBin"></div>
-            <div class="match" id="cardMatch"></div>
-            <button class="link" id="printBtn">Wrong printing?</button>
+            <div class="sub opt-source" id="cardSource"></div>
+            <div class="badges">
+              <span class="bin" id="cardBin"></span>
+              <span class="match opt-match" id="cardMatch"></span>
+            </div>
+            <button class="link-btn" id="wrongBtn">Wrong card? <kbd>W</kbd></button>
           </div>
         </div>
+        <div class="card-list" id="cardList"></div>
         <div class="controls">
-          <button class="btn primary" id="saveBtn" disabled>Save card <kbd>Space</kbd></button>
+          <button class="btn primary" id="saveBtn" disabled>Save all <kbd>Space</kbd></button>
           <div class="toggles">
-            <button class="toggle" id="foilBtn" aria-pressed="false">Foil <kbd>F</kbd></button>
-            <button class="toggle" id="autoBtn" aria-pressed="false">Auto-save <kbd>A</kbd></button>
+            <button class="toggle" id="foilBtn" aria-pressed="false"><svg><use href="#i-sparkle"/></svg>Foil <kbd>F</kbd></button>
+            <button class="toggle" id="autoBtn" aria-pressed="false"><svg><use href="#i-bolt"/></svg>Auto-save <kbd>A</kbd></button>
           </div>
+          <button class="collect" id="collectBtn" aria-pressed="false">
+            <span class="rec"></span>
+            <span class="collect-text"><b>Collect scans</b><small id="collectInfo">Off. Keeps each scan to train the scanner</small></span>
+            <kbd>R</kbd>
+          </button>
         </div>
       </aside>
+    </div>
+
+    <div class="stats" id="stats">
+      <div class="stat panel"><span class="label">Cards this session</span><b id="statCount">0</b></div>
+      <div class="stat panel"><span class="label">Session value</span><b id="statValue">$0.00</b></div>
+      <div class="stat panel bins-stat"><span class="label">By bin</span>
+        <div class="bin-bar" id="binBar"></div>
+        <div class="bin-legend" id="binLegend"></div>
+      </div>
     </div>
 
     <div class="panel session">
       <div class="session-head">
         <h3>This session</h3>
-        <div class="totals" id="totals"></div>
         <div class="actions">
-          <button class="btn" id="undoBtn">Undo last</button>
-          <a class="btn" id="csvBtn" href="/api/collection.csv">Download CSV</a>
+          <button class="btn ghost" id="undoBtn"><svg><use href="#i-undo"/></svg>Undo last</button>
+          <a class="btn ghost" id="csvBtn" href="/api/collection.csv"><svg><use href="#i-download"/></svg>Download CSV</a>
         </div>
       </div>
-      <table>
-        <thead><tr><th>Card</th><th>Set</th><th class="num">Price</th><th>Bin</th><th class="num">Time</th></tr></thead>
-        <tbody id="sessionRows"></tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Card</th><th>Set</th><th class="num">Price</th><th>Bin</th><th class="num opt-time">Time</th></tr></thead>
+          <tbody id="sessionRows"></tbody>
+        </table>
+      </div>
       <p class="hint">Saved to <code>data/collection.csv</code>. In Commander Vault: Collection → Import a ManaBox CSV.</p>
+    </div>
+  </section>
+
+  <!-- TRAIN -->
+  <section id="tab-train" class="tab" hidden>
+    <div class="train-hero panel">
+      <div class="hero-text">
+        <h2>Teach the scanner</h2>
+        <p>It starts out knowing each card from one clean picture. Your own scans, with your camera and your lighting, teach it what cards really look like on your table.</p>
+        <ol class="steps">
+          <li><b>Collect</b><span>Turn on <em>Collect scans</em> and scan like normal.</span></li>
+          <li><b>Confirm</b><span>Saving a card confirms it. When it's wrong, press <em>Wrong card?</em> and pick the right one, or label scans below.</span></li>
+          <li><b>Train</b><span>With <em>Keep learning</em> on, it learns each card you confirm as soon as you take it away. <em>Train now</em> catches up on the rest.</span></li>
+        </ol>
+      </div>
+      <div class="hero-side">
+        <label class="switch big"><input type="checkbox" id="collectSwitch"><span></span>Collect scans</label>
+        <label class="switch big" title="Learn each card you save or correct as soon as you take it away"><input type="checkbox" id="learnSwitch"><span></span>Keep learning</label>
+        <button class="btn primary" id="trainBtn"><svg><use href="#i-brain"/></svg>Train now</button>
+        <label class="check"><input type="checkbox" id="includeAuto" checked> Include auto-saved scans</label>
+        <button class="link-btn" id="forgetBtn">Forget all training</button>
+      </div>
+    </div>
+
+    <div class="stats train-stats">
+      <div class="stat panel"><span class="label">Scans collected</span><b id="trTotal">0</b></div>
+      <div class="stat panel"><span class="label">Confirmed</span><b id="trLabeled">0</b></div>
+      <div class="stat panel"><span class="label">Ready to learn</span><b id="trReady">0</b></div>
+      <div class="stat panel"><span class="label">Learned</span><b id="trLearned">0</b></div>
+    </div>
+
+    <div class="panel review">
+      <div class="session-head">
+        <h3>Review scans</h3>
+        <div class="seg review-seg" id="reviewSeg">
+          <button data-v="need" aria-pressed="true">Needs a label</button><button data-v="all" aria-pressed="false">All scans</button>
+        </div>
+      </div>
+      <div class="scan-grid" id="scanGrid"></div>
     </div>
   </section>
 
@@ -74,6 +171,7 @@
   <section id="tab-photos" class="tab" hidden>
     <label class="drop" id="drop">
       <input type="file" id="photoInput" accept="image/*" multiple hidden>
+      <svg class="drop-icon"><use href="#i-upload"/></svg>
       <strong>Drop card photos here</strong>
       <span>or click to choose them. One card per photo.</span>
     </label>
@@ -85,20 +183,88 @@
   </section>
 </main>
 
-<dialog class="picker panel" id="picker">
-  <form method="dialog" class="picker-head">
-    <h3>Pick the printing</h3>
-    <button class="link" value="cancel" aria-label="Close">Close</button>
-  </form>
-  <div class="picker-search">
-    <input id="pickerName" list="pickerNames" placeholder="Card name" autocomplete="off">
-    <datalist id="pickerNames"></datalist>
+<!-- CUSTOMIZE -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-label="Customize" aria-hidden="true">
+  <div class="drawer-head">
+    <h3>Customize</h3>
+    <button class="icon-btn" id="closeLook" aria-label="Close"><svg><use href="#i-close"/></svg></button>
   </div>
-  <p class="sub" id="pickerHint">Match the set symbol and collector number at the bottom of your card.</p>
-  <ul class="printings" id="printings"></ul>
-</dialog>
+  <div class="drawer-body">
+    <section class="opt">
+      <h4>Theme</h4>
+      <div class="seg" data-key="theme">
+        <button data-v="system">Auto</button><button data-v="dark">Dark</button><button data-v="light">Light</button><button data-v="oled">Black</button>
+      </div>
+    </section>
 
-<div class="toast" id="toast" hidden></div>
+    <section class="opt">
+      <h4>Accent color</h4>
+      <div class="swatches" id="accentSwatches"></div>
+      <label class="row-input">Custom <input type="color" id="accentCustom"></label>
+    </section>
+
+    <section class="opt">
+      <h4>Bin colors</h4>
+      <div class="bin-colors" id="binColors"></div>
+    </section>
+
+    <section class="opt">
+      <h4>Layout</h4>
+      <div class="seg" data-key="layout">
+        <button data-v="left">Camera left</button><button data-v="right">Camera right</button><button data-v="stack">Stacked</button>
+      </div>
+    </section>
+
+    <section class="opt">
+      <h4>Spacing</h4>
+      <div class="seg" data-key="density">
+        <button data-v="compact">Compact</button><button data-v="cozy">Cozy</button><button data-v="roomy">Roomy</button>
+      </div>
+    </section>
+
+    <section class="opt">
+      <h4>Font</h4>
+      <div class="seg" data-key="font">
+        <button data-v="sans">Sans</button><button data-v="rounded">Rounded</button><button data-v="serif">Serif</button><button data-v="mono">Mono</button>
+      </div>
+      <label class="slider">Text size <input type="range" min="13" max="19" step="1" data-key="size"><output id="sizeOut"></output></label>
+      <label class="slider">Corners <input type="range" min="0" max="26" step="1" data-key="radius"><output id="radiusOut"></output></label>
+    </section>
+
+    <section class="opt">
+      <h4>Show</h4>
+      <label class="switch"><input type="checkbox" data-key="glow"><span></span>Background glow</label>
+      <label class="switch"><input type="checkbox" data-key="finder"><span></span>Viewfinder corners</label>
+      <label class="switch"><input type="checkbox" data-key="shine"><span></span>Foil shine on the card</label>
+      <label class="switch"><input type="checkbox" data-key="stats"><span></span>Session stats</label>
+      <label class="switch"><input type="checkbox" data-key="source"><span></span>Price source</label>
+      <label class="switch"><input type="checkbox" data-key="match"><span></span>Match quality</label>
+      <label class="switch"><input type="checkbox" data-key="time"><span></span>Time column</label>
+      <label class="switch"><input type="checkbox" data-key="keys"><span></span>Keyboard hints</label>
+      <label class="switch"><input type="checkbox" data-key="motion"><span></span>Animations</label>
+    </section>
+
+    <button class="btn ghost reset" id="resetLook">Reset to default</button>
+  </div>
+</aside>
+
+<!-- PICK THE RIGHT CARD -->
+<div class="modal" id="pick" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-label="Which card is it?">
+    <div class="modal-head">
+      <svg><use href="#i-search"/></svg>
+      <input id="pickInput" type="search" placeholder="Which card is it? Type its name" autocomplete="off" spellcheck="false">
+      <button class="icon-btn" id="pickClose" aria-label="Close"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <div class="pick-body">
+      <img class="pick-scan" id="pickScan" alt="Your scan" hidden>
+      <div class="pick-results" id="pickResults"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden><svg><use href="#i-check"/></svg><span id="toastText"></span></div>
 <script src="/static/app.js"></script>
 </body>
 </html>
