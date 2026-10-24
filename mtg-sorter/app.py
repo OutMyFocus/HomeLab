@@ -3,6 +3,7 @@
     python app.py                  # webcam 0, then open http://localhost:5000
     python app.py --camera 1       # a different webcam
     python app.py --demo photos/   # no webcam: cycles through the photos in a folder
+    python app.py --offline        # no internet lookups: prices come from data/cards.db
 
 The page shows the live camera, the card it recognizes with its price and bin, this
 session's cards, and a Photos tab where you can drop in pictures to scan. Cards are
@@ -25,7 +26,8 @@ from mtgscanner import config
 from mtgscanner.collection import add_card, remove_last
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.recognize import identify_frame
-from mtgscanner.sorting import card_price, choose_bin
+from mtgscanner.live import Live
+from mtgscanner.sorting import bin_for_price, card_price
 from mtgscanner.vault_prices import VaultPrices
 
 WEB = Path(__file__).resolve().parent / "webui"
@@ -71,18 +73,24 @@ class DemoSource:
 # --- The scanner, running in the background ----------------------------------------
 
 class Scanner:
-    def __init__(self, matcher: Matcher, vault: VaultPrices | None, source):
-        self.matcher, self.vault, self.source = matcher, vault, source
+    def __init__(self, matcher: Matcher, vault: VaultPrices | None, source, live: Live | None = None):
+        self.matcher, self.vault, self.source, self.live = matcher, vault, source, live
         self.lock = threading.Lock()
         self.jpeg = None             # latest camera picture, with the outline drawn on
         self.status = "starting"     # "looking", "recognizing", "locked", "unknown"
         self.card: Card | None = None
+        self.chosen: Card | None = None   # a printing picked by hand for the card under the camera
         self.distance = None
         self.foil = False
         self.auto = False
         self.saved_this_card = False
         self.session: list[dict] = []
         self._streak_id, self._streak, self._empty = None, 0, 0
+
+    @property
+    def shown(self) -> Card | None:
+        """The card the page shows and saves: the picked printing, else the recognized one."""
+        return self.chosen or self.card
 
     def run(self):
         while True:
@@ -91,6 +99,8 @@ class Scanner:
                 time.sleep(0.2)
                 continue
             corners, card, dist = identify_frame(self.matcher, frame)
+            if card and self.live:
+                self.live.prefetch(card.id)   # today's price, ready by the time the card locks
             with self.lock:
                 self._update(corners, card, dist)
                 shown = frame.copy()
@@ -108,6 +118,7 @@ class Scanner:
             self._streak_id, self._streak = None, 0
             if self._empty > 8:    # card taken away: the next one can be saved
                 self.status, self.card, self.distance, self.saved_this_card = "looking", None, None, False
+                self.chosen = None
             return
         self._empty = 0
         card_id = card.id if card else None
@@ -119,8 +130,11 @@ class Scanner:
         elif self._streak >= config.STABLE_FRAMES:
             if self.card is None or self.card.id != card.id:
                 self.saved_this_card = False
+                self.chosen = None
             self.status, self.card = "locked", card
-            if self.auto and not self.saved_this_card:
+            # Auto-save waits for the live price lookup to finish (it takes a moment).
+            price_ready = not self.live or self.live.ready(card.id)
+            if self.auto and not self.saved_this_card and not self.chosen and price_ready:
                 self._save(card, self.foil)
                 self.saved_this_card = True
         else:
@@ -128,19 +142,28 @@ class Scanner:
 
     # Called with the lock held.
     def _save(self, card: Card, foil: bool):
-        bin_no, bin_label = choose_bin(card, foil, self.vault)
-        price = card_price(card, foil, self.vault)
-        add_card(config.COLLECTION_CSV, card, foil, bin_label, price)
-        self.session.append(card_info(card, foil, self.vault) | {"time": time.strftime("%H:%M:%S")})
+        info = card_info(card, foil, self.vault, self.live)
+        add_card(config.COLLECTION_CSV, card, foil, info["bin_label"], (info["price"], info["price_source"]), info["bin"])
+        self.session.append(info | {"time": time.strftime("%H:%M:%S")})
+
+    # Called with the lock held.
+    def _undo(self) -> bool:
+        if self.session and remove_last(config.COLLECTION_CSV):
+            self.session.pop()
+            self.saved_this_card = False
+            return True
+        return False
 
     def state(self):
         with self.lock:
             totals = {"count": len(self.session), "value": round(sum(c["price"] or 0 for c in self.session), 2), "bins": {}}
             for c in self.session:
                 totals["bins"][c["bin"]] = totals["bins"].get(c["bin"], 0) + 1
+            shown = self.shown
             return {
                 "status": self.status,
-                "card": card_info(self.card, self.foil, self.vault, self.distance) if self.card else None,
+                "card": card_info(shown, self.foil, self.vault, self.live, None if self.chosen else self.distance) if shown else None,
+                "picked": self.chosen is not None,
                 "saved": self.saved_this_card,
                 "foil": self.foil,
                 "auto": self.auto,
@@ -149,9 +172,9 @@ class Scanner:
             }
 
 
-def card_info(card: Card, foil: bool, vault, distance=None) -> dict:
-    price, source = card_price(card, foil, vault)
-    bin_no, bin_label = choose_bin(card, foil, vault)
+def card_info(card: Card, foil: bool, vault, live=None, distance=None) -> dict:
+    price, source = card_price(card, foil, vault, live)
+    bin_no, bin_label = bin_for_price(price)
     return {
         "id": card.id,
         "name": card.name,
@@ -166,7 +189,7 @@ def card_info(card: Card, foil: bool, vault, distance=None) -> dict:
         "bin_label": bin_label,
         # Scryfall serves the card's picture straight from its id.
         "image": f"https://api.scryfall.com/cards/{card.id}?format=image&version=normal",
-        "match": None if distance is None else ("good" if distance <= 60 else "fair"),
+        "match": None if distance is None else ("good" if distance <= config.GOOD_MATCH_DISTANCE else "fair"),
     }
 
 
@@ -174,6 +197,16 @@ def card_info(card: Card, foil: bool, vault, distance=None) -> dict:
 
 def create_app(scanner: Scanner) -> Flask:
     app = Flask(__name__, static_folder=None)
+    live = scanner.live
+
+    def lookup(card_id: str) -> Card | None:
+        """A card from the database, or from Scryfall if it's a printing we haven't fingerprinted."""
+        if live:
+            live.card_json(card_id)   # fetch today's price before the lock is taken
+        return scanner.matcher.get_card(card_id) or (live.card(card_id) if live else None)
+
+    def missing():
+        return jsonify({"error": "Unknown card"}), 404
 
     @app.get("/")
     def index():
@@ -197,7 +230,13 @@ def create_app(scanner: Scanner) -> Flask:
     def state():
         s = scanner.state()
         s["db_count"] = len(scanner.matcher.ids)
-        s["prices"] = f"Commander Vault prices, {scanner.vault.date}" if scanner.vault else "Scryfall prices (USD converted)"
+        parts = [f"Commander Vault prices, {scanner.vault.date}"] if scanner.vault else []
+        if live:
+            rate, where = live.usd_to_cad()
+            parts.append(f"Scryfall live prices, 1 USD = {rate:.4f} CAD ({where})")
+        else:
+            parts.append(f"Scryfall prices from the database, 1 USD = {config.USD_TO_CAD} CAD")
+        s["prices"] = " · ".join(parts)
         return jsonify(s)
 
     @app.post("/api/settings")
@@ -212,20 +251,66 @@ def create_app(scanner: Scanner) -> Flask:
     @app.post("/api/add")
     def add():
         body = request.get_json(force=True)
-        card = scanner.matcher.get_card(body["id"])
+        card = lookup(str(body.get("id", "")))
+        if card is None:
+            return missing()
         with scanner.lock:
             scanner._save(card, bool(body.get("foil")))
-            if scanner.card and scanner.card.id == card.id:
+            if scanner.shown and scanner.shown.id == card.id:
+                scanner.saved_this_card = True
+        return state()
+
+    @app.post("/api/choose")
+    def choose():
+        """Use a different printing for the card under the camera (or name an unrecognized one).
+        If the card was already saved, its row is swapped for the new printing."""
+        body = request.get_json(force=True)
+        card = lookup(str(body.get("id", "")))
+        if card is None:
+            return missing()
+        with scanner.lock:
+            resave = scanner.saved_this_card and scanner.session and scanner.shown \
+                and scanner.session[-1]["id"] == scanner.shown.id
+            if resave:
+                scanner._undo()
+            scanner.chosen = card
+            if resave:
+                scanner._save(card, scanner.foil)
                 scanner.saved_this_card = True
         return state()
 
     @app.post("/api/undo")
     def undo():
         with scanner.lock:
-            if scanner.session and remove_last(config.COLLECTION_CSV):
-                scanner.session.pop()
-                scanner.saved_this_card = False
+            scanner._undo()
         return state()
+
+    @app.get("/api/card")
+    def card():
+        """One card's price and bin, e.g. after ticking Foil on the Photos tab."""
+        found = lookup(request.args.get("id", ""))
+        if found is None:
+            return missing()
+        return jsonify(card_info(found, request.args.get("foil") == "1", scanner.vault, live))
+
+    @app.get("/api/search")
+    def search():
+        """Card names for the "Find a card" box."""
+        text = request.args.get("q", "").strip()
+        if len(text) < 2:
+            return jsonify([])
+        names = live.autocomplete(text) if live else []
+        return jsonify(names or scanner.matcher.search_names(text))
+
+    @app.get("/api/printings")
+    def printings():
+        """Every printing of a card name, with prices: the ones in the database plus Scryfall's."""
+        name = request.args.get("name", "").strip()
+        foil = request.args.get("foil") == "1"
+        cards = {c.id: c for c in (live.printings(name) if live and name else [])}
+        for c in scanner.matcher.printings(name):
+            cards.setdefault(c.id, c)
+        return jsonify([card_info(c, foil, scanner.vault, live) for c in cards.values()])
 
     @app.post("/api/photos")
     def photos():
@@ -241,7 +326,9 @@ def create_app(scanner: Scanner) -> Flask:
             elif card is None:
                 results.append({"file": f.filename, "error": "Card not recognized"})
             else:
-                results.append({"file": f.filename, "card": card_info(card, False, scanner.vault, dist)})
+                if live:
+                    live.card_json(card.id)
+                results.append({"file": f.filename, "card": card_info(card, False, scanner.vault, live, dist)})
         return jsonify(results)
 
     @app.get("/api/collection.csv")
@@ -259,12 +346,16 @@ def main():
     parser.add_argument("--demo", help="folder of photos to use instead of a webcam")
     parser.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to open it from other devices")
     parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument("--offline", action="store_true", help="don't look up today's prices or other printings online")
     args = parser.parse_args()
 
     matcher = Matcher(connect(config.DB_PATH))
     vault = VaultPrices.load(config.VAULT_PRICES)
+    live = None if args.offline else Live()
+    if live:
+        live.load_rate()
     source = DemoSource(args.demo) if args.demo else CameraSource(args.camera)
-    scanner = Scanner(matcher, vault, source)
+    scanner = Scanner(matcher, vault, source, live)
     threading.Thread(target=scanner.run, daemon=True).start()
 
     print(f"Loaded {len(matcher.ids)} cards. Open http://localhost:{args.port} in your browser.")

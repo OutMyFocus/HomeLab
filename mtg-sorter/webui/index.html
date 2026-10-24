@@ -28,7 +28,8 @@
       <aside class="current panel" id="current">
         <div class="empty-card" id="emptyCard">
           <div class="slot"></div>
-          <p>Put a card under the camera</p>
+          <p id="emptyText">Put a card under the camera</p>
+          <button class="btn" id="findBtn">Find a card by name</button>
         </div>
         <div class="card-view" id="cardView" hidden>
           <img id="cardImg" alt="">
@@ -39,6 +40,7 @@
             <div class="sub" id="cardSource"></div>
             <div class="bin" id="cardBin"></div>
             <div class="match" id="cardMatch"></div>
+            <button class="link" id="printBtn">Wrong printing?</button>
           </div>
         </div>
         <div class="controls">
@@ -82,6 +84,19 @@
     <div class="photo-grid" id="photoGrid"></div>
   </section>
 </main>
+
+<dialog class="picker panel" id="picker">
+  <form method="dialog" class="picker-head">
+    <h3>Pick the printing</h3>
+    <button class="link" value="cancel" aria-label="Close">Close</button>
+  </form>
+  <div class="picker-search">
+    <input id="pickerName" list="pickerNames" placeholder="Card name" autocomplete="off">
+    <datalist id="pickerNames"></datalist>
+  </div>
+  <p class="sub" id="pickerHint">Match the set symbol and collector number at the bottom of your card.</p>
+  <ul class="printings" id="printings"></ul>
+</dialog>
 
 <div class="toast" id="toast" hidden></div>
 <script src="/static/app.js"></script>

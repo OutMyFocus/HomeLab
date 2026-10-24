@@ -48,7 +48,7 @@ def scan_images(matcher: Matcher, paths: list[str], foil: bool, save: bool) -> N
         bin_no, bin_label = choose_bin(card, foil, VAULT)
         print(f"{path}: {describe(card, foil)} -> bin {bin_no} ({bin_label})  [distance {dist}]")
         if save:
-            add_card(config.COLLECTION_CSV, card, foil, bin_label, card_price(card, foil, VAULT))
+            add_card(config.COLLECTION_CSV, card, foil, bin_label, card_price(card, foil, VAULT), bin_no)
 
 
 def scan_webcam(matcher: Matcher, camera: int) -> None:
@@ -90,7 +90,7 @@ def scan_webcam(matcher: Matcher, camera: int) -> None:
             if saved_this_card:
                 lines.append("saved!")
             if auto and not saved_this_card:
-                add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT))
+                add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT), bin_no)
                 saved_this_card = True
                 print(f"saved: {describe(locked, foil)} -> bin {bin_no}")
         else:
@@ -112,7 +112,7 @@ def scan_webcam(matcher: Matcher, camera: int) -> None:
             auto = not auto
         elif key == ord(" ") and locked and not saved_this_card:
             bin_no, bin_label = choose_bin(locked, foil, VAULT)
-            add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT))
+            add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT), bin_no)
             saved_this_card = True
             print(f"saved: {describe(locked, foil)} -> bin {bin_no}")
 

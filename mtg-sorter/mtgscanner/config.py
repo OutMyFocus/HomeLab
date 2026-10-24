@@ -25,8 +25,9 @@ PRICE_BINS = [
 # Cards nobody has a price for (tokens, very old or obscure printings).
 NO_PRICE_BIN = (0, "Unknown price")
 
-# Used only for cards Commander Vault hasn't priced: Scryfall's USD price is
-# converted with this rate. Update it now and then.
+# Cards Commander Vault hasn't priced use Scryfall's USD price, converted with the
+# Bank of Canada's rate for the day. This rate is the fallback when that can't be
+# fetched (no internet, or app.py --offline). Update it now and then.
 USD_TO_CAD = 1.38
 
 # --- Recognition tuning ---------------------------------------------------
@@ -34,6 +35,8 @@ USD_TO_CAD = 1.38
 # fingerprints counts the bits that differ (0 means identical). Two unrelated
 # cards usually land around 128.
 MAX_MATCH_DISTANCE = 90
+# Matches at or below this distance are shown as "Good match"; above it, "Fair match".
+GOOD_MATCH_DISTANCE = 60
 
 # How many camera frames in a row must agree on the same card before we trust it.
 STABLE_FRAMES = 5
