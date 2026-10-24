@@ -35,6 +35,9 @@ def cards_from_sets(set_codes: list[str]) -> Iterator[dict]:
         url = f"{API}/cards/search?q=e:{code}&unique=prints"
         while url:
             resp = requests.get(url, headers=HEADERS, timeout=30)
+            if resp.status_code == 404:   # Scryfall's way of saying "no cards match"
+                raise SystemExit(f"No set with the code '{code}' on Scryfall. Set codes are the short "
+                                 "codes in each set's URL, like dmu or mkm.")
             resp.raise_for_status()
             page = resp.json()
             yield from page["data"]
@@ -91,7 +94,10 @@ def main() -> None:
 
     conn = connect(config.DB_PATH)
     known = {row[0] for row in conn.execute("SELECT id FROM cards")}
-    source = cards_from_bulk() if args.all else cards_from_sets(args.sets.lower().split(","))
+    codes = [c.strip().lower() for c in args.sets.split(",") if c.strip()] if args.sets else []
+    if not args.all and not codes:
+        parser.error("--sets needs at least one set code, e.g. --sets dmu,one")
+    source = cards_from_bulk() if args.all else cards_from_sets(codes)
 
     todo = []
     refreshed = 0
