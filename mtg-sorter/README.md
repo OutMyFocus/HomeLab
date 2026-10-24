@@ -91,8 +91,8 @@ python scan.py
 ```
 
 Put the card on a **plain, light-colored background** (white paper is perfect, since most
-cards have black borders) with even, white light. It also works on a wood table, but
-less reliably, especially under warm yellow bulbs. The outline turns green once the card is recognized.
+cards have black borders) with even, white light. A wood table or a playmat works too,
+as long as the light is even and not too warm or yellow. The outline turns green once the card is recognized.
 
 | Key | Does |
 |---|---|
@@ -147,14 +147,22 @@ so your prices stay on your computer.
 pytest
 ```
 
+Everything runs without a camera or internet: the tests draw fake cards, "photograph" them at
+angles on different tables, and fake Scryfall's answers. `tests/test_browser.py` also drives
+the real page in a headless browser, if you have Playwright
+(`pip install playwright && playwright install chromium`); otherwise it's skipped.
+
 ## Known limits (for now)
 
 - **Same art, different set.** Reprints that reuse the exact same art and frame can look
-  identical to the camera. The scanner picks one of them, so double-check the set on cards that matter.
+  identical to the camera. The scanner picks one of them and the page says "Same art in N
+  printings: check the set", so use **Wrong printing?** on cards that matter.
 - **Foil glare** can hide the card. Tilt your light or use a diffuser.
 - **Low-contrast art** (hazy, pale artwork) under warm lighting can fail to match.
   The camera rig's white LED and fixed card position fix most of this.
 - **Non-English cards** aren't in the default database.
+- **iPhone HEIC photos** can't be read on the Photos tab. Set the phone to take JPG
+  ("Most Compatible" in Camera settings) or convert them first.
 
 ---
 

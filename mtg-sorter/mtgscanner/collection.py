@@ -33,7 +33,7 @@ def remove_last(path: Path) -> bool:
     if not path.exists():
         return False
     with path.open(newline="", encoding="utf-8") as f:
-        rows = list(csv.reader(f))
+        rows = [r for r in csv.reader(f) if r]   # skip blank lines (a hand-edited file)
     if len(rows) < 2:
         return False
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -45,7 +45,7 @@ def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[fl
              bin_number: int | str = "") -> None:
     """price is (CAD price, source), as returned by sorting.card_price()."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    is_new = not path.exists()
+    is_new = not path.exists() or path.stat().st_size == 0   # an emptied file needs its header back
     if not is_new:
         _upgrade_header(path)
     cad, source = price

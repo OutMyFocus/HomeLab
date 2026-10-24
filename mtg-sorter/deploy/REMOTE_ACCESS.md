@@ -7,8 +7,9 @@ Two pieces, each doing one job:
 | **Tailscale** | SSH into the Pi, and open the app privately from your own devices | Only devices signed in to your tailnet |
 | **Cloudflare Tunnel** | The app at a real address like `https://mtg.example.com` | Anyone you allow in Cloudflare Access |
 
-Neither needs a port opened on your router. The app itself only listens on the Pi
-(`127.0.0.1:5000`); both services connect to it from there.
+Neither needs a port opened on your router. Both connect to the app on the Pi at
+`127.0.0.1:5000`. The app also answers on your home Wi-Fi at `http://mtgsorter.local:5000`
+(see the end of 2c to turn that off).
 
 > **The app has no login.** Anyone who can open it can scan, delete, and download your
 > collection. Don't publish it through Cloudflare without step 3c (Access) in front.
@@ -38,6 +39,24 @@ sudo systemctl daemon-reload && sudo systemctl restart mtg-sorter
 
 Useful later: `journalctl -u mtg-sorter -f` shows the app's output live, and
 `sudo systemctl restart mtg-sorter` picks up a `git pull`.
+
+### 1b. Keep it up to date from GitHub
+
+A timer checks GitHub a minute after boot and then every 5 minutes. When `main` has new
+commits it pulls them, reinstalls Python packages if `requirements.txt` changed, reinstalls
+these service files if they changed, and restarts the app. Your card database and collection
+live in `mtg-sorter/data/`, which isn't in git, so updates never touch them.
+
+```bash
+sudo cp mtg-sorter/deploy/mtg-sorter-update.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now mtg-sorter-update.timer
+systemctl list-timers mtg-sorter-update      # shows when it runs next
+journalctl -u mtg-sorter-update -n 20        # what the last updates did
+```
+
+It only fast-forwards. If you edit files in `~/HomeLab` on the Pi, updates stop (the log
+says so) until you undo the edits with `git checkout -- .` or commit and push them.
 
 If you stop the app from the service to run it by hand, use `sudo systemctl stop mtg-sorter`
 first, or the two will fight over port 5000.
@@ -81,9 +100,9 @@ The status shows an address like `https://mtgsorter.tail1234.ts.net`. Open it on
 your devices with Tailscale on. If it says HTTPS isn't enabled, follow its link to turn on
 HTTPS certificates for the tailnet, then run the command again. This setting survives reboots.
 
-The app only listens on the Pi, so `http://mtgsorter.local:5000` won't work any more; use the
-Tailscale address. If you'd rather keep the Wi-Fi address too, change `--host 127.0.0.1` to
-`--host 0.0.0.0` in the service file.
+The service file runs the app with `--host 0.0.0.0`, so `http://mtgsorter.local:5000` keeps
+working on your home Wi-Fi too. To allow only the Tailscale address, change it to
+`--host 127.0.0.1` in `deploy/mtg-sorter.service` and push; the updater installs it.
 
 ## 3. Cloudflare Tunnel on your domain
 

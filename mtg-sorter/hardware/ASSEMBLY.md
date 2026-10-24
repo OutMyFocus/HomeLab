@@ -168,11 +168,12 @@ This gets recognition working on the real camera before any moving parts.
 4. Start the app and open it from your laptop or phone (step 7 of the setup below). Put cards in
    the pocket and check they're recognized. Try a foil too.
 
-> **The app can't read the Pi camera yet.** `app.py` opens the camera with OpenCV's
-> `VideoCapture`, which works with USB webcams but not with the Camera Module 3 on a Pi 5
-> (that goes through `libcamera` / `picamera2`). It needs a small code change, a
-> `picamera2` camera source, before this stage works with the ribbon-cable camera. Until
-> then, a USB webcam plugged into the Pi works as-is.
+> **Camera not found?** Check with `rpicam-hello --list-cameras`. If it says "No cameras
+> available" with the cable seated properly, the Pi's auto-detect may be missing it. Edit
+> `/boot/firmware/config.txt`: change `camera_auto_detect=1` to `camera_auto_detect=0`, and
+> add `dtoverlay=imx708` and `dtoverlay=imx708,cam0` under `[all]` at the end. Reboot.
+> The app uses the Pi camera automatically when there is one (`--camera pi` forces it,
+> `--camera 0` uses a USB webcam instead).
 
 ### Raspberry Pi setup
 
@@ -251,11 +252,13 @@ cd ~/HomeLab/mtg-sorter && source .venv/bin/activate
 python app.py --host 0.0.0.0 --demo ~/photos
 ```
 
-Once there's a camera, drop `--demo ~/photos`. On your laptop or phone (same Wi-Fi), open
+Once the camera is connected, drop `--demo ~/photos` and the app uses it. On your laptop or phone (same Wi-Fi), open
 **http://mtgsorter.local:5000**. Press Ctrl+C in the terminal to stop it.
 
-**Getting updates later:** `cd ~/HomeLab && git pull`, then `pip install -r mtg-sorter/requirements.txt`
-inside the virtual environment.
+**Getting updates later:** to run the app on boot and keep it updated from GitHub by itself,
+follow steps 1 and 1b of [`deploy/REMOTE_ACCESS.md`](../deploy/REMOTE_ACCESS.md). By hand, it's
+`cd ~/HomeLab && git pull`, then `pip install -r mtg-sorter/requirements.txt` inside the virtual
+environment.
 
 ## Stage B: print the scan bed and chute
 

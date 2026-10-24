@@ -32,11 +32,13 @@ USD_TO_CAD = 1.38
 
 # --- Recognition tuning ---------------------------------------------------
 # Each card image turns into a 256-bit "fingerprint". The distance between two
-# fingerprints counts the bits that differ (0 means identical). Two unrelated
-# cards usually land around 128.
-MAX_MATCH_DISTANCE = 90
+# fingerprints counts the bits that differ (0 means identical). A well-lit scan of the
+# right card lands under 20; an overexposed one can reach about 50. Something that
+# isn't in the database (a sleeve, a hand, a non-Magic card) gets to about 75 for the
+# closest card, and closer the bigger the database is, so keep this well below that.
+MAX_MATCH_DISTANCE = 56
 # Matches at or below this distance are shown as "Good match"; above it, "Fair match".
-GOOD_MATCH_DISTANCE = 60
+GOOD_MATCH_DISTANCE = 24
 
 # How many camera frames in a row must agree on the same card before we trust it.
 STABLE_FRAMES = 5
