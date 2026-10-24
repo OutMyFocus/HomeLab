@@ -25,6 +25,7 @@ HEADERS = {"User-Agent": config.USER_AGENT, "Accept": "application/json"}
 FX_URL = "https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json?recent=1"
 
 CARD_TTL = 6 * 3600     # how long a fetched card (and its price) stays fresh, in seconds
+FAIL_TTL = 60           # how long to wait before retrying a lookup that failed (internet blip)
 RATE_TTL = 12 * 3600    # the exchange rate only changes once a day
 
 
@@ -86,9 +87,15 @@ class Live:
     def _fresh(self, card_id: str) -> tuple[float, dict | None] | None:
         with self._lock:
             hit = self._cards.get(card_id)
-        if hit and time.time() - hit[0] < CARD_TTL:
+        if hit and time.time() - hit[0] < (CARD_TTL if hit[1] else FAIL_TTL):
             return hit
         return None
+
+    def _cached(self, card_id: str) -> dict | None:
+        """The last answer for this card, fresh or not. None if it was never fetched or failed."""
+        with self._lock:
+            hit = self._cards.get(card_id)
+        return hit[1] if hit else None
 
     def card_json(self, card_id: str) -> dict | None:
         """The card's Scryfall data, fetching it now if it isn't cached. None if offline."""
@@ -96,6 +103,9 @@ class Live:
             return hit[1]
         js = self._get(f"{API}/cards/{quote(card_id)}")
         with self._lock:
+            # Keep the old answer if this refresh failed: stale prices beat no prices.
+            if js is None and (old := self._cards.get(card_id)) and old[1]:
+                js = old[1]
             self._cards[card_id] = (time.time(), js)
         return js
 
@@ -118,12 +128,13 @@ class Live:
 
     def ready(self, card_id: str) -> bool:
         """True once a lookup for this card has finished, whether or not it worked."""
-        return self._fresh(card_id) is not None
+        with self._lock:
+            return card_id in self._cards
 
     def prices(self, card_id: str) -> dict | None:
         """Cached Scryfall prices for a card (never waits on the network)."""
-        hit = self._fresh(card_id)
-        return hit[1].get("prices") if hit and hit[1] else None
+        js = self._cached(card_id)
+        return js.get("prices") if js else None
 
     def card(self, card_id: str) -> Card | None:
         js = self.card_json(card_id)

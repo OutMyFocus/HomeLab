@@ -1,0 +1,12 @@
+# Checks GitHub for updates 1 minute after boot, then every 5 minutes.
+# Install: sudo cp deploy/mtg-sorter-update.* /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now mtg-sorter-update.timer
+[Unit]
+Description=Check GitHub for MTG sorter updates every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

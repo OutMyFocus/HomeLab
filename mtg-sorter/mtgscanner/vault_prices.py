@@ -34,12 +34,21 @@ class VaultPrices:
     def price(self, card: Card, foil: bool) -> tuple[float, str] | None:
         """Return (CAD price, store name), or None if the Vault has no price for this card."""
         key = f"{card.name}|{card.set_code.upper()}|{card.collector_number}|{1 if foil else 0}"
-        if row := self.by_printing.get(key):
-            return row[0], row[2]
+        if (row := self.by_printing.get(key)) and _slot(row, 0) is not None:
+            return _slot(row, 0), (row[2] if len(row) > 2 and row[2] else "Commander Vault")
 
         stores = self.by_name.get(card.name) or self.by_name.get(card.name.split(" // ")[0]) or {}
         slot = 2 if foil else 0
-        if (f2f := stores.get("f2f")) and f2f[slot] is not None:
-            return f2f[slot], STORE_NAMES["f2f"]
-        others = [(row[slot], STORE_NAMES.get(s, s)) for s, row in stores.items() if row[slot] is not None]
+        if (f2f := stores.get("f2f")) and _slot(f2f, slot) is not None:
+            return _slot(f2f, slot), STORE_NAMES["f2f"]
+        others = [(_slot(row, slot), STORE_NAMES.get(s, s)) for s, row in stores.items() if _slot(row, slot) is not None]
         return min(others) if others else None
+
+
+def _slot(row, i):
+    """row[i] as a number, or None if the Vault left it out (a short row, null, or junk)."""
+    try:
+        value = row[i]
+        return None if value is None else float(value)
+    except (IndexError, TypeError, ValueError):
+        return None

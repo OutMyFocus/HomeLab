@@ -72,6 +72,19 @@ class Matcher:
         i = int(dists.argmin())
         return self.ids[i], int(dists[i])
 
+    def lookalikes(self, card_id: str, max_distance: int = 12) -> list[str]:
+        """Ids of other cards whose fingerprint is nearly identical to this card's.
+
+        Reprints that reuse the same art look the same to the camera, so a scan of one
+        could really be any of them. The page uses this to say "check the set".
+        """
+        try:
+            i = self.ids.index(card_id)
+        except ValueError:
+            return []
+        dists = _POPCOUNT[np.bitwise_xor(self.hashes, self.hashes[i])].sum(axis=1)
+        return [self.ids[j] for j in np.flatnonzero(dists <= max_distance) if j != i]
+
     def get_card(self, card_id: str) -> Card | None:
         """The card with this Scryfall id, or None if it isn't in the database."""
         with self._lock:
