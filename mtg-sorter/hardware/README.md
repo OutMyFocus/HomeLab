@@ -1,5 +1,7 @@
 # Hardware
 
+Step-by-step build: [ASSEMBLY.md](ASSEMBLY.md).
+
 - [Scan station](#scan-station): camera stand, print this first
 - [Feeder test rig](#feeder-test-rig): the first piece of the full sifter
 - [Scan bed and chute](#scan-bed-and-chute): the middle of the sifter: stops the card for its photo, then sorts it into a bin
