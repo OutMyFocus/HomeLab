@@ -1,6 +1,6 @@
 """The scanner as an app in your web browser.
 
-    python app.py                  # webcam 0, then open http://localhost:5000
+    python app.py                  # the Pi camera (or webcam 0), then open http://localhost:5000
     python app.py --camera 1       # a different webcam
     python app.py --demo photos/   # no webcam: cycles through the photos in a folder
     python app.py --offline        # no internet lookups: prices come from data/cards.db
@@ -24,6 +24,7 @@ import numpy as np
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 
 from mtgscanner import config
+from mtgscanner.camera import open_camera
 from mtgscanner.collection import add_card, remove_last
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.recognize import identify_frame
@@ -36,18 +37,7 @@ WEB = Path(__file__).resolve().parent / "webui"
 
 # --- Camera sources -------------------------------------------------------------
 
-class CameraSource:
-    def __init__(self, index: int):
-        self.cap = cv2.VideoCapture(index)
-        if not self.cap.isOpened():
-            raise SystemExit(f"Could not open camera {index}. Try --camera 1, or --demo <folder> to test without one.")
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-
-    def read(self):
-        ok, frame = self.cap.read()
-        return frame if ok else None
-
+# The real cameras (Pi camera or webcam) are in mtgscanner/camera.py.
 
 class DemoSource:
     """Pretends to be a camera: shows each photo for a few seconds, with a blank gap
@@ -362,7 +352,8 @@ def create_app(scanner: Scanner) -> Flask:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--camera", type=int, default=0, help="webcam number (default 0)")
+    parser.add_argument("--camera", default="auto",
+                        help='"pi" for the Pi camera, a webcam number, or "auto" (default: the Pi camera if there is one, else webcam 0)')
     parser.add_argument("--demo", help="folder of photos to use instead of a webcam")
     parser.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to open it from other devices")
     parser.add_argument("--port", type=int, default=5000)
@@ -374,7 +365,7 @@ def main():
     live = None if args.offline else Live()
     if live:
         live.load_rate()
-    source = DemoSource(args.demo) if args.demo else CameraSource(args.camera)
+    source = DemoSource(args.demo) if args.demo else open_camera(args.camera)
     scanner = Scanner(matcher, vault, source, live)
     threading.Thread(target=scanner.run, daemon=True).start()
 
