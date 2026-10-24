@@ -16,9 +16,10 @@ import argparse
 import cv2
 
 from mtgscanner import config
-from mtgscanner.camera import open_camera
+from mtgscanner.camera import PI_CAMERA, describe, open_camera, pi_camera_present
 from mtgscanner.collection import add_card
 from mtgscanner.database import Card, Matcher, connect
+from mtgscanner.exchange import load_rate
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.vault_prices import VaultPrices
 from mtgscanner.recognize import identify, identify_frame
@@ -49,11 +50,16 @@ def scan_images(matcher: Matcher, paths: list[str], foil: bool, save: bool) -> N
         bin_no, bin_label = choose_bin(card, foil, VAULT)
         print(f"{path}: {describe(card, foil)} -> bin {bin_no} ({bin_label})  [distance {dist}]")
         if save:
-            add_card(config.COLLECTION_CSV, card, foil, bin_label, card_price(card, foil, VAULT), bin_no)
+            add_card(config.COLLECTION_CSV, card, foil, bin_label, card_price(card, foil, VAULT))
 
 
-def scan_webcam(matcher: Matcher, camera: str) -> None:
-    cap = open_camera(camera)
+def scan_webcam(matcher: Matcher, camera: int) -> None:
+    try:
+        cap = open_camera(camera)
+    except RuntimeError:
+        raise SystemExit(f"Could not open camera {camera}. Try --camera 1")
+    fmt, size = describe(cap)
+    print(f"Camera {camera}: {size[0]}x{size[1]} {fmt}" + ("" if fmt in ("MJPG", "PICM") else " (not MJPG: expect a low frame rate)"))
 
     foil = False
     auto = False
@@ -62,8 +68,8 @@ def scan_webcam(matcher: Matcher, camera: str) -> None:
     frames_without_card = 0
 
     while True:
-        frame = cap.read()
-        if frame is None:
+        ok, frame = cap.read()
+        if not ok:
             break
         corners, card, dist = identify_frame(matcher, frame)
         locked: Card | None = None
@@ -89,7 +95,7 @@ def scan_webcam(matcher: Matcher, camera: str) -> None:
             if saved_this_card:
                 lines.append("saved!")
             if auto and not saved_this_card:
-                add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT), bin_no)
+                add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT))
                 saved_this_card = True
                 print(f"saved: {describe(locked, foil)} -> bin {bin_no}")
         else:
@@ -111,27 +117,27 @@ def scan_webcam(matcher: Matcher, camera: str) -> None:
             auto = not auto
         elif key == ord(" ") and locked and not saved_this_card:
             bin_no, bin_label = choose_bin(locked, foil, VAULT)
-            add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT), bin_no)
+            add_card(config.COLLECTION_CSV, locked, foil, bin_label, card_price(locked, foil, VAULT))
             saved_this_card = True
             print(f"saved: {describe(locked, foil)} -> bin {bin_no}")
 
-    cap.close()
+    cap.release()
     cv2.destroyAllWindows()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--image", nargs="+", help="scan photo file(s) instead of using the webcam")
-    parser.add_argument("--camera", default="auto",
-                        help='"pi" for the Pi camera, a webcam number, or "auto" (default: the Pi camera if there is one, else webcam 0)')
+    parser.add_argument("--camera", type=int, help="webcam number, -1 for the Pi camera (default: the Pi camera if there is one, else 0)")
     parser.add_argument("--foil", action="store_true", help="photo mode: treat cards as foil")
     parser.add_argument("--save", action="store_true", help="photo mode: add recognized cards to the collection CSV")
     args = parser.parse_args()
 
     global VAULT
     matcher = Matcher(connect(config.DB_PATH))
-    print(f"Loaded {len(matcher.ids)} cards from the database.")
+    print(f"Loaded {matcher.card_count} cards from the database.")
     VAULT = VaultPrices.load(config.VAULT_PRICES)
+    load_rate()
     if VAULT:
         print(f"Using Commander Vault prices from {VAULT.date}.")
     else:
@@ -139,7 +145,8 @@ def main() -> None:
     if args.image:
         scan_images(matcher, args.image, args.foil, args.save)
     else:
-        scan_webcam(matcher, args.camera)
+        camera = args.camera if args.camera is not None else (PI_CAMERA if pi_camera_present() else 0)
+        scan_webcam(matcher, camera)
 
 
 if __name__ == "__main__":
