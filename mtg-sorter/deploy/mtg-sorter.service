@@ -9,9 +9,10 @@ Wants=network-online.target
 [Service]
 User=nic
 WorkingDirectory=/home/nic/HomeLab/mtg-sorter
-# Only listens on the Pi itself. Tailscale Serve and the Cloudflare tunnel pass traffic in.
-# Until the camera is here, add: --demo /home/nic/photos
-ExecStart=/home/nic/HomeLab/mtg-sorter/.venv/bin/python app.py --host 127.0.0.1 --port 5000
+# Listens on the home network too (http://mtgsorter.local:5000) as well as through Tailscale Serve.
+# The app has no login: use --host 127.0.0.1 instead to keep it off the home network.
+# Uses the Pi camera; to test without one, add: --demo /home/nic/photos
+ExecStart=/home/nic/HomeLab/mtg-sorter/.venv/bin/python app.py --host 0.0.0.0 --port 5000
 Restart=on-failure
 RestartSec=5
 

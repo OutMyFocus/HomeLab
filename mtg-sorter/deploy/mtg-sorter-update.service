@@ -1,0 +1,10 @@
+# Pulls the latest main from GitHub and restarts the app if anything changed.
+# Started by mtg-sorter-update.timer; see deploy/update.sh.
+[Unit]
+Description=Update the MTG sorter from GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/nic/HomeLab/mtg-sorter/deploy/update.sh

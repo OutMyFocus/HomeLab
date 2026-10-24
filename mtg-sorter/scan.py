@@ -16,6 +16,7 @@ import argparse
 import cv2
 
 from mtgscanner import config
+from mtgscanner.camera import open_camera
 from mtgscanner.collection import add_card
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.sorting import card_price, choose_bin
@@ -51,10 +52,8 @@ def scan_images(matcher: Matcher, paths: list[str], foil: bool, save: bool) -> N
             add_card(config.COLLECTION_CSV, card, foil, bin_label, card_price(card, foil, VAULT), bin_no)
 
 
-def scan_webcam(matcher: Matcher, camera: int) -> None:
-    cap = cv2.VideoCapture(camera)
-    if not cap.isOpened():
-        raise SystemExit(f"Could not open camera {camera}. Try --camera 1")
+def scan_webcam(matcher: Matcher, camera: str) -> None:
+    cap = open_camera(camera)
 
     foil = False
     auto = False
@@ -63,8 +62,8 @@ def scan_webcam(matcher: Matcher, camera: int) -> None:
     frames_without_card = 0
 
     while True:
-        ok, frame = cap.read()
-        if not ok:
+        frame = cap.read()
+        if frame is None:
             break
         corners, card, dist = identify_frame(matcher, frame)
         locked: Card | None = None
@@ -116,14 +115,15 @@ def scan_webcam(matcher: Matcher, camera: int) -> None:
             saved_this_card = True
             print(f"saved: {describe(locked, foil)} -> bin {bin_no}")
 
-    cap.release()
+    cap.close()
     cv2.destroyAllWindows()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--image", nargs="+", help="scan photo file(s) instead of using the webcam")
-    parser.add_argument("--camera", type=int, default=0, help="webcam number (default 0)")
+    parser.add_argument("--camera", default="auto",
+                        help='"pi" for the Pi camera, a webcam number, or "auto" (default: the Pi camera if there is one, else webcam 0)')
     parser.add_argument("--foil", action="store_true", help="photo mode: treat cards as foil")
     parser.add_argument("--save", action="store_true", help="photo mode: add recognized cards to the collection CSV")
     args = parser.parse_args()
