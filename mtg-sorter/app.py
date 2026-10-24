@@ -1,22 +1,28 @@
-"""The scanner as an app in your web browser.
+"""The scanner as an app in your web browser. It scans every card the camera sees.
 
     python app.py                  # the Pi camera (or webcam 0), then open http://localhost:5000
-    python app.py --camera 1       # a different webcam
+    python app.py --camera 1       # a different webcam (you can also switch on the page)
     python app.py --demo photos/   # no webcam: cycles through the photos in a folder
-    python app.py --offline        # no internet lookups: prices come from data/cards.db
 
 The page shows the live camera, the card it recognizes with its price and bin, this
 session's cards, and a Photos tab where you can drop in pictures to scan. Cards are
 saved to data/collection.csv, the same file scan.py uses (ready for Commander Vault).
+
+It looks for cards anywhere in the picture. In Slots mode you draw a box for each card
+position instead (a tray, an open box, spots marked on the mat) and it looks only there,
+which also works for cards whose edges it can't find, like a card sitting in a box.
 
 On the Raspberry Pi, run it with --host 0.0.0.0 and open http://<pi's address>:5000
 from your laptop or phone.
 """
 
 import argparse
-import logging
+import itertools
+import json
+import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -24,12 +30,15 @@ import numpy as np
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 
 from mtgscanner import config
-from mtgscanner.camera import open_camera
-from mtgscanner.collection import add_card, remove_last
+from mtgscanner.camera import CameraSource, list_cameras  # noqa: F401  (tests patch these here)
+from mtgscanner.captures import CaptureLog, true_card
+from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect
-from mtgscanner.recognize import identify_frame
-from mtgscanner.live import Live
-from mtgscanner.sorting import bin_for_price, card_price
+from mtgscanner.exchange import load_rate
+from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
+from mtgscanner.sorting import card_price, choose_bin
+from mtgscanner.tracking import Track, free_number, pair_up
+from mtgscanner.training import forget_all, ready_to_learn, train
 from mtgscanner.vault_prices import VaultPrices
 
 WEB = Path(__file__).resolve().parent / "webui"
@@ -37,7 +46,10 @@ WEB = Path(__file__).resolve().parent / "webui"
 
 # --- Camera sources -------------------------------------------------------------
 
-# The real cameras (Pi camera or webcam) are in mtgscanner/camera.py.
+# CameraSource and list_cameras live in mtgscanner/camera.py; they're imported into this
+# module's namespace (tests swap them out here).
+SETTINGS_FILE = config.DATA_DIR / "app_settings.json"   # camera and "collect" picked on the page, for next time
+
 
 class DemoSource:
     """Pretends to be a camera: shows each photo for a few seconds, with a blank gap
@@ -45,8 +57,6 @@ class DemoSource:
 
     def __init__(self, folder: str, seconds: float = 4.0):
         exts = {".jpg", ".jpeg", ".png", ".webp"}
-        if not Path(folder).is_dir():
-            raise SystemExit(f"--demo needs a folder of photos, and {folder} isn't one.")
         self.frames = [cv2.imread(str(p)) for p in sorted(Path(folder).iterdir()) if p.suffix.lower() in exts]
         self.frames = [f for f in self.frames if f is not None]
         if not self.frames:
@@ -55,9 +65,11 @@ class DemoSource:
         self.start = time.time()
         h, w = self.frames[0].shape[:2]
         self.blank = np.full((h, w, 3), 235, np.uint8)
+        self.taken_at = 0.0
 
     def read(self):
         time.sleep(0.05)
+        self.taken_at = time.monotonic()
         t = (time.time() - self.start) % (len(self.frames) * self.seconds)
         i, into = divmod(t, self.seconds)
         return self.blank if into > self.seconds - 1 else self.frames[int(i)]
@@ -65,119 +77,283 @@ class DemoSource:
 
 # --- The scanner, running in the background ----------------------------------------
 
+def _smooth(old: float | None, new: float, weight: float = 0.2) -> float:
+    """A running average that follows changes gently (for the speed readout)."""
+    return new if old is None else old + weight * (new - old)
+
+
 class Scanner:
-    def __init__(self, matcher: Matcher, vault: VaultPrices | None, source, live: Live | None = None):
-        self.matcher, self.vault, self.source, self.live = matcher, vault, source, live
+    """Looks at every card in the camera picture, all the time, in a background thread."""
+
+    def __init__(self, matcher: Matcher, vault: VaultPrices | None, source):
+        self.matcher, self.vault, self.source = matcher, vault, source
         self.lock = threading.Lock()
-        self.jpeg = None             # latest camera picture, with the outline drawn on
-        self.status = "starting"     # "looking", "recognizing", "locked", "unknown"
-        self.card: Card | None = None
-        self.chosen: Card | None = None   # a printing picked by hand for the card under the camera
-        self.distance = None
+        self.jpeg = None             # latest camera picture for the page
+        self.frame_size = None       # (width, height) of the camera picture
+        self.started = False         # True once the first picture arrived
+        self.tracks: list[Track] = []  # the cards in view (see tracking.py)
+        self._ids = itertools.count(1)
         self.foil = False
         self.auto = False
-        self.saved_this_card = False
+        self.mode = "auto"          # "auto": cards anywhere in the picture; "slots": only in the boxes you drew
+        self.slots: list[list[float]] = []   # each [x0, y0, x1, y1], as shares of the picture's width and height
+        self.outline = (46, 119, 232)  # BGR; kept for scan.py-style drawing, the page draws its own outlines
         self.session: list[dict] = []
-        self._streak_id, self._streak, self._empty = None, 0, 0
+        self._next_source = None
+        self.collect = False         # keep every scan in data/captures (see captures.py)
+        self.learn = True            # learn each confirmed scan as soon as its card is taken away
+        self.captures = CaptureLog(config.CAPTURES_DIR)
+        self.perf = {"fps": None, "ms_frame": None, "ms_find": None, "ms_identify": None, "frame_age_ms": None}
+        self._last_frame_time = None
+        workers = config.IDENTIFY_THREADS or min(8, os.cpu_count() or 2)
+        self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="identify")
 
-    @property
-    def shown(self) -> Card | None:
-        """The card the page shows and saves: the picked printing, else the recognized one."""
-        return self.chosen or self.card
+    def use_source(self, source):
+        """Switch cameras. The background thread makes the swap between frames."""
+        with self.lock:
+            pending, self._next_source = self._next_source, source
+        if pending is not None:     # switched twice before the first one took over
+            pending.release()
+
+    def restore(self, saved: dict):
+        """Settings kept from last time (see SETTINGS_FILE)."""
+        self.collect, self.learn = bool(saved.get("collect")), bool(saved.get("learn", True))
+        self.mode = saved["mode"] if saved.get("mode") in ("auto", "slots") else "auto"
+        self.slots = clean_slots(saved.get("slots") or []) or []
+
+    def _find(self, frame):
+        """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
+        if self.mode != "slots" or not self.slots:
+            cards = find_cards(frame)
+            return cards, [None] * len(cards)
+        found = [(find_card_in_slot(frame, slot), n) for n, slot in enumerate(self.slots, 1)]
+        return [c for c, _ in found if c], [n for c, n in found if c]
 
     def run(self):
         while True:
-            try:
-                self.step()
-            except Exception:   # one bad frame must not stop the camera for good
-                logging.exception("Skipping a camera frame")
+            with self.lock:
+                new, self._next_source = self._next_source, None
+                if new is not None:
+                    self.forget_tracks()
+            if new is not None:
+                old, self.source = self.source, new
+                if hasattr(old, "release"):
+                    old.release()
+            frame = self.source.read()
+            if frame is None:
                 time.sleep(0.2)
+                continue
+            self.process(frame)
 
-    def step(self):
-        """Grab one frame, recognize it, and update what the page shows."""
-        frame = self.source.read()
-        if frame is None or getattr(frame, "ndim", 0) != 3:   # no picture (camera unplugged or confused)
-            time.sleep(0.2)
-            return
-        corners, card, dist = identify_frame(self.matcher, frame)
-        if card and self.live:
-            self.live.prefetch(card.id)   # today's price, ready by the time the card locks
+    def process(self, frame):
+        """Find every card in one camera picture and update what's known about each."""
+        t0 = time.perf_counter()
+        cards, numbers = self._find(frame)
+        t1 = time.perf_counter()
+        now = time.monotonic()
         with self.lock:
-            self._update(corners, card, dist)
-            shown = frame.copy()
-            if corners is not None:
-                color = (46, 119, 232) if self.status == "locked" else (200, 200, 200)
-                cv2.polylines(shown, [corners.astype(int)], True, color, max(2, shown.shape[1] // 300))
-            h, w = shown.shape[:2]
-            if w > 960:
-                shown = cv2.resize(shown, (960, int(h * 960 / w)))
-            self.jpeg = cv2.imencode(".jpg", shown, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+            matched, new, gone = pair_up(self.tracks, cards)
+            todo = [(t, outlines, t.needs_check(now)) for t, outlines in matched]
+        # Recognizing is the slow part, so it happens without holding the lock, and
+        # every card that needs a look is recognized at the same time on its own thread.
+        jobs = [outlines for _, outlines, check in todo if check] + list(new)
+        found = list(self._pool.map(lambda o: identify_outlines(self.matcher, frame, o), jobs)) if jobs else []
+        results = iter(found)
+        t2 = time.perf_counter()
+        with self.lock:
+            self.started = True
+            self.frame_size = (frame.shape[1], frame.shape[0])
+            for t, outlines, check in todo:
+                self._update(t, outlines, next(results) if check else None, frame)
+            for outlines in new:
+                number = next((n for c, n in zip(cards, numbers) if c is outlines), None)
+                t = Track(next(self._ids), number or free_number(self.tracks), outlines[0])
+                self.tracks.append(t)
+                self._update(t, outlines, next(results), frame)
+            for t in gone:
+                if not t.missing:
+                    t.missing_since = now
+                t.missing += 1
+                if t.gone(now):                # card taken away
+                    self.finish_capture(t)
+                    self.tracks.remove(t)
+            self.jpeg = self._encode(frame)
+            self._note_speed(t0, t1, t2)
 
-    def _update(self, corners, card, dist):
-        if corners is None:
-            self._empty += 1
-            self._streak_id, self._streak = None, 0
-            if self._empty == 9:   # card taken away: the next one can be saved
-                self.status, self.card, self.distance, self.saved_this_card = "looking", None, None, False
-                self.chosen = None    # (a card picked by name with nothing under the camera stays)
-            elif self._empty > 9:
-                self.status = "looking"
+    # Called with the lock held.
+    def _note_speed(self, t0, t1, t2):
+        end = time.perf_counter()
+        p = self.perf
+        p["ms_find"] = _smooth(p["ms_find"], 1000 * (t1 - t0))
+        p["ms_identify"] = _smooth(p["ms_identify"], 1000 * (t2 - t1))
+        p["ms_frame"] = _smooth(p["ms_frame"], 1000 * (end - t0))
+        if self._last_frame_time is not None and end > self._last_frame_time:
+            p["fps"] = _smooth(p["fps"], 1 / (end - self._last_frame_time))
+        self._last_frame_time = end
+        taken = getattr(self.source, "taken_at", 0.0)
+        if taken:
+            p["frame_age_ms"] = _smooth(p["frame_age_ms"], 1000 * max(0.0, time.monotonic() - taken))
+
+    # Called with the lock held.
+    def _update(self, t: Track, outlines, result: Match | None, frame):
+        t.missing = 0
+        if result is None:          # not checked this frame: just follow it
+            t.corners = outlines[0]
             return
-        self._empty = 0
-        card_id = card.id if card else None
-        self._streak = self._streak + 1 if card_id == self._streak_id else 1
-        self._streak_id = card_id
-        self.distance = dist
-        if card is None:
-            self.status, self.card = ("unknown" if self._streak >= config.STABLE_FRAMES else "recognizing"), None
-        elif self._streak >= config.STABLE_FRAMES:
-            if self.card is None or self.card.id != card.id:
-                self.saved_this_card = False
-                self.chosen = None
-            self.status, self.card = "locked", card
-            # Auto-save waits for the live price lookup to finish (it takes a moment).
-            price_ready = not self.live or self.live.ready(card.id)
-            if self.auto and not self.saved_this_card and not self.chosen and price_ready:
-                self._save(card, self.foil)
-                self.saved_this_card = True
+        card = result.card
+        t.corners, t.distance, t.margin = result.corners, result.distance, result.margin
+        t.candidates, t.checked_at, t.checked_time = result.candidates, result.corners.mean(axis=0), time.monotonic()
+        key = card.id if card else "unknown"
+        settled = t.note_check(key, result.confidence or "unknown")
+        fixed = t.fix[1] if t.fix and t.fix[0] == key else None
+        if not settled:
+            return                  # a card already decided stays on screen until the new answer is sure
+        self._keep_scan(t, frame, result.corners, card, result.distance)
+        shown = fixed or card
+        if shown is None:
+            if t.status != "unknown":
+                t.saved = False
+            t.status, t.card, t.confidence = "unknown", None, None
+            return
+        if t.card is None or t.card.id != shown.id:
+            t.saved = False         # a different card than before
+        t.card = shown
+        if fixed:
+            t.status, t.confidence = "locked", None            # you told it; no doubt about it
+        elif t.streak_conf == "unsure":
+            t.status, t.confidence = "unsure", "unsure"       # a guess, with the alternatives, never auto-saved
         else:
-            self.status = "recognizing"
+            t.status, t.confidence = "locked", t.streak_conf
+        if self.auto and t.status == "locked" and not t.saved:
+            self._save(shown, self.foil, t, auto=True)
 
     # Called with the lock held.
-    def _save(self, card: Card, foil: bool):
-        info = card_info(card, foil, self.vault, self.live)
-        add_card(config.COLLECTION_CSV, card, foil, info["bin_label"], (info["price"], info["price_source"]), info["bin"])
-        self.session.append(info | {"time": time.strftime("%H:%M:%S")})
+    def _save(self, card: Card, foil: bool, track: Track | None = None, auto: bool = False):
+        bin_no, bin_label = choose_bin(card, foil, self.vault)
+        price = card_price(card, foil, self.vault)
+        scanned_at = add_card(config.COLLECTION_CSV, card, foil, bin_label, price)
+        self.session.append(card_info(card, foil, self.vault) | {
+            "time": time.strftime("%H:%M:%S"), "scanned_at": scanned_at, "track": track.id if track else None})
+        if track:
+            track.saved = True
+            if track.card is None or track.card.id != card.id:
+                track.card, track.status, track.confidence = card, "locked", None
+            elif track.status == "unsure":
+                track.status, track.confidence = "locked", None    # you confirmed the guess
+            if track.capture and track.capture["card_id"] == card.id and track.capture["verdict"] != "corrected":
+                track.capture["verdict"] = "auto-saved" if auto else "saved"
+
+    # Called with the lock held. Keeps one scan per card put down (and another if the
+    # scanner changes its mind while the card is still there).
+    def _keep_scan(self, t: Track, frame, corners, card, dist):
+        key = card.id if card else "unknown"
+        if not self.collect or key == t.capture_key:
+            return
+        self.finish_capture(t)
+        camera = camera_info(self.source)
+        t.capture = self.captures.capture(frame, corners, card, dist, camera["name"] if camera else "demo")
+        t.capture_key = key
 
     # Called with the lock held.
-    def _undo(self) -> bool:
-        if self.session and remove_last(config.COLLECTION_CSV):
-            self.session.pop()
-            self.saved_this_card = False
-            return True
-        return False
+    def finish_capture(self, t: Track):
+        record, t.capture, t.capture_key = t.capture, None, None
+        if not record:
+            return
+        self.captures.finish(record)
+        truth = true_card(record, include_auto=False)    # only what you confirmed yourself
+        if self.learn and truth and record["verdict"] != "ignore":
+            self.matcher.add_learned(record["crop"], truth, record["_fp"])
+
+    # Called with the lock held.
+    def forget_tracks(self):
+        for t in self.tracks:
+            self.finish_capture(t)
+        self.tracks = []
+
+    def track(self, track_id) -> Track | None:
+        return next((t for t in self.tracks if t.id == track_id), None)
+
+    def _encode(self, frame) -> bytes:
+        """The camera picture for the page (the page draws the outlines itself)."""
+        h, w = frame.shape[:2]
+        if w > 1280:
+            frame = cv2.resize(frame, (1280, int(h * 1280 / w)), interpolation=cv2.INTER_AREA)
+        return cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
 
     def state(self):
         with self.lock:
             totals = {"count": len(self.session), "value": round(sum(c["price"] or 0 for c in self.session), 2), "bins": {}}
             for c in self.session:
                 totals["bins"][c["bin"]] = totals["bins"].get(c["bin"], 0) + 1
-            shown = self.shown
+            visible = sorted((t for t in self.tracks if not t.missing or t.status != "recognizing"), key=lambda t: t.number)
+            if not self.started:
+                status = "starting"
+            elif not visible:
+                status = "looking"
+            elif any(t.status == "recognizing" for t in visible):
+                status = "recognizing"
+            elif any(t.status == "locked" for t in visible):
+                status = "locked"
+            else:
+                status = "unsure" if any(t.status == "unsure" for t in visible) else "unknown"
+            w, h = self.frame_size or (1, 1)
             return {
-                "status": self.status,
-                "card": card_info(shown, self.foil, self.vault, self.live, None if self.chosen else self.distance, self.matcher) if shown else None,
-                "picked": self.chosen is not None,
-                "saved": self.saved_this_card,
+                "status": status,
+                "frame": {"w": w, "h": h},
+                "cards": [{
+                    "track": t.id,
+                    "number": t.number,
+                    "status": t.status,
+                    "saved": t.saved,
+                    "verdict": t.capture["verdict"] if t.capture else None,
+                    "corners": [[round(float(x) / w, 4), round(float(y) / h, 4)] for x, y in t.corners],
+                    "confidence": t.confidence,
+                    "distance": t.distance,
+                    "margin": t.margin,
+                    "card": card_info(t.card, self.foil, self.vault, None if t.fix else t.distance) if t.card else None,
+                    "candidates": [candidate_info(c, d, self.foil, self.vault) for c, d in t.candidates
+                                   if t.status in ("unsure", "unknown") and not (t.card and c.id == t.card.id)][:3],
+                } for t in visible],
                 "foil": self.foil,
                 "auto": self.auto,
+                "mode": self.mode,
+                "slots": self.slots,
+                "camera": camera_info(self._next_source or self.source),
+                "collect": self.collect,
+                "learn": self.learn,
+                "captures": self.captures.counts | {"open": sum(1 for t in self.tracks if t.capture)},
                 "session": self.session[::-1],
                 "totals": totals,
+                "perf": {k: (None if v is None else round(v, 1)) for k, v in self.perf.items()},
             }
 
 
-def card_info(card: Card, foil: bool, vault, live=None, distance=None, matcher: Matcher | None = None) -> dict:
-    price, source = card_price(card, foil, vault, live)
-    bin_no, bin_label = bin_for_price(price)
+def clean_slots(raw) -> list[list[float]] | None:
+    """Slots as the page sends them, [x0, y0, x1, y1] each as shares of the picture,
+    tidied up: clamped, corners in order, too-small ones dropped. None if malformed."""
+    try:
+        slots = []
+        for s in raw:
+            x0, y0, x1, y1 = (min(1.0, max(0.0, float(v))) for v in s)
+            (x0, x1), (y0, y1) = sorted((x0, x1)), sorted((y0, y1))
+            if x1 - x0 >= 0.02 and y1 - y0 >= 0.02:
+                slots.append([round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)])
+        return slots
+    except (TypeError, ValueError):
+        return None
+
+
+def camera_info(source) -> dict | None:
+    if not isinstance(source, CameraSource):
+        return None
+    if hasattr(source, "info"):
+        return source.info()
+    return {"index": source.index, "name": source.name}
+
+
+def card_info(card: Card, foil: bool, vault, distance=None) -> dict:
+    price, source = card_price(card, foil, vault)
+    bin_no, bin_label = choose_bin(card, foil, vault)
     return {
         "id": card.id,
         "name": card.name,
@@ -192,31 +368,20 @@ def card_info(card: Card, foil: bool, vault, live=None, distance=None, matcher: 
         "bin_label": bin_label,
         # Scryfall serves the card's picture straight from its id.
         "image": f"https://api.scryfall.com/cards/{card.id}?format=image&version=normal",
-        "match": None if distance is None else ("good" if distance <= config.GOOD_MATCH_DISTANCE else "fair"),
-        # Other printings that look identical to the camera (same art): the user should check the set.
-        "lookalikes": len(matcher.lookalikes(card.id)) if matcher and distance is not None else 0,
+        "match": None if distance is None else ("good" if distance <= 60 else "fair"),
     }
+
+
+def candidate_info(card: Card, distance: int, foil: bool, vault) -> dict:
+    """A possible other answer for a card the scanner isn't sure about."""
+    info = card_info(card, foil, vault, distance)
+    return {k: info[k] for k in ("id", "name", "set", "set_name", "number", "image", "price", "bin")} | {"distance": distance}
 
 
 # --- Web server ----------------------------------------------------------------------
 
 def create_app(scanner: Scanner) -> Flask:
     app = Flask(__name__, static_folder=None)
-    live = scanner.live
-
-    def lookup(card_id: str) -> Card | None:
-        """A card from the database, or from Scryfall if it's a printing we haven't fingerprinted."""
-        if live:
-            live.card_json(card_id)   # fetch today's price before the lock is taken
-        return scanner.matcher.get_card(card_id) or (live.card(card_id) if live else None)
-
-    def missing():
-        return jsonify({"error": "Unknown card"}), 404
-
-    def body() -> dict:
-        """The request's JSON object, or {} if there isn't one."""
-        js = request.get_json(force=True, silent=True)
-        return js if isinstance(js, dict) else {}
 
     @app.get("/")
     def index():
@@ -229,116 +394,210 @@ def create_app(scanner: Scanner) -> Flask:
     @app.get("/stream.mjpg")
     def stream():
         def frames():
+            last = None
             while True:
                 jpeg = scanner.jpeg
-                if jpeg:
+                if jpeg is not None and jpeg is not last:
+                    last = jpeg
                     yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
-                time.sleep(0.08)
+                time.sleep(0.04)
         return Response(frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
     @app.get("/api/state")
     def state():
         s = scanner.state()
-        s["db_count"] = len(scanner.matcher.ids)
-        parts = [f"Commander Vault prices, {scanner.vault.date}"] if scanner.vault else []
-        if live:
-            rate, where = live.usd_to_cad()
-            parts.append(f"Scryfall live prices, 1 USD = {rate:.4f} CAD ({where})")
-        else:
-            parts.append(f"Scryfall prices from the database, 1 USD = {config.USD_TO_CAD} CAD")
-        s["prices"] = " · ".join(parts)
+        s["db_count"] = scanner.matcher.card_count
+        s["learned"] = scanner.matcher.learned_count
+        rate = f"US$1 = CA${config.USD_TO_CAD:.4f}"
+        s["prices"] = f"Commander Vault prices, {scanner.vault.date}" if scanner.vault else f"Scryfall prices in CAD ({rate})"
         return jsonify(s)
 
     @app.post("/api/settings")
     def settings():
-        js = body()
+        body = request.get_json(force=True)
         with scanner.lock:
-            for key in ("foil", "auto"):
-                if key in js:
-                    setattr(scanner, key, bool(js[key]))
+            for key in ("foil", "auto", "collect", "learn"):
+                if key in body:
+                    setattr(scanner, key, bool(body[key]))
+            if "collect" in body and not scanner.collect:
+                for t in scanner.tracks:
+                    scanner.finish_capture(t)
+            if "collect" in body or "learn" in body:
+                save_settings(collect=scanner.collect, learn=scanner.learn)
+            if "slots" in body:
+                slots = clean_slots(body["slots"])
+                if slots is None:
+                    return jsonify({"error": "Slots must be [x0, y0, x1, y1] each, as shares of the picture"}), 400
+                scanner.slots = slots
+            if body.get("mode") in ("auto", "slots"):
+                scanner.mode = body["mode"]
+            if "slots" in body or "mode" in body:
+                scanner.forget_tracks()         # the cards on the table get their numbers afresh
+                save_settings(mode=scanner.mode, slots=scanner.slots)
+            outline = str(body.get("outline", ""))
+            if len(outline) == 7 and outline[0] == "#":
+                try:
+                    r, g, b = (int(outline[i:i + 2], 16) for i in (1, 3, 5))
+                    scanner.outline = (b, g, r)
+                except ValueError:
+                    pass
         return state()
+
+    @app.get("/api/cameras")
+    def cameras():
+        return jsonify(list_cameras())
+
+    @app.post("/api/camera")
+    def camera():
+        body = request.get_json(force=True)
+        index, name = int(body["index"]), body.get("name")
+        current = camera_info(scanner._next_source or scanner.source)
+        if current and current["index"] == index:
+            return state()
+        try:
+            source = CameraSource(index, name)
+        except RuntimeError as e:
+            return jsonify({"error": f"{e} Is another app using it?"}), 409
+        scanner.use_source(source)
+        save_settings(camera={"index": source.index, "name": source.name})
+        return state()
+
+    @app.post("/api/wrong")
+    def wrong():
+        """The scanner named the wrong card. Kept in the capture log to improve recognition."""
+        body = request.get_json(force=True)
+        with scanner.lock:
+            t = scanner.track(body.get("track"))
+            if t and t.capture:
+                t.capture["verdict"] = "wrong"
+        return state()
+
+    @app.get("/api/search")
+    def search():
+        text = request.args.get("q", "").strip()
+        cards = scanner.matcher.search(text) if len(text) >= 2 else []
+        return jsonify([card_info(c, False, scanner.vault) for c in cards])
+
+    @app.post("/api/correct")
+    def correct():
+        """You picked the card that's really under the camera: save it, and remember the
+        right answer for training."""
+        body = request.get_json(force=True)
+        card = scanner.matcher.get_card(body["id"])
+        with scanner.lock:
+            t = scanner.track(body.get("track"))
+            if t:
+                if t.capture:
+                    t.capture.update(verdict="corrected", correct_id=card.id)
+                t.fix = (t.streak_key or "unknown", card)
+                # If the wrong card was already saved for it, take that one back out.
+                wrong = next((e for e in reversed(scanner.session) if e["track"] == t.id), None) if t.saved else None
+                if wrong and remove_entry(config.COLLECTION_CSV, wrong["id"], wrong["scanned_at"]):
+                    scanner.session.remove(wrong)
+                t.status, t.card, t.confidence, t.candidates = "locked", card, None, []
+            scanner._save(card, bool(body.get("foil")), t)
+        return state()
+
+    # --- Train tab ---
+
+    def training_info():
+        include_auto = request.args.get("auto", "0") == "1"
+        rows = scanner.captures.rows()
+        if request.args.get("show") != "all":
+            rows = [r for r in rows if true_card(r) is None and r["verdict"] != "ignore"]
+        scans = []
+        for r in rows[::-1][:120]:
+            truth = true_card(r)
+            scans.append(r | {"true_name": scanner.matcher.get_card(truth).name if truth else ""})
+        return jsonify({
+            "counts": scanner.captures.counts,
+            "learned": scanner.matcher.learned_count,
+            "ready": len(ready_to_learn(scanner.matcher, scanner.captures, include_auto)),
+            "scans": scans,
+        })
+
+    @app.get("/api/training")
+    def training():
+        return training_info()
+
+    @app.post("/api/label")
+    def label():
+        """Label a collected scan: {crop, id} for the right card, or {crop, verdict}
+        with "saved" (the guess was right) or "ignore" (bad picture)."""
+        body = request.get_json(force=True)
+        changes = {"verdict": "corrected", "correct_id": body["id"]} if body.get("id") else \
+                  {"verdict": body["verdict"], "correct_id": ""} if body.get("verdict") in ("saved", "ignore") else None
+        if changes is None:
+            return jsonify({"error": "Send a card id, or verdict saved/ignore"}), 400
+        with scanner.lock:
+            if not scanner.captures.update(body["crop"], **changes):
+                return jsonify({"error": "That scan isn't in the log"}), 404
+        return training_info()
+
+    @app.post("/api/train")
+    def train_now():
+        include_auto = bool(request.get_json(force=True).get("include_auto", False))
+        with scanner.lock:
+            for t in scanner.tracks:     # include the cards on the table right now
+                scanner.finish_capture(t)
+            result = train(scanner.matcher, scanner.captures, include_auto)
+        return jsonify(result)
+
+    @app.post("/api/forget")
+    def forget():
+        return jsonify({"removed": forget_all(scanner.matcher)})
+
+    @app.get("/captures/<path:name>")
+    def capture_file(name):
+        return send_from_directory(config.CAPTURES_DIR, name)
 
     @app.post("/api/add")
     def add():
-        js = body()
-        card = lookup(str(js.get("id", "")))
-        if card is None:
-            return missing()
+        body = request.get_json(force=True)
+        card = scanner.matcher.get_card(body["id"])
         with scanner.lock:
-            scanner._save(card, bool(js.get("foil")))
-            if scanner.shown and scanner.shown.id == card.id:
-                scanner.saved_this_card = True
+            scanner._save(card, bool(body.get("foil")), scanner.track(body.get("track")))
         return state()
 
-    @app.post("/api/choose")
-    def choose():
-        """Use a different printing for the card under the camera (or name an unrecognized one).
-        If the card was already saved, its row is swapped for the new printing."""
-        card = lookup(str(body().get("id", "")))
-        if card is None:
-            return missing()
+    @app.post("/api/save_all")
+    def save_all():
+        """Save every recognized card on the table that isn't saved yet (not the unsure ones)."""
+        foil = bool(request.get_json(force=True).get("foil"))
         with scanner.lock:
-            resave = scanner.saved_this_card and scanner.session and scanner.shown \
-                and scanner.session[-1]["id"] == scanner.shown.id
-            if resave:
-                scanner._undo()
-            scanner.chosen = card
-            if resave:
-                scanner._save(card, scanner.foil)
-                scanner.saved_this_card = True
+            for t in sorted(scanner.tracks, key=lambda t: t.number):
+                if t.status == "locked" and not t.saved:
+                    scanner._save(t.card, foil, t)
         return state()
 
     @app.post("/api/undo")
     def undo():
         with scanner.lock:
-            scanner._undo()
+            if scanner.session and remove_last(config.COLLECTION_CSV):
+                undone = scanner.session.pop()
+                t = scanner.track(undone["track"])
+                if t and t.card and t.card.id == undone["id"]:
+                    t.saved = False
+                    if t.capture and t.capture["verdict"] in ("saved", "auto-saved"):
+                        t.capture["verdict"] = ""
         return state()
-
-    @app.get("/api/card")
-    def card():
-        """One card's price and bin, e.g. after ticking Foil on the Photos tab."""
-        found = lookup(request.args.get("id", ""))
-        if found is None:
-            return missing()
-        return jsonify(card_info(found, request.args.get("foil") == "1", scanner.vault, live))
-
-    @app.get("/api/search")
-    def search():
-        """Card names for the "Find a card" box."""
-        text = request.args.get("q", "").strip()
-        if len(text) < 2:
-            return jsonify([])
-        names = live.autocomplete(text) if live else []
-        return jsonify(names or scanner.matcher.search_names(text))
-
-    @app.get("/api/printings")
-    def printings():
-        """Every printing of a card name, with prices: the ones in the database plus Scryfall's."""
-        name = request.args.get("name", "").strip()
-        foil = request.args.get("foil") == "1"
-        cards = {c.id: c for c in (live.printings(name) if live and name else [])}
-        for c in scanner.matcher.printings(name):
-            cards.setdefault(c.id, c)
-        return jsonify([card_info(c, foil, scanner.vault, live) for c in cards.values()])
 
     @app.post("/api/photos")
     def photos():
         results = []
         for f in request.files.getlist("photos"):
-            data = f.read()
-            frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) if data else None
+            frame = cv2.imdecode(np.frombuffer(f.read(), np.uint8), cv2.IMREAD_COLOR)
             if frame is None:
-                results.append({"file": f.filename, "error": "Couldn't open this file (JPG, PNG or WebP only; iPhone HEIC photos need converting)"})
+                results.append({"file": f.filename, "error": "Couldn't open this file"})
                 continue
-            corners, card, dist = identify_frame(scanner.matcher, frame)
-            if corners is None:
+            # A photo can show a whole table of cards: report each one.
+            found = [identify_outlines(scanner.matcher, frame, outlines) for outlines in find_cards(frame)]
+            cards = [m for m in found if m.card]
+            if not found:
                 results.append({"file": f.filename, "error": "No card found in the photo"})
-            elif card is None:
-                results.append({"file": f.filename, "error": "Card not recognized"})
-            else:
-                if live:
-                    live.card_json(card.id)
-                results.append({"file": f.filename, "card": card_info(card, False, scanner.vault, live, dist, scanner.matcher)})
+            elif not cards:
+                results.append({"file": f.filename, "error": "Card not recognized" if len(found) == 1 else f"None of the {len(found)} cards recognized"})
+            for m in cards:
+                results.append({"file": f.filename, "card": card_info(m.card, False, scanner.vault, m.distance) | {"confidence": m.confidence}})
         return jsonify(results)
 
     @app.get("/api/collection.csv")
@@ -350,27 +609,65 @@ def create_app(scanner: Scanner) -> Flask:
     return app
 
 
+def load_settings() -> dict:
+    try:
+        return json.loads(SETTINGS_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(**changes):
+    try:
+        config.DATA_DIR.mkdir(exist_ok=True)
+        SETTINGS_FILE.write_text(json.dumps(load_settings() | changes))
+    except OSError:
+        pass
+
+
+def startup_camera(index: int | None) -> CameraSource:
+    """--camera if given; otherwise the camera picked last time on the page (found by
+    name, since numbers can change when cameras are plugged in); otherwise the first."""
+    cams = list_cameras()
+    names = {c["index"]: c["name"] for c in cams}
+    if index is None:
+        index = cams[0]["index"] if cams else 0
+        try:
+            last = load_settings()["camera"]
+            index = next(c["index"] for c in cams if c["name"] == last["name"])
+        except (KeyError, TypeError, StopIteration):
+            pass
+    try:
+        return CameraSource(index, names.get(index))
+    except RuntimeError as e:
+        raise SystemExit(f"{e} Try --camera 1, or --demo <folder> to test without one.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--camera", default="auto",
-                        help='"pi" for the Pi camera, a webcam number, or "auto" (default: the Pi camera if there is one, else webcam 0)')
+    parser.add_argument("--camera", type=int, help="webcam number, -1 for the Pi camera (default: the one picked last time, else the Pi camera or webcam 0)")
     parser.add_argument("--demo", help="folder of photos to use instead of a webcam")
     parser.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to open it from other devices")
     parser.add_argument("--port", type=int, default=5000)
-    parser.add_argument("--offline", action="store_true", help="don't look up today's prices or other printings online")
     args = parser.parse_args()
 
     matcher = Matcher(connect(config.DB_PATH))
     vault = VaultPrices.load(config.VAULT_PRICES)
-    live = None if args.offline else Live()
-    if live:
-        live.load_rate()
-    source = DemoSource(args.demo) if args.demo else open_camera(args.camera)
-    scanner = Scanner(matcher, vault, source, live)
+    rate, rate_date = load_rate()
+    print(f"US dollar = {rate:.4f} CAD" + (f" (Bank of Canada, {rate_date})" if rate_date else " (offline default)"))
+    source = DemoSource(args.demo) if args.demo else startup_camera(args.camera)
+    if isinstance(source, CameraSource):
+        print(f"Camera: {source.name}, {source.size[0]}x{source.size[1]} {source.format}"
+              + ("" if source.format in ("MJPG", "PICM") else " (not MJPG: expect a low frame rate)"))
+    scanner = Scanner(matcher, vault, source)
+    scanner.restore(load_settings())
     threading.Thread(target=scanner.run, daemon=True).start()
 
-    print(f"Loaded {len(matcher.ids)} cards. Open http://localhost:{args.port} in your browser.")
-    create_app(scanner).run(host=args.host, port=args.port, threaded=True)
+    print(f"Loaded {matcher.card_count} cards ({matcher.learned_count} learned scans). Open http://localhost:{args.port} in your browser.")
+    try:
+        create_app(scanner).run(host=args.host, port=args.port, threaded=True)
+    finally:
+        with scanner.lock:
+            scanner.forget_tracks()    # log the cards still on the table
 
 
 if __name__ == "__main__":
