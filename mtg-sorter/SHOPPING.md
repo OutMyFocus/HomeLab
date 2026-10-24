@@ -50,6 +50,13 @@ You're getting 2 rolls of Bambu PLA Tough with the printer. On top of those:
 - [ ] 18. [99% isopropyl alcohol](https://www.amazon.ca/s?k=99+isopropyl+alcohol): wipe the build plate so prints stick. About $10.
 - [ ] 19. [4×AA battery holder with switch](https://www.amazon.ca/s?k=4+aa+battery+holder+with+switch): test the feeder before the Pi is set up. About $5.
 
+## Soldering (only if you solder the header pins)
+
+The small motor driver boards often come with their header pins loose. You already have an iron.
+
+- [ ] 20. [Rosin-core solder, 63/37, 0.8 mm](https://www.amazon.ca/s?k=63%2F37+rosin+core+solder+0.8mm): easiest to work with for header pins. Contains lead, so wash your hands after. Lead-free (SAC305, 0.8 mm) works too but needs a hotter iron (~350 °C). About $12–18.
+- [ ] 21. [No-clean flux pen](https://www.amazon.ca/s?k=mg+chemicals+no+clean+flux+pen): MG Chemicals 8341 or similar. A dab on each pin before soldering, nothing to clean off after. About $12–15.
+
 ## Already have
 
 - [x] Bambu Lab A1 + AMS Lite
