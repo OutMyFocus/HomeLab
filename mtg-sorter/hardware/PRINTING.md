@@ -6,6 +6,21 @@ About 25 plates, roughly 1.6 kg of PLA (1 kg of it black) and 60-odd hours of pr
 The first three plates are a fit check: print those, try the fits, and only then commit
 the rest of the filament.
 
+## Which files, and how to open them
+
+`stl/` holds every build in this folder, so don't drag the whole folder in. The enclosure
+build needs the 26 `enc_*.stl`, `bed_chute_bed_side_left_enclosure.stl`,
+`bed_chute_bed_side_right_enclosure.stl`, `feeder_stand_mid.stl`, and from Part 2:
+`bed_chute_bed_plate`, `chute`, `trapdoor` + `trapdoor_left`, `trapdoor_mount` +
+`trapdoor_mount_left`, `hinge_lug` + `hinge_lug_left`, `pin_rocker`, `tilt_bracket`,
+`tower_post`, `camera_head`, and the feeder's `hopper`, `gate` and `roller`.
+Skip `bed_chute_frame_side`, `front_bar`, `bin`, the plain `bed_side_left/right`,
+`feeder_stand`, `feeder_stand_tall` and the `scan_station_*` files.
+
+In Bambu Studio use File → Import, pick only the files for one plate, and when it asks
+"Load these files as a single object with multiple parts?" answer **No**. Answering Yes
+merges them into one giant object (that's the 472 mm "bed_chute_bed_plate" error).
+
 ## Settings
 
 Start every plate from **0.20 mm Standard @BBL A1** with a **PLA** filament profile
