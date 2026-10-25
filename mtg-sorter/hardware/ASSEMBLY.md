@@ -433,7 +433,8 @@ names are in the README.
 ## 1. Bench work
 
 1. **Floor:** join `floor_fl` + `floor_fr` and `floor_bl` + `floor_br` with splices in the
-   pockets underneath (M2 screws or CA glue), then the front pair to the back pair.
+   pockets underneath (M2 screws or CA glue), then the front pair to the back pair. Stick
+   the six rubber feet in the recesses underneath.
 2. **Bridge:** join `bridge_front` + `bridge_back` the same way. Screw the two new bed walls
    (`..._enclosure.stl`) to it from below (M3 into the holes in their bottom edges), the
    bed plate between them, then the tilt bracket, pins and camera tower exactly as in
@@ -445,11 +446,12 @@ names are in the README.
 
 ## 2. Assembly, bottom up
 
-1. Stand the four `post`s on the table. Slide the `fascia` (grooves at the front), the four
-   `side` pieces (two per side, pockets facing in, splice them) and the `back` panel into
-   the grooves.
-2. Lay the floor inside. Fix the Pi (4 × M2.5) and the PCA9685 to the standoffs, the motor
-   driver with a zip tie. Ports face the cut-outs in the back panel.
+1. Fix the Pi (4 × M2.5) and the PCA9685 to the standoffs on the floor, the motor driver
+   with a zip tie. The Pi's ports face the back.
+2. Push the four `post`s onto their pegs at the corners. Slide the `fascia` (light slot at
+   the top, `light_bar` glued behind it), the four `side` pieces (two per side, pockets
+   facing in, splice them) and the `back` panel down the posts' grooves into the groove in
+   the floor. The Pi's ports line up with the cut-outs in the back panel.
 3. Stand the two `divider`s in the floor grooves, flanges facing out.
 4. Lower the bridge (with the whole mechanism on it) onto the dividers' flanges and the two
    `leg`s at the back; screw it to the flanges (M3, 3 per side). Wire everything up (Stage C).
