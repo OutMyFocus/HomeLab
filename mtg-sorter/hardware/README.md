@@ -5,6 +5,7 @@ Step-by-step build: [ASSEMBLY.md](ASSEMBLY.md).
 - [Scan station](#scan-station): camera stand, print this first
 - [Feeder test rig](#feeder-test-rig): the first piece of the full sifter
 - [Scan bed and chute](#scan-bed-and-chute): the middle of the sifter: stops the card for its photo, then sorts it into a bin
+- [Enclosure](#enclosure): the sleek box around it all, with Nic's storage drawers as the bins
 - [Full sifter concept](#full-sifter-concept): where it's all heading
 
 # Scan station
@@ -213,3 +214,79 @@ All print flat, as they open, with no supports. 15–20% infill is fine.
 A PCA9685 servo board connects all four servos to the Raspberry Pi. The feeder rig sits
 behind the bed on a taller stand (`stand_h = 203` in `feeder_test.scad`), so cards come
 off its exit shelf straight onto the bed.
+
+# Enclosure
+
+`enclosure.scad`, `sorter_drawer.scad`. A countertop box in the style of the Roca Sorter:
+black shell with rounded corners, a lighter band across the front, the scan bed sunk into
+the top deck, a rounded tower over the hopper and a rounded arm over the camera post.
+Everything inside is the same bed, pins, camera tower, chute and feeder as above.
+
+![front](img/enclosure_front.png)
+![inside](img/enclosure_inside.png)
+
+The three bins are **drawers that fit the cubbies of Nic's card shelf** (MakerWorld
+[Modular TCG Card Storage](https://makerworld.com/en/models/1225302-modular-tcg-card-storage)),
+with a 3 × 4 toploader pocket in the front for a display card, like the
+[Card Catalog](https://makerworld.com/en/models/3016550-card-catalog-v1-0) drawers. A full
+drawer slides out of the sorter and straight into the shelf.
+
+> **The drawer size is still a placeholder** (`dr_w`, `dr_h`, `dr_l` at the top of
+> `enclosure.scad`: 80 × 100 × 250 mm). It has to be measured from the MakerWorld file
+> before the dock, the fascia and the drawers are printed. Everything else follows from it.
+
+## How it goes together
+
+```
+            ┌───────── deck (4 tiles, screwed to the posts) ─────────┐
+   post ──► │  fascia  │  scan bay  │  hopper tower  │  back panel  │ ◄── post
+            │ ┌──────┐ │   bridge plate: bed walls, chute, feeder   │
+            │ │drawer│ │ ───────────────────────────────────────────│
+            │ │drawer│ │  dividers carry the bridge │  Pi bay       │
+            │ │drawer│ │ ───────────── floor (4 tiles) ─────────────│
+            └──────────────────────────────────────────────────────┘
+```
+
+- Four **corner posts** with grooves. The **side**, **fascia** and **back** panels slide
+  down into the grooves.
+- The **floor** tiles sit inside the panels. The front ones are the drawer dock: two
+  **dividers** stand in grooves in the floor, between the drawers.
+- The **bridge** is the plate the mechanism stands on, above the drawers. It rests on the
+  dividers' top flanges at the front and on two **legs** at the back. The bed walls screw
+  to it with a new foot flange (`wall_z0 = 111` in `bed_chute.scad`), the feeder stands on
+  it on a shorter stand (`stand_h = 92` in `feeder_test.scad`), and an upstand at its
+  front holds the chute's front axle instead of `front_bar`. Cards fall through openings
+  in it into the drawers.
+- The **deck** tiles screw down onto the posts. The bay opening fits round the bed walls;
+  the camera post comes up through a hole and gets a round **sleeve** and a **head cover**;
+  the **tower** sits over the hopper, with a lid.
+- The Pi, PCA9685 and motor driver sit in the bay behind the dock, under the bridge, on
+  standoffs in the floor. Ports and vents are cut in the back panel.
+
+Plates too big for the 256 mm bed are split into tiles that meet at a seam, and joined on
+the bench with **splice** strips that sit in pockets on the underside (M2 screws or glue).
+
+## Parts to print (`stl/enc_*.stl`)
+
+| File | How many | Colour | Notes |
+|---|---|---|---|
+| `post` | 4 | black | prints standing, 208 mm tall |
+| `side` | 4 | black | two per side; flip the second one end for end |
+| `fascia` | 1 | **dark grey** | the lighter band across the front |
+| `back` | 1 | black | port and vent cut-outs |
+| `floor_fl`, `floor_fr`, `floor_bl`, `floor_br` | 1 each | any | |
+| `deck_fl`, `deck_fr`, `deck_bl`, `deck_br` | 1 each | black | print as they open (upside down) |
+| `divider` | 2 | any | |
+| `bridge_front`, `bridge_back` | 1 each | any | |
+| `leg` | 2 | any | |
+| `splice` | 10 | any | |
+| `tower`, `tower_lid` | 1 each | black / dark grey | |
+| `post_sleeve`, `head_cover` | 1 each | dark grey | |
+| `sorter_drawer`, `sorter_drawer_front` | 3 each | your choice | from `sorter_drawer.scad` |
+
+Plus `stl/bed_chute_bed_side_left_enclosure.stl` and `..._right_enclosure.stl` (the bed
+walls starting at the bridge, with screw holes in their bottom edge) and
+`stl/feeder_stand_mid.stl` (92 mm). `frame_side`, `front_bar` and `bin` are not used.
+`export_enclosure.sh` regenerates all of these.
+
+All flat parts print as they open, no supports, 0.2 mm, 15–20% infill. The posts stand up.

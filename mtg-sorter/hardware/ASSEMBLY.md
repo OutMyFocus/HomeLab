@@ -7,7 +7,9 @@ How to put the machine together, in the order you'll actually build it:
    Do this first and get it working before buying round 2.
 2. [**Part 2: the full machine**](#part-2-the-full-machine). The Pi, camera, scan bed,
    chute and bins, once round 2 arrives.
-3. [**Things the repo doesn't decide yet**](#things-the-repo-doesnt-decide-yet). Read this
+3. [**Part 3: the enclosure**](#part-3-the-enclosure). The sleek box around it, with your
+   storage drawers as the bins. Build it once the open machine works.
+4. [**Things the repo doesn't decide yet**](#things-the-repo-doesnt-decide-yet). Read this
    before round 2, because a few of them change what you build.
 
 Card path, so the directions make sense: **hopper → roller pushes the bottom card out
@@ -417,6 +419,49 @@ the bin → pins drop → card slides into the chute → doors open (bin 2) or t
 
 ---
 
+# Part 3: the enclosure
+
+The box from [`README.md`, Enclosure](README.md#enclosure). It replaces `frame_side`,
+`front_bar` and the three `bin`s; everything else from Part 2 stays. Print list and part
+names are in the README.
+
+> **Wait for the drawer size.** Almost every panel is sized from the storage drawer
+> (`dr_w`, `dr_h`, `dr_l` in `enclosure.scad`). Until that's measured from the MakerWorld
+> file, the STLs are for a placeholder 80 × 100 × 250 mm drawer. Run `export_enclosure.sh`
+> after changing it.
+
+## 1. Bench work
+
+1. **Floor:** join `floor_fl` + `floor_fr` and `floor_bl` + `floor_br` with splices in the
+   pockets underneath (M2 screws or CA glue), then the front pair to the back pair.
+2. **Bridge:** join `bridge_front` + `bridge_back` the same way. Screw the two new bed walls
+   (`..._enclosure.stl`) to it from below (M3 into the holes in their bottom edges), the
+   bed plate between them, then the tilt bracket, pins and camera tower exactly as in
+   Part 2, Stage D. Screw the chute's front axle through the upstand at the front.
+3. **Deck:** join `deck_fl` + `deck_fr`, and `deck_bl` + `deck_br`. Leave the front pair and
+   back pair separate: the back pair lifts off for access to the Pi bay.
+4. **Drawers:** glue a `sorter_drawer_front` to each `sorter_drawer` (2 mm proud).
+   Slide a toploader with a card into the pocket from the top.
+
+## 2. Assembly, bottom up
+
+1. Stand the four `post`s on the table. Slide the `fascia` (grooves at the front), the four
+   `side` pieces (two per side, pockets facing in, splice them) and the `back` panel into
+   the grooves.
+2. Lay the floor inside. Fix the Pi (4 × M2.5) and the PCA9685 to the standoffs, the motor
+   driver with a zip tie. Ports face the cut-outs in the back panel.
+3. Stand the two `divider`s in the floor grooves, flanges facing out.
+4. Lower the bridge (with the whole mechanism on it) onto the dividers' flanges and the two
+   `leg`s at the back; screw it to the flanges (M3, 3 per side). Wire everything up (Stage C).
+5. Put `feeder_stand_mid` in the fence on the bridge with the hopper on it, exit shelf facing
+   the bed.
+6. Slide the `post_sleeve` over the camera post, lay the front deck on, then the back deck.
+   Screw both to the posts (M3, countersunk, 4 corners). Push the `head_cover` over the
+   camera head, the `tower` over the hopper, and its lid on.
+7. Slide the three drawers in.
+
+---
+
 # Things the repo doesn't decide yet
 
 | # | Gap | Why it matters | Suggested answer |
@@ -424,7 +469,7 @@ the bin → pins drop → card slides into the chute → doors open (bin 2) or t
 | 1 | **No motor or servo code.** `app.py` and `mtgscanner/` only recognize and price cards. There's no `send_to_bin`, no pin numbers, no servo angles. | The machine can't sort until it's written. | Write it after the feeder test, using the wiring above. |
 | 2 | **The code has 4 bins, the machine has 3.** `config.py` sends cards to bin 0 (no price), 1 (bulk), 2 ($1–10) and 3 ($10+). | Bin 0 has nowhere to go. | Merge "no price" into bin 1, or leave them on the bed for you to pull by hand. |
 | 3 | **Servo model.** The shopping list says 4× MG90S; `hardware/README.md` says SG90 for the pins and trapdoors. | None really: same size and screw holes. | MG90S everywhere is fine, and stronger. |
-| 4 | **Nothing fastens the three assemblies together.** The bed walls, the frame (with the bins), and the tall feeder stand each stand on the table separately. The chute hangs between the front bar (frame) and the tilt servo (bed walls), so if they shift, the tray binds. | Alignment by eye, every time. | Screw or hot-glue all three to one baseboard (a piece of plywood about 30 × 35 cm) once it's lined up. |
+| 4 | **Nothing fastens the three assemblies together** in the open-frame build. The bed walls, the frame (with the bins), and the tall feeder stand each stand on the table separately. | Alignment by eye, every time. | The enclosure (Part 3) fixes this: everything sits on one bridge plate. Until then, hot-glue them to a baseboard. |
 | 5 | **Where the Pi sits, and cable length.** The camera on the tower is about 30 cm off the table. The 300 mm cable may not reach a Pi on the table. | You might need a longer cable. | Mount the Pi on the right bed wall or frame side; check the reach before ordering anything. |
 | 6 | **Servo angles are from the CAD, not tested.** Pins 28°, tilt ±25°, doors 90°. | Real servos vary by a few degrees. | Find each end position with the test snippet and write them down. |
 | 7 | **Trapdoor hinge pin.** The design says "3 mm screw or filament", but the holes are 2.9–3.2 mm and filament is 1.75 mm. | Filament would rattle. | Use M3 screws (they're in the screw kit). |
