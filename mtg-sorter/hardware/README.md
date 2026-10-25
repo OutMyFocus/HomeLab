@@ -195,7 +195,7 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 |---|---|---|---|
 | `post_front`, `post_back` | 2 each | black | print standing, pegs up, 204 mm tall |
 | `side` | 4 | black | two per side; flip the second one end for end |
-| `fascia_l`, `fascia_m`, `fascia_r` | 1 each | **dark grey** | the lighter band across the front, left to right |
+| `fascia_l`, `fascia_m`, `fascia_r` | 1 each | black (dark grey later, if you like) | the band across the front, left to right |
 | `light_bar` | 1 | **white** | behind the three slots, glued across the fascia seams |
 | `back_l`, `back_r` | 1 each | black | port and vent cut-outs; l/r as seen from the front |
 | `floor_fl`, `floor_fr`, `floor_bl`, `floor_br` | 1 each | black | the base plate; its edge shows |
@@ -204,8 +204,8 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `bridge_front`, `bridge_back` | 1 each | any | |
 | `leg` | 2 | any | |
 | `splice` | 10 | any | |
-| `tower`, `tower_lid` | 1 each | black / dark grey | |
-| `post_sleeve`, `head_cover` | 1 each | dark grey | |
+| `tower`, `tower_lid` | 1 each | black | |
+| `post_sleeve`, `head_cover` | 1 each | black | |
 | Card Catalog v1.2 drawer + drawer top | 3 each | your choice | from the MakerWorld 3MF, not this repo |
 
 Plus `stl/bed_chute_bed_side_left_enclosure.stl` and `..._right_enclosure.stl` (the bed
@@ -216,7 +216,7 @@ flat parts (floor and deck tiles) are 146 × 240 mm, and the shell is 292 wide, 
 212 tall plus the tower and the camera arm.
 
 All flat parts print as they open, no supports, 0.2 mm, 15–20% infill. The posts stand up.
-**[`PRINTING.md`](PRINTING.md) has the plate-by-plate print order, the slicer settings
+**[`bambu/MTG_Sorter_Enclosure.3mf`](bambu/) is all of it as one Bambu Studio project (File → Open Project), every plate laid out and set up. [`PRINTING.md`](PRINTING.md) has the plate-by-plate print order, the slicer settings
 per part, colours, and the three fit-check plates to print first.**
 Every seam between two tiles has a small V along it on the visible face, so the joints
 read as panel lines rather than cracks, and the deck has a 2 mm chamfer round its top
