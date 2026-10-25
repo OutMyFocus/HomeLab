@@ -315,6 +315,8 @@ flat parts (floor and deck tiles) are 146 × 240 mm, and the shell is 292 wide, 
 212 tall plus the tower and the camera arm.
 
 All flat parts print as they open, no supports, 0.2 mm, 15–20% infill. The posts stand up.
+**[`PRINTING.md`](PRINTING.md) has the plate-by-plate print order, the slicer settings
+per part, colours, and the three fit-check plates to print first.**
 Every seam between two tiles has a small V along it on the visible face, so the joints
 read as panel lines rather than cracks, and the deck has a 2 mm chamfer round its top
 edges and its openings.

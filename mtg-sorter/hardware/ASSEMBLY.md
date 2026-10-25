@@ -423,7 +423,8 @@ the bin → pins drop → card slides into the chute → doors open (bin 2) or t
 
 The box from [`README.md`, Enclosure](README.md#enclosure). It replaces `frame_side`,
 `front_bar` and the three `bin`s; everything else from Part 2 stays. Print list and part
-names are in the README.
+names are in the README; the print order, slicer settings and the fit-check plates to
+print first are in [`PRINTING.md`](PRINTING.md).
 
 > **The drawers are Card Catalog v1.2** (MakerWorld 3016550). The dock is sized from
 > Nic's 3MF of it (the `dr_*` block in `enclosure.scad`), so print three drawers and three
