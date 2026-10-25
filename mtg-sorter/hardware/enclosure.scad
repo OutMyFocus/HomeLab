@@ -20,11 +20,15 @@
 // then the joined plate goes in as one piece.
 //
 // Printable parts (set `epart`, F6, F7). No supports, 0.2 mm, 15-20% infill:
-//   post          x4    16 mm quarter-round corner post, prints standing (pegs up)
+//   post_front    x2    16 mm quarter-round corner post, prints standing (pegs up); its inner
+//                       face is the dock's cheek, the outer drawer plate slides along it
+//   post_back     x2    same, with the back panel's groove running the full height
 //   side          x4    side panel half (two per side, flip one end for end)
-//   fascia              the band above the drawers. Print it in a lighter colour
-//   light_bar           white strip behind the slot in the fascia (LED strip behind it)
-//   back                back panel, with the port cut-outs
+//   fascia_l/m/r        the band above the drawers, three pieces: the seams sit right above the
+//                       gaps between the drawer plates. Print it in a lighter colour
+//   light_bar           white strip behind the three light slots (LED strip behind it); glued
+//                       across the fascia seams, it also ties the three pieces together
+//   back_l back_r       back panel halves (l/r as seen from the front), port cut-outs
 //   floor_fl floor_fr   floor, front: the drawers slide on it; stop rail at the back
 //   floor_bl floor_br   floor, back: Pi bay, with the board standoffs and vent slots
 //   deck_fl deck_fr     top deck, front (print upside down, as it opens)
@@ -37,7 +41,8 @@
 //   post_sleeve, head_cover   camera arm covers
 //   "assembly" shows everything (preview only); "shell" just the enclosure parts
 //
-// Drawers: see sorter_drawer.scad. Their outside size is set here, once, in dr_*.
+// Drawers: "Card Catalog v1.2" from MakerWorld, printed from Nic's 3MF (not in this repo).
+// Their size is set here, once, in dr_*; card_catalog_drawer.scad only draws one.
 
 include <bed_chute.scad>
 part = "none";            // keep bed_chute.scad quiet
@@ -48,11 +53,20 @@ epart = "assembly";
 show_mech = true;         // draw the mechanism in the assembly preview
 show_drawer_out = 60;     // pull the middle drawer out this far in the preview
 
-// --- Drawers (Nic's storage drawers; outside size) -------------------------------------
-dr_w = 80;                // PLACEHOLDER until measured from the MakerWorld file
-dr_h = 100;
-dr_l = 250;
-dr_clr = 1;               // side clearance in the slot
+// --- Drawers: "Card Catalog v1.2" (MakerWorld 3016550), measured from Nic's 3MF -------------
+// The drawer is a 76 x 67 x 223 mm tray with an 86 x 109 x 8 mm front plate (the toploader
+// pocket), a clip-on bar along the top of the plate and a loop handle 16 mm proud at the
+// bottom. In its own box the plates sit side by side at 86.5 mm pitch in an 8 mm deep rebate,
+// flush with the box face, and the trays run on the cubby floor. The dock here is three such
+// cubbies in a row: the plates fill the front between the two front posts, the trays run
+// between guide curbs on the floor, and the fascia starts just above the plates.
+dr_w = 76;                // tray outside width
+dr_body_h = 67.4;         // tray height
+dr_l = 231;               // front face of the plate to the back of the tray (8 + 223)
+dr_face_w = 86;  dr_face_h = 109;  dr_face_t = 8;
+dr_cap = 4.5;             // room above the plate for its clip-on top bar
+dr_pitch = 86.5;          // plate to plate, as in the Card Catalog box (0.5 mm between plates)
+dr_clr = 0.5;             // side clearance for the tray between the guide curbs
 div_t = 3;                // divider thickness
 
 // --- Shell ------------------------------------------------------------------------
@@ -66,13 +80,12 @@ deck_z = 212;             // top of the deck
 lip_h = 8;                // lip under the deck, just inside the panels
 deck_ch = 2;              // chamfer on the deck's top edges
 seam_ch = 1;              // small chamfer along every visible seam, so it reads as a panel line
-light_slot = [150, 2.2];  // status light slot in the fascia (length, height); 0 length for none
+light_slot = [54, 2.2];   // status light slot above each drawer (length, height); 0 length for none
 bridge_t = 4;
 bridge_top = 111;         // = wall_z0
 bridge_half = 52;         // bridge spans x = +-52
 front_y = -88;            // outer face of the shell, front
 back_y = 268;             // outer face, back
-axle_y = -81;             // front face of the chute axle upstand (was front_bar_y - 6)
 
 // --- Hopper and feeder (numbers from feeder_test.scad, on the mid stand) ----------------------
 feeder_front_y = 150;     // inside face of the hopper's front wall (just behind the bed's back edge)
@@ -94,11 +107,14 @@ c_shell = "#1b1d21";  c_fascia = "#2c3036";  c_inner = "#3a3f47";  c_drawer = ["
 $fn = 48;
 
 // ============================ DERIVED ========================================
-slot_w = dr_w + 2 * dr_clr;
-pitch = slot_w + div_t;
-inner_w = 3 * slot_w + 2 * div_t;            // between the side panels' inner faces
-ow = inner_w + 2 * pt + 2 * inset;           // shell outside width
+slot_w = dr_w + 2 * dr_clr;                  // 77: a tray between its guide curbs
+pitch = dr_pitch;                            // 86.5
+curb_w = pitch - slot_w;                     // 9.5: guide curb on the floor between two trays
+curb_h = 3;
+dock_w = 3 * pitch;                          // 259.5: the three plates side by side, between the front posts
+ow = dock_w + 2 * post_r;                    // shell outside width: the front posts' inner faces flank the plates
 hw = ow / 2;
+inner_w = ow - 2 * pt - 2 * inset;           // between the side panels' inner faces
 panel_top = deck_z - deck_t;                 // top of the posts and panels
 post_h = panel_top - floor_t;                // posts and panels stand on the floor plate
 div_x = [-pitch, 0, pitch];                  // drawer centres
@@ -106,9 +122,12 @@ floor_y0 = front_y + inset + pt;             // inside faces of the fascia and b
 floor_y1 = back_y - inset - pt;
 floor_x = inner_w / 2;
 depth = back_y - front_y;  yc = (front_y + back_y) / 2;
-dock_y1 = floor_y0 + dr_l + 3;               // back of the dock (drawer stop rail)
-floor_seam_y = 150;                          // under the back of the drawers (keeps the front tiles under 250 mm)
-bridge_y0 = floor_y0 + 1;
+dock_y0 = front_y + inset;                   // the plates' front faces, flush with the fascia
+dock_y1 = dock_y0 + dr_l + 0.5 + 3;          // back of the dock (drawer stop rail)
+dock_wall_y = dock_y0 + dr_face_t + 1;       // behind the plates: curbs, dividers and the bridge start here
+floor_seam_y = 152;                          // just behind the stop rail (keeps the front tiles under 250 mm)
+bridge_y0 = dock_wall_y;
+axle_y = bridge_y0 + 0.5;                    // front face of the chute axle upstand, at the bridge's front edge
 bridge_y1 = floor_y1 - 2;
 bridge_seam_y = 56;                          // just behind the trapdoor opening
 deck_seam_y = 100;
@@ -141,14 +160,17 @@ module seam_v(x, y, z_top, along_y, len) {
 // ============================ POSTS AND PANELS =====================================
 
 // Corner post, modelled for the front-left corner with the outer corner at the origin.
-module post() {
+// front = true: a front post. Its inner face is the dock's cheek and the outer drawer plate slides
+// along it, so the fascia groove only starts where the fascia starts.
+module post(front = true) {
+    g0 = front ? fascia_z0 - floor_t - 2 : -1;
     difference() {
         intersection() {
             translate([post_r, post_r, 0]) cylinder(r = post_r, h = post_h);
             cube([post_r, post_r, post_h]);
         }
-        // grooves: front panel (along x) and side panel (along y)
-        translate([post_r - groove_d, inset, -1]) cube([groove_d + 1, pt + 0.4, post_h + 2]);
+        // grooves: front / back panel (along x) and side panel (along y)
+        translate([post_r - groove_d, inset, g0]) cube([groove_d + 1, pt + 0.4, post_h + 2]);
         translate([inset, post_r - groove_d, -1]) cube([pt + 0.4, groove_d + 1, post_h + 2]);
         // deck screw
         translate([7, 7, post_h - 10]) cylinder(d = hole_d, h = 11);
@@ -164,23 +186,45 @@ module peg_holes(z) {
 panel_w = ow - 2 * post_r + 2 * groove_d - 0.6;     // front and back panels, groove to groove
 side_len = (back_y - front_y) - 2 * post_r + 2 * groove_d - 0.6;
 side_piece = side_len / 2;
-fascia_z0 = floor_t + dr_h + 3;                     // bottom edge of the fascia
+fascia_z0 = floor_t + dr_face_h + dr_cap + 0.5;     // bottom edge of the fascia: plate, top bar, a hair of room
 fascia_h = panel_top - fascia_z0;
 
 // Panels are modelled lying flat: x along the panel, y up the panel, z = thickness (inside face up).
-module fascia() {
-    difference() {
-        translate([-panel_w / 2, 0, 0]) cube([panel_w, fascia_h, pt]);
-        // status light slot: the light bar sits behind it, an LED strip behind that
-        if (light_slot[0] > 0) translate([-light_slot[0] / 2, fascia_h - 26, -1]) cube([light_slot[0], light_slot[1], pt + 2]);
-    }
-}
-// White (or translucent) strip glued behind the slot. Two walls thick, so it glows evenly.
-module light_bar() {
-    translate([-light_slot[0] / 2 - 6, 0, 0]) cube([light_slot[0] + 12, 12, 1.2]);
+
+// Pocket for a splice strip on a panel's inside face, the strip running along x across a seam at x.
+// Shallow (1.2 mm) so the panel keeps 1.8 mm: glue these, no screws.
+module panel_pocket(x, y) {
+    translate([x, y, pt - 1.2]) linear_extrude(2) square([splice_l + 0.4, splice_w + 0.4], center = true);
 }
 
-module back_panel() {
+// The fascia is wider than the bed, so it is three pieces whose seams sit right above the gaps
+// between the drawer plates: the lines run from the floor to the deck, one bay each. Each bay
+// has its own status light slot; one light bar behind all three also ties the pieces together.
+fascia_seams = [-pitch / 2, pitch / 2];
+light_y = fascia_h - 26;                                 // slots, up the fascia
+module fascia_full() {
+    difference() {
+        translate([-panel_w / 2, 0, 0]) cube([panel_w, fascia_h, pt]);
+        if (light_slot[0] > 0) for (x = div_x) translate([x - light_slot[0] / 2, light_y, -1]) cube([light_slot[0], light_slot[1], pt + 2]);
+        for (x = fascia_seams) {
+            seam_v(x, fascia_h / 2, 0, true, fascia_h);
+            for (y = [16, 40]) panel_pocket(x, y);          // the light bar is the third tie, higher up
+        }
+    }
+}
+module fascia_tile(i) {   // 0 left, 1 middle, 2 right, seen from the front
+    x0 = i == 0 ? -500 : fascia_seams[i - 1];
+    x1 = i == 2 ? 500 : fascia_seams[i];
+    intersection() { fascia_full(); translate([x0, -50, -50]) cube([x1 - x0, 500, 100]); }
+}
+// White (or translucent) strip glued behind the three slots, across the seams. Two walls thick, so it glows evenly.
+light_bar_l = 2 * pitch + light_slot[0] + 12;
+module light_bar() {
+    translate([-light_bar_l / 2, 0, 0]) cube([light_bar_l, 12, 1.2]);
+}
+
+// The back panel is wider than the bed too: two halves, the seam down the middle between two vent slots.
+module back_full() {
     difference() {
         translate([-panel_w / 2, 0, 0]) cube([panel_w, post_h, pt]);
         // Pi ports (USB x4 + ethernet, on the board's short edge)
@@ -189,7 +233,12 @@ module back_panel() {
         translate([-floor_x + 24, 6, -1]) cube([28, 14, pt + 2]);
         // vent slots behind the Pi bay
         for (i = [0 : 7]) translate([-50 + i * 14, 40, -1]) cube([6, 50, pt + 2]);
+        seam_v(0, post_h / 2, 0, true, post_h);
+        for (y = [20, 110, 150, post_h - 18]) panel_pocket(0, y);
     }
+}
+module back_tile(i) {   // 0 left, 1 right, seen from the front
+    intersection() { back_full(); translate([i == 0 ? -500 : 0, -50, -50]) cube([500, 500, 100]); }
 }
 
 // One half of a side. The pocket for the splice is at the x = side_piece end; flip the
@@ -210,7 +259,10 @@ module floor_full() {
             // the base plate: the posts and panels stand on it
             linear_extrude(floor_t) translate([0, yc]) rrect(ow, depth, post_r);
             // drawer stop rail
-            translate([-floor_x, dock_y1 - 3, 0]) cube([2 * floor_x, 3, floor_t + 10]);
+            translate([-(floor_x - 1), dock_y1 - 3, 0]) cube([2 * (floor_x - 1), 3, floor_t + 10]);
+            // guide curbs the trays run between: one under each divider, one along each side
+            for (x = [-pitch / 2, pitch / 2]) translate([x - curb_w / 2, dock_wall_y, 0]) cube([curb_w, dock_y1 - 3 - dock_wall_y, floor_t + curb_h]);
+            for (m = [0, 1]) mirror([m, 0, 0]) translate([pitch + slot_w / 2, dock_wall_y, 0]) cube([4.5, dock_y1 - 3 - dock_wall_y, floor_t + curb_h]);
             // Pi 5 standoffs: 49 x 58 hole pattern, 3.5 mm in from the board edges
             for (x = [3.5, 52.5], y = [3.5, 61.5]) translate([pi_pos[0] + x, pi_pos[1] + y, 0]) cylinder(d = 6, h = floor_t + 5);
             // PCA9685 standoffs: 56 x 19 pattern
@@ -222,6 +274,8 @@ module floor_full() {
         translate([0, yc, floor_t - 1.5]) linear_extrude(2) difference() {
             rrect(ow - 2 * inset + 0.4, depth - 2 * inset + 0.4, post_r - inset);
             rrect(ow - 2 * inset - 2 * pt - 0.4, depth - 2 * inset - 2 * pt - 0.4, post_r - inset - pt);
+            // no groove under the drawer plates: the fascia stops above them
+            translate([-(hw - post_r), front_y - yc - 1]) square([2 * (hw - post_r), inset + pt + 2]);
         }
         peg_holes(floor_t - 2.5);
         // recesses for stick-on rubber feet underneath
@@ -232,7 +286,7 @@ module floor_full() {
         seam_v(0, floor_seam_y, floor_t, false, ow);
         if (split_x) seam_v(0, yc, floor_t, true, depth);
         // divider grooves
-        for (x = [-pitch / 2, pitch / 2]) translate([x - (div_t + 0.4) / 2, floor_y0 + 4, floor_t - 2]) cube([div_t + 0.4, dock_y1 - 3 - floor_y0 - 8, 3]);
+        for (x = [-pitch / 2, pitch / 2]) translate([x - (div_t + 0.4) / 2, dock_wall_y - 0.01, floor_t - 2]) cube([div_t + 0.4, dock_y1 - 3 - dock_wall_y + 0.02, 3 + curb_h]);
         // splice pockets along the seams (the middle one is under the middle drawer, flush)
         for (x = [-floor_x + 30, 0, floor_x - 30]) splice_pocket(x, floor_seam_y, 0);
         if (split_x) for (y = [floor_y0 + 40, dock_y1 - 40, floor_y1 - 30]) splice_pocket(0, y, 0, false);
@@ -306,8 +360,8 @@ module deck_tile(xi, yi) {
 
 // ============================ DOCK ==========================================
 
-div_len = dock_y1 - 3 - floor_y0 - 8 - 0.4;
-div_y0 = floor_y0 + 4 + 0.2;
+div_y0 = dock_wall_y + 0.2;
+div_len = dock_y1 - 3 - div_y0 - 0.2;
 div_h = bridge_top - bridge_t - floor_t + 2;       // 2 mm sits in the floor groove
 flange_w = bridge_half - pitch / 2 - div_t / 2 + div_t;   // reaches out to the bridge's edge
 div_holes = [20, div_len / 2, div_len - 20];
@@ -438,18 +492,18 @@ module head_cover() {
 }
 
 // ============================ ASSEMBLY ==========================================
-use <sorter_drawer.scad>
+use <card_catalog_drawer.scad>
 
 module place_post(i) {   // 0 fl, 1 fr, 2 bl, 3 br
     x = (i % 2 == 0) ? -hw : hw;  y = (i < 2) ? front_y : back_y;
-    translate([x, y, floor_t]) mirror([i % 2, 0, 0]) mirror([0, i >= 2 ? 1 : 0, 0]) post();
+    translate([x, y, floor_t]) mirror([i % 2, 0, 0]) mirror([0, i >= 2 ? 1 : 0, 0]) post(i < 2);
 }
 
 module shell(open = false) {   // open: no deck, tower or right side, to see inside
     color(c_shell) for (i = [0 : 3]) place_post(i);
-    color(c_fascia) translate([0, floor_y0, fascia_z0]) rotate([90, 0, 0]) fascia();
-    color("white") translate([0, floor_y0 + 1.2, fascia_z0 + fascia_h - 26 - 5]) rotate([90, 0, 0]) light_bar();
-    color(c_shell) translate([0, back_y - inset, floor_t]) rotate([90, 0, 0]) back_panel();
+    color(c_fascia) for (i = [0 : 2]) translate([0, floor_y0 - pt, fascia_z0]) rotate([90, 0, 0]) fascia_tile(i);
+    color("white") translate([0, floor_y0 + 1.2, fascia_z0 + light_y - 5]) rotate([90, 0, 0]) light_bar();
+    color(c_shell) for (i = [0, 1]) translate([0, back_y - inset, floor_t]) rotate([90, 0, 0]) back_tile(i);
     for (m = open ? [0] : [0, 1]) mirror([m, 0, 0]) color(c_shell) {
         translate([-hw + inset, front_y + post_r - groove_d + 0.3, floor_t]) rotate([90, 0, 90]) side();
         translate([-hw + inset + pt, front_y + post_r - groove_d + 0.3 + side_piece, panel_top]) rotate([90, 0, 90]) rotate([180, 0, 0]) side();
@@ -465,7 +519,8 @@ module shell(open = false) {   // open: no deck, tower or right side, to see ins
 }
 
 module drawers() {
-    for (i = [0 : 2]) color(c_drawer[i]) translate([div_x[i], floor_y0 - (i == 1 ? show_drawer_out : 0), floor_t]) sorter_drawer_preview(dr_w, dr_h, dr_l);
+    for (i = [0 : 2]) color(c_drawer[i]) translate([div_x[i], dock_y0 - (i == 1 ? show_drawer_out : 0), floor_t])
+        card_catalog_drawer(dr_w, dr_body_h, dr_l, dr_face_w, dr_face_h, dr_face_t);
 }
 
 module mechanism() {
@@ -485,11 +540,15 @@ module mechanism() {
 
 // ============================ OUTPUT ==========================================
 
-if (epart == "post") translate([0, 0, post_h]) mirror([0, 0, 1]) post();   // upside down: flat top on the bed, pegs up
+if (epart == "post_front") translate([0, 0, post_h]) mirror([0, 0, 1]) post(true);    // upside down: flat top on the bed, pegs up
+else if (epart == "post_back") translate([0, 0, post_h]) mirror([0, 0, 1]) post(false);
 else if (epart == "side") side();
-else if (epart == "fascia") fascia();
+else if (epart == "fascia_l") fascia_tile(0);
+else if (epart == "fascia_m") fascia_tile(1);
+else if (epart == "fascia_r") fascia_tile(2);
 else if (epart == "light_bar") light_bar();
-else if (epart == "back") back_panel();
+else if (epart == "back_l") back_tile(0);
+else if (epart == "back_r") back_tile(1);
 else if (epart == "floor_fl") floor_tile(0, 0);
 else if (epart == "floor_fr") floor_tile(1, 0);
 else if (epart == "floor_bl") floor_tile(0, 1);

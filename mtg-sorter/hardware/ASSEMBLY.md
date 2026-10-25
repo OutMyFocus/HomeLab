@@ -425,10 +425,10 @@ The box from [`README.md`, Enclosure](README.md#enclosure). It replaces `frame_s
 `front_bar` and the three `bin`s; everything else from Part 2 stays. Print list and part
 names are in the README.
 
-> **Wait for the drawer size.** Almost every panel is sized from the storage drawer
-> (`dr_w`, `dr_h`, `dr_l` in `enclosure.scad`). Until that's measured from the MakerWorld
-> file, the STLs are for a placeholder 80 × 100 × 250 mm drawer. Run `export_enclosure.sh`
-> after changing it.
+> **The drawers are Card Catalog v1.2** (MakerWorld 3016550). The dock is sized from
+> Nic's 3MF of it (the `dr_*` block in `enclosure.scad`), so print three drawers and three
+> drawer tops from that 3MF, in whatever colours you like. If you ever switch drawers,
+> change the `dr_*` numbers and run `export_enclosure.sh`.
 
 ## 1. Bench work
 
@@ -441,18 +441,23 @@ names are in the README.
    Part 2, Stage D. Screw the chute's front axle through the upstand at the front.
 3. **Deck:** join `deck_fl` + `deck_fr`, and `deck_bl` + `deck_br`. Leave the front pair and
    back pair separate: the back pair lifts off for access to the Pi bay.
-4. **Drawers:** glue a `sorter_drawer_front` to each `sorter_drawer` (2 mm proud).
-   Slide a toploader with a card into the pocket from the top.
+4. **Drawers:** print three Card Catalog drawers and their top bars from the MakerWorld
+   3MF. Slide a toploader with a card into each pocket from the top, clip the bar on.
+5. **Fascia and back:** join `fascia_l` + `fascia_m` + `fascia_r` with splices glued in
+   the pockets on the inside face (CA glue, the pockets are too shallow for screws), and
+   glue the `light_bar` across the top of the seams, over the three slots. Join
+   `back_l` + `back_r` the same way.
 
 ## 2. Assembly, bottom up
 
 1. Fix the Pi (4 × M2.5) and the PCA9685 to the standoffs on the floor, the motor driver
    with a zip tie. The Pi's ports face the back.
-2. Push the four `post`s onto their pegs at the corners. Slide the `fascia` (light slot at
-   the top, `light_bar` glued behind it), the four `side` pieces (two per side, pockets
-   facing in, splice them) and the `back` panel down the posts' grooves into the groove in
-   the floor. The Pi's ports line up with the cut-outs in the back panel.
-3. Stand the two `divider`s in the floor grooves, flanges facing out.
+2. Push the two `post_front`s and two `post_back`s onto their pegs at the corners (the
+   front ones have a shorter fascia groove). Slide the fascia (light slots at the top),
+   the four `side` pieces (two per side, pockets facing in, splice them) and the back panel
+   down the posts' grooves into the groove in the floor. The Pi's ports line up with the
+   cut-outs in the back panel.
+3. Stand the two `divider`s in the grooves in the middle curbs, flanges facing out.
 4. Lower the bridge (with the whole mechanism on it) onto the dividers' flanges and the two
    `leg`s at the back; screw it to the flanges (M3, 3 per side). Wire everything up (Stage C).
 5. Put `feeder_stand_mid` in the fence on the bridge with the hopper on it, exit shelf facing
