@@ -1,0 +1,114 @@
+# Printing the enclosure
+
+Print order and slicer settings for the enclosure parts in
+[`README.md`, Enclosure](README.md#enclosure), on the Bambu Lab A1 in Bambu Studio.
+About 25 plates, roughly 1.6 kg of PLA (1 kg of it black) and 60-odd hours of printing.
+The first three plates are a fit check: print those, try the fits, and only then commit
+the rest of the filament.
+
+## Settings
+
+Start every plate from **0.20 mm Standard @BBL A1** with a **PLA** filament profile
+(Bambu PLA Tough, or Generic PLA for the Elegoo rolls), on the **textured PEI plate**.
+Every flat part opens with its visible face down, so the plate's texture becomes the
+finish. Then:
+
+| Setting | Value | Why |
+|---|---|---|
+| Supports | **off**, on every part | nothing needs them |
+| Wall loops | 3 for panels and tiles; **4** for posts, legs, dividers, bridge, tower, sleeve | the thick parts take screws and carry weight |
+| Sparse infill | 15 % gyroid for flat parts; **25 %** for posts, legs, dividers, bridge; **100 %** for `light_bar` and `splice` | |
+| Top / bottom shell layers | default (5 / 3) | |
+| Brim | **5 mm outer brim** on the tall parts only: posts, legs, `post_sleeve`, `tower`; none elsewhere | 16 mm posts 206 mm tall need the help; the brim ends up under the deck |
+| Seam position | Aligned (default) | lands in the panel grooves and the posts' inner corner |
+| Precise wall | on | the pegs, grooves and pockets are sized with 0.4 mm clearance |
+| Elephant foot compensation | default 0.15 mm | same reason: leave it |
+| Orientation | **as each file opens**, no rotation | the export already flips what needs flipping (posts, deck tiles, tower lid, head cover) |
+| Ironing | off | the visible faces are the plate side |
+
+Keep the plate clean (IPA) before the big floor and deck tiles: a 146 × 240 mm first
+layer is the one thing on this list that can fail. If the Elegoo rolls have been open a
+while and the parts string, dry them first.
+
+## Colours
+
+| Colour | Parts | Filament |
+|---|---|---|
+| **Black** (the shell) | floor and deck tiles, sides, back, posts, legs, tower, the two bed walls | about 1 kg |
+| **Dark grey** (trim) | `fascia_l/m/r`, `tower_lid`, `post_sleeve`, `head_cover` | about 150 g. Black is fine too if you'd rather one colour |
+| **White** | `light_bar` (and the bed plate from Part 2) | a few grams |
+| Anything | dividers, bridge, splices, `feeder_stand_mid` | all hidden |
+| Your pick | the three Card Catalog drawers and their top bars | from the MakerWorld 3MF |
+
+With the AMS Lite you can put the white light bar on the fascia plate; otherwise it's a
+ten-minute print on its own.
+
+## Plates, in order
+
+Weights and times are rough; Bambu Studio's estimate is the real one.
+
+| # | Plate | Colour | About | Note |
+|---|---|---|---|---|
+| 1 | `floor_fl` + `post_front` + 2 × `splice` | black | 100 g, 5 h | **fit check A** |
+| 2 | one Card Catalog drawer + one drawer top (from the 3MF) | your pick | 4 h | **fit check B** |
+| 3 | 2 × `divider` | any | 110 g, 6 h | **fit check C** |
+| 4 | `bridge_front` | any | 35 g, 2 h | the mechanism moves onto the bridge from here |
+| 5 | `bridge_back` | any | 70 g, 3.5 h | |
+| 6 | `bed_chute_bed_side_left_enclosure` + `..._right_enclosure` | black | 100 g, 5 h | the walls with screw holes in their bottom edge |
+| 7 | `feeder_stand_mid` | any | 90 g, 4.5 h | the 92 mm stand |
+| 8 | `floor_fr` + 8 × `splice` | black | 100 g, 5 h | |
+| 9 | `floor_bl` + `floor_br` | black | 75 g, 4 h | both fit on one plate |
+| 10 | `post_front` + `post_back` + `leg` | black | 60 g, 4 h | brims on all three |
+| 11 | `post_back` + `leg` + `tower` | black | 90 g, 5 h | brims on all three |
+| 12–15 | `side`, one per plate (4) | black | 75 g, 3.5 h each | too big to pair up |
+| 16 | `back_l` | black | 55 g, 2.5 h | |
+| 17 | `back_r` | black | 55 g, 2.5 h | |
+| 18 | `fascia_l` + `fascia_m` + `fascia_r` | dark grey | 50 g, 2.5 h | two in a row, the third below |
+| 19 | `light_bar` | white | 4 g, 10 min | or on plate 18 with the AMS |
+| 20 | `tower_lid` + `post_sleeve` + `head_cover` | dark grey | 80 g, 4 h | brim on the sleeve |
+| 21 | `deck_fl` | black | 70 g, 3.5 h | the deck last: it goes on once the mechanism is in |
+| 22 | `deck_fr` | black | 70 g, 3.5 h | |
+| 23 | `deck_bl` | black | 50 g, 2.5 h | |
+| 24 | `deck_br` | black | 50 g, 2.5 h | |
+| 25 | two Card Catalog drawers + two drawer tops | your pick | 8 h | two drawers fit on one plate |
+
+The order is: fit checks, then the parts the mechanism moves onto (so the machine keeps
+working on the bridge while the shell prints), then the shell from the floor up, trim,
+deck, drawers. Swap plates 8–17 around freely; they don't depend on each other.
+
+## The fit checks
+
+After plate 1:
+
+- Push `post_front` onto its two pegs at the front-left corner of `floor_fl`. It should
+  go on by hand and stay put without wobbling. Too tight: a 4 mm drill through the holes.
+  Loose: a drop of CA glue at assembly.
+- Drop a `splice` into one of the pockets underneath. It should sit flush.
+
+After plate 2 (the drawer), still on `floor_fl`:
+
+- Slide the tray into the **left** slot, between the outer curb and the first middle curb.
+  It should slide with a little side play (1 mm in total) and not catch on the curbs.
+- With the post on, slide the drawer all the way in: the plate's left edge passes the
+  post's flat inner face with about a quarter millimetre to spare. If it rubs, say so;
+  that's a one-number change in `enclosure.scad` (`dr_pitch`).
+- Clip the top bar onto the plate and measure from the floor tile's top surface to the
+  top of the bar. **Tell me that number.** The fascia starts 114 mm up; the box the drawer
+  comes from allows 113.5. If the bar is taller than that, `dr_cap` changes and the fascia
+  and posts are re-exported before you print them.
+
+After plate 3:
+
+- Stand a `divider` in the groove down the middle curb, flange facing out. It should drop
+  in and stand on its own; the flange ends up at the height of the bridge's underside.
+
+If all of that fits, print the rest. If something binds, post what binds and where, and
+I'll adjust the numbers before you print another plate.
+
+## The drawers
+
+Open `Card_Catalog_v1.2_All-in-one.3mf` in Bambu Studio. It carries its own plates and
+settings (the drawer prints standing, front plate vertical); use them as they are and
+print only the **drawer** and **drawer top** objects, three of each. The box, dividers
+and connectors are for your shelf, not the sorter. The sorter's dock is measured from
+this exact file, so a drawer that fits your shelf fits the sorter.
