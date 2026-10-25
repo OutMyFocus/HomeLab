@@ -217,23 +217,33 @@ off its exit shelf straight onto the bed.
 
 # Enclosure
 
-`enclosure.scad`, `sorter_drawer.scad`. A countertop box in the style of the Roca Sorter:
+`enclosure.scad`, `card_catalog_drawer.scad`. A countertop box in the style of the Roca Sorter:
 black shell with rounded corners, a lighter band across the front, the scan bed sunk into
 the top deck, a rounded tower over the hopper and a rounded arm over the camera post.
 Everything inside is the same bed, pins, camera tower, chute and feeder as above.
 
 ![front](img/enclosure_front.png)
+![face](img/enclosure_face.png)
 ![inside](img/enclosure_inside.png)
 
-The three bins are **drawers that fit the cubbies of Nic's card shelf** (MakerWorld
-[Modular TCG Card Storage](https://makerworld.com/en/models/1225302-modular-tcg-card-storage)),
-with a 3 × 4 toploader pocket in the front for a display card, like the
-[Card Catalog](https://makerworld.com/en/models/3016550-card-catalog-v1-0) drawers. A full
-drawer slides out of the sorter and straight into the shelf.
+The three bins are **Card Catalog v1.2 drawers** (MakerWorld
+[Card Catalog](https://makerworld.com/en/models/3016550-card-catalog-v1-0), by Aspect of
+Frost): the long tray with a 3 × 4 toploader pocket in its front plate that Nic's card
+shelf is built from. A full drawer slides out of the sorter and straight into a cubby of
+the shelf. The drawers themselves are printed from the MakerWorld 3MF, which isn't in this
+repo; the dock is sized from it:
 
-> **The drawer size is still a placeholder** (`dr_w`, `dr_h`, `dr_l` at the top of
-> `enclosure.scad`: 80 × 100 × 250 mm). It has to be measured from the MakerWorld file
-> before the dock, the fascia and the drawers are printed. Everything else follows from it.
+| Measured from the 3MF | mm |
+|---|---|
+| Tray | 76 wide × 67.4 tall × 223 long |
+| Front plate | 86 wide × 109 tall × 8 thick, plus a clip-on top bar |
+| Plate pitch in the Card Catalog box | 86.5 (0.5 between plates) |
+| Room above the cubby floor in the box | 113.5 |
+
+The dock copies the box: the three plates sit side by side between the two front posts,
+flush with the fascia, the trays run between 3 mm **guide curbs** on the floor, and the
+fascia starts 114 mm above the floor. These numbers are the `dr_*` block at the top of
+`enclosure.scad`; everything else follows from them.
 
 ## How it goes together
 
@@ -250,8 +260,13 @@ drawer slides out of the sorter and straight into the shelf.
 - The **floor** is a base plate with rounded corners. Everything stands on it: the four
   **corner posts** peg into it, and the **side**, **fascia** and **back** panels slide
   down into the posts' grooves and stand in a groove in the floor. Stick-on rubber feet
-  go in the recesses underneath. The front half is the drawer dock: two **dividers**
-  stand in grooves in the floor, between the drawers.
+  go in the recesses underneath. The front half is the drawer dock: guide curbs on the
+  floor keep the trays in line, and two **dividers** stand in grooves in the middle curbs.
+  The front posts' inner faces are the dock's cheeks; the outer plates slide along them.
+- The **fascia** is three pieces, and its seams sit right above the gaps between the
+  drawer plates, so the lines run from the floor to the deck, one bay each. Each bay has
+  its own light slot. The **back** panel is two pieces, seam down the middle. Both are
+  wider than the bed, that's all.
 - The **bridge** is the plate the mechanism stands on, above the drawers. It rests on the
   dividers' top flanges at the front and on two **legs** at the back. The bed walls screw
   to it with a new foot flange (`wall_z0 = 111` in `bed_chute.scad`), the feeder stands on
@@ -265,9 +280,10 @@ drawer slides out of the sorter and straight into the shelf.
   standoffs in the floor. Ports and vents are cut in the back panel, and there are intake
   slots in the floor under the Pi, so air can move. Fit the Pi 5's Active Cooler (or any
   fan heatsink under 25 mm) and it'll stay cool in there.
-- A **light bar** sits behind a slot in the fascia: a white strip the width of the slot
-  with a piece of the LED strip stuck behind it. Lit, it's the thin line across the front
-  that the Roca has. Unlit, it's a white line.
+- A **light bar** sits behind the three slots in the fascia: one white strip, glued across
+  the fascia seams (it ties the three pieces together), with a piece of the LED strip stuck
+  behind it. Lit, it's the thin line across the front that the Roca has, in three dashes,
+  one per drawer. Unlit, it's a white line.
 
 Plates too big for the 256 mm bed are split into tiles that meet at a seam, and joined on
 the bench with **splice** strips that sit in pockets on the underside (M2 screws or glue).
@@ -276,11 +292,11 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 
 | File | How many | Colour | Notes |
 |---|---|---|---|
-| `post` | 4 | black | prints standing, pegs up, 204 mm tall |
+| `post_front`, `post_back` | 2 each | black | print standing, pegs up, 204 mm tall |
 | `side` | 4 | black | two per side; flip the second one end for end |
-| `fascia` | 1 | **dark grey** | the lighter band across the front |
-| `light_bar` | 1 | **white** | behind the slot in the fascia |
-| `back` | 1 | black | port and vent cut-outs |
+| `fascia_l`, `fascia_m`, `fascia_r` | 1 each | **dark grey** | the lighter band across the front, left to right |
+| `light_bar` | 1 | **white** | behind the three slots, glued across the fascia seams |
+| `back_l`, `back_r` | 1 each | black | port and vent cut-outs; l/r as seen from the front |
 | `floor_fl`, `floor_fr`, `floor_bl`, `floor_br` | 1 each | black | the base plate; its edge shows |
 | `deck_fl`, `deck_fr`, `deck_bl`, `deck_br` | 1 each | black | print as they open (upside down) |
 | `divider` | 2 | any | |
@@ -289,12 +305,14 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `splice` | 10 | any | |
 | `tower`, `tower_lid` | 1 each | black / dark grey | |
 | `post_sleeve`, `head_cover` | 1 each | dark grey | |
-| `sorter_drawer`, `sorter_drawer_front` | 3 each | your choice | from `sorter_drawer.scad` |
+| Card Catalog v1.2 drawer + drawer top | 3 each | your choice | from the MakerWorld 3MF, not this repo |
 
 Plus `stl/bed_chute_bed_side_left_enclosure.stl` and `..._right_enclosure.stl` (the bed
 walls starting at the bridge, with screw holes in their bottom edge) and
 `stl/feeder_stand_mid.stl` (92 mm). `frame_side`, `front_bar` and `bin` are not used.
-`export_enclosure.sh` regenerates all of these.
+`export_enclosure.sh` regenerates all of these. Every part fits the A1's bed; the widest
+flat parts (floor and deck tiles) are 146 × 240 mm, and the shell is 292 wide, 356 deep,
+212 tall plus the tower and the camera arm.
 
 All flat parts print as they open, no supports, 0.2 mm, 15–20% infill. The posts stand up.
 Every seam between two tiles has a small V along it on the visible face, so the joints
@@ -302,4 +320,5 @@ read as panel lines rather than cracks, and the deck has a 2 mm chamfer round it
 edges and its openings.
 
 Other parts: 6 stick-on rubber feet (8 mm), about 20 M3 × 8 and 30 M2 × 6 self-tapping
-screws, 4 M2.5 × 6 for the Pi.
+screws, 4 M2.5 × 6 for the Pi, CA glue for the splices in the thin panels (fascia, back,
+sides: their pockets are too shallow for screws).
