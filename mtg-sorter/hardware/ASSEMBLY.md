@@ -51,7 +51,7 @@ Bambu Studio, **0.20 mm Standard**, PLA, no supports.
 
 | File | How to lay it | Infill | Notes |
 |---|---|---|---|
-| `stl/feeder_stand.stl` | as it opens | 15% | The **short** one (40 mm). The tall one is for the full machine later |
+| `stl/feeder_stand_mid.stl` | as it opens | 15% | 92 mm tall. The same stand later goes on the enclosure's bridge |
 | `stl/feeder_hopper.stl` | as it opens | 15% | |
 | `stl/feeder_gate.stl` | flat | 15% | |
 | `stl/feeder_roller.stl` | standing on its end | **100%** | It has to grip the shaft tightly |
@@ -151,7 +151,7 @@ foil, sleeved). That decides whether the feeder design changes before round 2.
 Round 2 parts. Build it in this order, testing each stage before the next, so a problem
 only ever has one place to hide.
 
-## Stage A: Raspberry Pi and camera on the scan station
+## Stage A: Raspberry Pi and camera
 
 This gets recognition working on the real camera before any moving parts.
 
@@ -159,16 +159,12 @@ This gets recognition working on the real camera before any moving parts.
    below. You can do all of it before the camera cable arrives.
 2. Check the camera is seen: `rpicam-hello --list-cameras` should list an `imx708`
    (that's the Camera Module 3).
-3. Print the scan station (base in **white**) and assemble it as in
-   [`hardware/README.md`](README.md#putting-it-together):
-   - Camera (item 2) onto the head with 4× M2 × 6 mm screws, **lens pointing down**.
-   - The Pi 5 cable (item 3) into the camera, up the groove at the back of the post.
-     The silver contacts face the board on both ends. Lift the connector latch, push the cable
-     in straight, press the latch down.
-   - LED strip (item 10): cut two ~10 cm pieces, stick them in the light-wall grooves,
-     power them from a Pi USB port or a USB charger.
-4. Start the app and open it from your laptop or phone (step 7 of the setup below). Put cards in
-   the pocket and check they're recognized. Try a foil too.
+3. Connect the camera: the Pi 5 cable (item 3) into the camera and into the Pi. The silver
+   contacts face the board on both ends. Lift the connector latch, push the cable in straight,
+   press the latch down. Until the scan bed is printed, prop the camera about 120 mm above a
+   sheet of white paper, lens down, with the LED strip (item 10) lighting it from the side.
+4. Start the app and open it from your laptop or phone (step 7 of the setup below). Put cards
+   under the camera and check they're recognized. Try a foil too.
 
 > **Camera not found?** Check with `rpicam-hello --list-cameras`. If it says "No cameras
 > available" with the cable seated properly, the Pi's auto-detect may be missing it. Edit
@@ -269,7 +265,7 @@ All from `stl/bed_chute_*.stl`, flat, as they open, no supports, 15–20% infill
 | Part | Qty | Colour |
 |---|---|---|
 | `bed_plate` | 1 | **white** (the camera sees it) |
-| `bed_side_left`, `bed_side_right` | 1 each | black |
+| `bed_side_left_enclosure`, `bed_side_right_enclosure` | 1 each | black |
 | `tower_post`, `camera_head` | 1 each | black |
 | `pin_rocker` | 1 | any |
 | `tilt_bracket` | 1 | black |
@@ -277,12 +273,10 @@ All from `stl/bed_chute_*.stl`, flat, as they open, no supports, 15–20% infill
 | `trapdoor`, `trapdoor_left` | 1 each | any |
 | `trapdoor_mount`, `trapdoor_mount_left` | 1 each | any |
 | `hinge_lug`, `hinge_lug_left` | 1 each | any |
-| `frame_side` | **2** | black |
-| `front_bar` | 1 | black |
-| `bin` | **3** | black |
 
-Also reprint the feeder stand as **`stl/feeder_stand_tall.stl`** (203 mm). It puts the
-hopper floor about 2 mm above the top of the scan bed, so cards drop straight on.
+The bed walls, the chute and the feeder stand from Part 1 all go on the enclosure's bridge
+(Part 3), which holds them at the right heights: the hopper floor ends up about 2 mm above
+the top of the scan bed, so cards drop straight on.
 
 ## Before any servo goes in: centre it
 
@@ -377,9 +371,9 @@ kit.servo[0].angle = 90   # change the channel and angle to test each servo
    should poke up through the slots at the front of the bed. Set the servo to "down" (28° the
    other way): the pins must drop fully below the bed surface.
 5. **LED strips.** Cut two pieces about 9 cm long and stick one in the groove along each
-   wall, just above the bed. Join and power them like on the scan station.
+   wall, just above the bed. Join them and power them from a Pi USB port.
 6. **Camera tower.** Push `tower_post` into the socket on the right wall, then
-   `camera_head` onto the top of the post. Move the camera from the scan station onto the head
+   `camera_head` onto the top of the post. Screw the camera onto the head
    (4× M2 × 6 mm, lens down). The lens should end up 120 mm above the middle of a card resting
    on the pins, square to the sloped bed.
 
@@ -396,21 +390,20 @@ app recognizes it. Then drop the pins and check the card slides off cleanly.
    the lug: use an M3 screw as the pin (1.75 mm filament is too thin for the 2.9 mm hole and
    would rattle). The front ear screws to the servo horn.
    Centre each servo first, so both doors close flush with the chute floor.
-4. **Into the machine.** Stand the two `frame_side` pieces up, one each side of the bed walls,
-   and screw `front_bar` across their tops at the front (M3, 2 per side). The chute's front
-   axle goes into the hole in the front bar. The plate on the chute's back end screws to the
-   **tilt servo's** horn: push the tilt servo through the tilt bracket from the back, screw it
-   in, centre it, then attach the horn to the chute.
+4. **Into the machine.** The chute's front axle goes into the upstand on the enclosure's
+   bridge (Part 3). The plate on the chute's back end screws to the **tilt servo's** horn:
+   push the tilt servo through the tilt bracket from the back, screw it in, centre it, then
+   attach the horn to the chute.
 
 Test each move by hand with the snippet: tray level and doors shut; doors open; tilt 25° each
-way. Nothing should touch the bed walls or frame.
+way. Nothing should touch the bed walls or the bridge.
 
-## Stage F: bins and feeder
+## Stage F: drawers and feeder
 
-1. Slide the three bins in under the chute, between the frame sides: left = bin 1,
+1. Slide the three Card Catalog drawers into the dock under the bridge (Part 3): left = bin 1,
    middle = bin 2, right = bin 3.
-2. Put the hopper on the **tall** feeder stand, behind the bed, with its exit shelf facing the
-   bed. Cards should come off the shelf and drop onto the top of the bed.
+2. Put the hopper on the feeder stand (`feeder_stand_mid`) on the bridge, behind the bed, with
+   its exit shelf facing the bed. Cards should come off the shelf and drop onto the top of the bed.
 3. Move the motor wires from the battery holder to the DRV8833's OUT1 / OUT2.
 
 The whole run, card by card: feeder pulse → card slides to the pins → photo → chute set to
@@ -421,8 +414,8 @@ the bin → pins drop → card slides into the chute → doors open (bin 2) or t
 
 # Part 3: the enclosure
 
-The box from [`README.md`, Enclosure](README.md#enclosure). It replaces `frame_side`,
-`front_bar` and the three `bin`s; everything else from Part 2 stays. Print list and part
+The box from [`README.md`, Enclosure](README.md#enclosure). The open frame and bins that
+Part 2 first had are gone; everything else from Part 2 stays. Print list and part
 names are in the README; the print order, slicer settings and the fit-check plates to
 print first are in [`PRINTING.md`](PRINTING.md).
 
@@ -477,9 +470,8 @@ print first are in [`PRINTING.md`](PRINTING.md).
 | 1 | **No motor or servo code.** `app.py` and `mtgscanner/` only recognize and price cards. There's no `send_to_bin`, no pin numbers, no servo angles. | The machine can't sort until it's written. | Write it after the feeder test, using the wiring above. |
 | 2 | **The code has 4 bins, the machine has 3.** `config.py` sends cards to bin 0 (no price), 1 (bulk), 2 ($1–10) and 3 ($10+). | Bin 0 has nowhere to go. | Merge "no price" into bin 1, or leave them on the bed for you to pull by hand. |
 | 3 | **Servo model.** The shopping list says 4× MG90S; `hardware/README.md` says SG90 for the pins and trapdoors. | None really: same size and screw holes. | MG90S everywhere is fine, and stronger. |
-| 4 | **Nothing fastens the three assemblies together** in the open-frame build. The bed walls, the frame (with the bins), and the tall feeder stand each stand on the table separately. | Alignment by eye, every time. | The enclosure (Part 3) fixes this: everything sits on one bridge plate. Until then, hot-glue them to a baseboard. |
-| 5 | **Where the Pi sits, and cable length.** The camera on the tower is about 30 cm off the table. The 300 mm cable may not reach a Pi on the table. | You might need a longer cable. | Mount the Pi on the right bed wall or frame side; check the reach before ordering anything. |
+| 4 | **Nothing fastens the three assemblies together** until the enclosure's bridge exists. | Alignment by eye, every time. | Print `bridge_front` and `bridge_back` early (plates 4 and 5 in PRINTING.md); the bed walls, chute and feeder stand all screw to them. |
+| 5 | **Where the Pi sits, and cable length.** The camera on the tower is about 30 cm off the table. The 300 mm cable may not reach a Pi on the table. | You might need a longer cable. | Mount the Pi on the right bed wall, or on the floor under the bridge as the enclosure plans; check the reach before ordering anything. |
 | 6 | **Servo angles are from the CAD, not tested.** Pins 28°, tilt ±25°, doors 90°. | Real servos vary by a few degrees. | Find each end position with the test snippet and write them down. |
 | 7 | **Trapdoor hinge pin.** The design says "3 mm screw or filament", but the holes are 2.9–3.2 mm and filament is 1.75 mm. | Filament would rattle. | Use M3 screws (they're in the screw kit). |
 | 8 | **The motor's direction and run time per card.** | Too long and it feeds two cards. | Start with short pulses (~0.2 s) and tune during the full-machine test. |
-| 9 | **The scan station vs. the camera tower.** The scan station is a standalone stand; in the full machine the same camera moves to the tower on the bed. | You can't use both at once with one camera. | Use the scan station for Stage A, then move the camera. |
