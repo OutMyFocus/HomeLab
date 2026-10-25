@@ -33,6 +33,12 @@ part = "assembly";
 show_tilt = 0;          // chute tilt in degrees: 0, 25 or -25
 show_doors_open = false;
 show_pins_down = false;
+show_frame = true;      // the open frame, front bar and bins (enclosure.scad turns this off)
+
+// Where the bed side walls start. 0 = they stand on the table (open-frame build).
+// enclosure.scad sets this to the top of its bridge plate; the walls then get two screw
+// holes in their bottom edge, and the bridge screws up into them from below.
+wall_z0 = 0;
 
 // --- Cards ---------------------------------------------------------------------
 card_w = 63;
@@ -134,7 +140,7 @@ module bed_side(left) {
     difference() {
         union() {
             yz_plate(side_in, side_t) polygon([
-                [bed_y, 0], [bed_back_y, 0], [bed_back_y, bed_back_z + wall_h], [bed_y, bed_z + wall_h]]);
+                [bed_y, wall_z0], [bed_back_y, wall_z0], [bed_back_y, bed_back_z + wall_h], [bed_y, bed_z + wall_h]]);
             // camera tower socket block, square to the bed (right wall only)
             if (!left) on_bed() translate([side_in + side_t - 2, card_s - boss_s / 2, -10])
                 cube([tower_x + boss_s / 2 - side_in - side_t + 2, boss_s, 24]);
@@ -156,6 +162,8 @@ module bed_side(left) {
         }
         // screw holes for the tilt bracket
         for (z = [pivot_z - 8, pivot_z + 2]) translate([side_in - 1, tilt_bracket_y + 3, z]) rotate([0, 90, 0]) cylinder(d = 3.2, h = side_t + 2);
+        // enclosure build: M3 screws come up through the bridge plate into the bottom edge
+        if (wall_z0 > 0) for (y = [bed_y + 12, bed_back_y - 12]) translate([side_in + side_t / 2, y, wall_z0 - 1]) cylinder(d = 2.6, h = 11);
     }
 }
 
@@ -377,7 +385,9 @@ module assembly() {
         }
     }
     color("#2b2b2b") tilt_bracket();
-    for (m = [0, 1]) mirror([m, 0, 0]) color("#2b2b2b", 0.9) frame_side();
-    color("#2b2b2b") front_bar();
-    for (i = [-1, 0, 1]) color("#3a3f47") translate([i * bin_pitch, 0, 0]) bin();
+    if (show_frame) {
+        for (m = [0, 1]) mirror([m, 0, 0]) color("#2b2b2b", 0.9) frame_side();
+        color("#2b2b2b") front_bar();
+        for (i = [-1, 0, 1]) color("#3a3f47") translate([i * bin_pitch, 0, 0]) bin();
+    }
 }
