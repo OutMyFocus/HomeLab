@@ -11,20 +11,22 @@
 // Layout (x across, y front(-) to back(+), z up, table z = 0), front to back:
 //   fascia + three drawers | scan bay under the deck | hopper tower | Pi bay below
 //
-// Build: four CORNER POSTS with grooves. The SIDE, FASCIA and BACK panels slide down
-// into the grooves. The FLOOR tiles sit inside the panels, the DECK tiles screw onto
-// the posts from above. Two DIVIDERS between the drawers carry the bridge.
+// Build: a FLOOR plate with grooves and peg holes locates everything. Four CORNER POSTS
+// peg into it; the SIDE, FASCIA and BACK panels slide down into the posts' grooves and
+// stand in the floor's grooves. The DECK tiles screw onto the posts from above. Two
+// DIVIDERS between the drawers carry the bridge. Rubber feet go under the floor.
 // Plates too big for the 256 mm bed are split into tiles. Tiles are joined on the
 // bench with SPLICE strips that sit in pockets on the underside (M2 screws or glue),
 // then the joined plate goes in as one piece.
 //
 // Printable parts (set `epart`, F6, F7). No supports, 0.2 mm, 15-20% infill:
-//   post          x4    16 mm quarter-round corner post, prints standing
+//   post          x4    16 mm quarter-round corner post, prints standing (pegs up)
 //   side          x4    side panel half (two per side, flip one end for end)
 //   fascia              the band above the drawers. Print it in a lighter colour
+//   light_bar           white strip behind the slot in the fascia (LED strip behind it)
 //   back                back panel, with the port cut-outs
-//   floor_fl floor_fr   dock floor (drawers slide on it), with the stop rail
-//   floor_bl floor_br   Pi bay floor, with the board standoffs
+//   floor_fl floor_fr   floor, front: the drawers slide on it; stop rail at the back
+//   floor_bl floor_br   floor, back: Pi bay, with the board standoffs and vent slots
 //   deck_fl deck_fr     top deck, front (print upside down, as it opens)
 //   deck_bl deck_br     top deck, back: bay opening and hopper well
 //   divider       x2    between the drawers, carries the bridge
@@ -62,6 +64,9 @@ floor_t = 4;
 deck_t = 4;
 deck_z = 212;             // top of the deck
 lip_h = 8;                // lip under the deck, just inside the panels
+deck_ch = 2;              // chamfer on the deck's top edges
+seam_ch = 1;              // small chamfer along every visible seam, so it reads as a panel line
+light_slot = [150, 2.2];  // status light slot in the fascia (length, height); 0 length for none
 bridge_t = 4;
 bridge_top = 111;         // = wall_z0
 bridge_half = 52;         // bridge spans x = +-52
@@ -94,11 +99,13 @@ pitch = slot_w + div_t;
 inner_w = 3 * slot_w + 2 * div_t;            // between the side panels' inner faces
 ow = inner_w + 2 * pt + 2 * inset;           // shell outside width
 hw = ow / 2;
-post_h = deck_z - deck_t;                    // posts and panels
+panel_top = deck_z - deck_t;                 // top of the posts and panels
+post_h = panel_top - floor_t;                // posts and panels stand on the floor plate
 div_x = [-pitch, 0, pitch];                  // drawer centres
 floor_y0 = front_y + inset + pt;             // inside faces of the fascia and back panel
 floor_y1 = back_y - inset - pt;
 floor_x = inner_w / 2;
+depth = back_y - front_y;  yc = (front_y + back_y) / 2;
 dock_y1 = floor_y0 + dr_l + 3;               // back of the dock (drawer stop rail)
 floor_seam_y = 150;                          // under the back of the drawers (keeps the front tiles under 250 mm)
 bridge_y0 = floor_y0 + 1;
@@ -125,6 +132,12 @@ module splice_pocket(x, y, z_under, along_y = true) {
     }
 }
 
+// A small V along a seam on a plate's top face: half on each tile, so the joint shows
+// as a clean line instead of a ragged crack. along_y: the seam runs along y (at x).
+module seam_v(x, y, z_top, along_y, len) {
+    translate([x, y, z_top]) rotate([0, 0, along_y ? 90 : 0]) rotate([45, 0, 0]) cube([len + 2, seam_ch * 1.414, seam_ch * 1.414], center = true);
+}
+
 // ============================ POSTS AND PANELS =====================================
 
 // Corner post, modelled for the front-left corner with the outer corner at the origin.
@@ -140,30 +153,40 @@ module post() {
         // deck screw
         translate([7, 7, post_h - 10]) cylinder(d = hole_d, h = 11);
     }
+    // pegs into the floor plate
+    for (q = post_pegs) translate([q[0], q[1], -2.5]) cylinder(d = 3.6, h = 2.5);
+}
+post_pegs = [[7, 7], [12.5, 12.5]];
+module peg_holes(z) {
+    for (i = [0 : 3], q = post_pegs) translate([(i % 2 == 0 ? -1 : 1) * (hw - q[0]), (i < 2 ? front_y + q[1] : back_y - q[1]), z]) cylinder(d = 4, h = 3);
 }
 
 panel_w = ow - 2 * post_r + 2 * groove_d - 0.6;     // front and back panels, groove to groove
 side_len = (back_y - front_y) - 2 * post_r + 2 * groove_d - 0.6;
 side_piece = side_len / 2;
 fascia_z0 = floor_t + dr_h + 3;                     // bottom edge of the fascia
-fascia_h = post_h - fascia_z0;
+fascia_h = panel_top - fascia_z0;
 
 // Panels are modelled lying flat: x along the panel, y up the panel, z = thickness (inside face up).
 module fascia() {
     difference() {
         translate([-panel_w / 2, 0, 0]) cube([panel_w, fascia_h, pt]);
-        // status light slot, optional: a thin LED strip glued behind it
-        // translate([-60, fascia_h - 24, -1]) cube([120, 2, pt + 2]);
+        // status light slot: the light bar sits behind it, an LED strip behind that
+        if (light_slot[0] > 0) translate([-light_slot[0] / 2, fascia_h - 26, -1]) cube([light_slot[0], light_slot[1], pt + 2]);
     }
+}
+// White (or translucent) strip glued behind the slot. Two walls thick, so it glows evenly.
+module light_bar() {
+    translate([-light_slot[0] / 2 - 6, 0, 0]) cube([light_slot[0] + 12, 12, 1.2]);
 }
 
 module back_panel() {
     difference() {
         translate([-panel_w / 2, 0, 0]) cube([panel_w, post_h, pt]);
         // Pi ports (USB x4 + ethernet, on the board's short edge)
-        translate([pi_pos[0] - 2, floor_t + 4, -1]) cube([60, 24, pt + 2]);
+        translate([pi_pos[0] - 2, 4, -1]) cube([60, 24, pt + 2]);
         // power cables (5 V adapter + Pi USB-C)
-        translate([-floor_x + 24, floor_t + 6, -1]) cube([28, 14, pt + 2]);
+        translate([-floor_x + 24, 6, -1]) cube([28, 14, pt + 2]);
         // vent slots behind the Pi bay
         for (i = [0 : 7]) translate([-50 + i * 14, 40, -1]) cube([6, 50, pt + 2]);
     }
@@ -184,7 +207,8 @@ module side() {
 module floor_full() {
     difference() {
         union() {
-            translate([-floor_x, floor_y0, 0]) cube([2 * floor_x, floor_y1 - floor_y0, floor_t]);
+            // the base plate: the posts and panels stand on it
+            linear_extrude(floor_t) translate([0, yc]) rrect(ow, depth, post_r);
             // drawer stop rail
             translate([-floor_x, dock_y1 - 3, 0]) cube([2 * floor_x, 3, floor_t + 10]);
             // Pi 5 standoffs: 49 x 58 hole pattern, 3.5 mm in from the board edges
@@ -194,9 +218,19 @@ module floor_full() {
             // rear bridge legs locate here
             for (x = [-1, 1]) translate([x * (bridge_half - 7), bridge_y1 - 8, 0]) cylinder(d = 14, h = floor_t + 3);
         }
-        // notches around the corner posts
-        for (x = [-1, 1], y = [floor_y0, floor_y1]) translate([x * floor_x, y, 0])
-            cube([2 * (post_r - inset - pt + 0.3), 2 * (post_r - inset - pt + 0.3), 3 * floor_t], center = true);
+        // grooves the panels stand in, and peg holes for the posts
+        translate([0, yc, floor_t - 1.5]) linear_extrude(2) difference() {
+            rrect(ow - 2 * inset + 0.4, depth - 2 * inset + 0.4, post_r - inset);
+            rrect(ow - 2 * inset - 2 * pt - 0.4, depth - 2 * inset - 2 * pt - 0.4, post_r - inset - pt);
+        }
+        peg_holes(floor_t - 2.5);
+        // recesses for stick-on rubber feet underneath
+        for (x = [-1, 1], y = [front_y + 14, yc, back_y - 14]) translate([x * (hw - 14), y, -1]) cylinder(d = 9, h = 2);
+        // vent slots under the Pi bay (air comes in here, out through the back panel)
+        for (i = [0 : 6], x = [-1, 1]) translate([x * 60 - 20, 185 + i * 10, -1]) cube([40, 4, floor_t + 2]);
+        // seam chamfers, so the seams read as panel lines
+        seam_v(0, floor_seam_y, floor_t, false, ow);
+        if (split_x) seam_v(0, yc, floor_t, true, depth);
         // divider grooves
         for (x = [-pitch / 2, pitch / 2]) translate([x - (div_t + 0.4) / 2, floor_y0 + 4, floor_t - 2]) cube([div_t + 0.4, dock_y1 - 3 - floor_y0 - 8, 3]);
         // splice pockets along the seams (the middle one is under the middle drawer, flush)
@@ -225,18 +259,28 @@ module floor_tile(xi, yi) {
 module deck_full() {
     difference() {
         union() {
-            // the plate, with rounded corners matching the posts
-            translate([0, 0, deck_z - deck_t]) linear_extrude(deck_t)
-                translate([0, (front_y + back_y) / 2]) rrect(ow, back_y - front_y, post_r);
+            // the plate, with rounded corners matching the posts and a chamfer on the top edge
+            hull() {
+                translate([0, 0, deck_z - deck_t]) linear_extrude(deck_t - deck_ch) translate([0, yc]) rrect(ow, depth, post_r);
+                translate([0, 0, deck_z - 0.01]) linear_extrude(0.01) translate([0, yc]) rrect(ow - 2 * deck_ch, depth - 2 * deck_ch, post_r - deck_ch);
+            }
             // lip just inside the panels: keeps them straight and locates the deck
             translate([0, 0, deck_z - deck_t - lip_h]) linear_extrude(lip_h + 0.01) difference() {
-                translate([0, (front_y + back_y) / 2]) rrect(inner_w - 0.8, floor_y1 - floor_y0 - 0.8, 4);
-                translate([0, (front_y + back_y) / 2]) rrect(inner_w - 0.8 - 2 * pt, floor_y1 - floor_y0 - 0.8 - 2 * pt, 2);
+                translate([0, yc]) rrect(inner_w - 0.8, floor_y1 - floor_y0 - 0.8, 4);
+                translate([0, yc]) rrect(inner_w - 0.8 - 2 * pt, floor_y1 - floor_y0 - 0.8 - 2 * pt, 2);
             }
         }
-        // scan bay opening (the bed walls rise through it) and the hopper well
-        translate([-bay_x, bay_y0, 0]) cube([2 * bay_x, bay_y1 - bay_y0, 300]);
-        translate([-well_x, well_y0 - 1, 0]) cube([2 * well_x, well_y1 - well_y0 + 1, 300]);
+        // scan bay opening (the bed walls rise through it) and the hopper well, chamfered at the top
+        for (o = [[-bay_x, bay_y0, 2 * bay_x, bay_y1 - bay_y0], [-well_x, well_y0 - 1, 2 * well_x, well_y1 - well_y0 + 1]]) {
+            translate([o[0], o[1], 0]) cube([o[2], o[3], 300]);
+            hull() {
+                translate([o[0], o[1], deck_z - deck_ch]) cube([o[2], o[3], 0.01]);
+                translate([o[0] - deck_ch, o[1] - deck_ch, deck_z]) cube([o[2] + 2 * deck_ch, o[3] + 2 * deck_ch, 0.01]);
+            }
+        }
+        // seam lines
+        seam_v(0, deck_seam_y, deck_z, false, ow);
+        if (split_x) seam_v(0, yc, deck_z, true, depth);
         // the camera tower post passes through (tilted with the bed)
         on_bed() translate([tower_x - 15, card_s - 15, -4]) cube([30, 30, 200]);
         // post screws, countersunk
@@ -360,7 +404,10 @@ module tower() {
 module tower_lid() {
     translate([0, tower_yc, deck_z + tower_h - 2]) {
         linear_extrude(2) rrect(tower_w + 1.4, tower_l + 1.4, 6.3);
-        translate([0, 0, 2]) linear_extrude(3) rrect(tower_w + 5, tower_l + 5, 8);
+        hull() {
+            translate([0, 0, 2]) linear_extrude(1) rrect(tower_w + 5, tower_l + 5, 8);
+            translate([0, 0, 2]) linear_extrude(3) rrect(tower_w + 1, tower_l + 1, 6);
+        }
     }
 }
 
@@ -395,16 +442,17 @@ use <sorter_drawer.scad>
 
 module place_post(i) {   // 0 fl, 1 fr, 2 bl, 3 br
     x = (i % 2 == 0) ? -hw : hw;  y = (i < 2) ? front_y : back_y;
-    translate([x, y, 0]) mirror([i % 2, 0, 0]) mirror([0, i >= 2 ? 1 : 0, 0]) post();
+    translate([x, y, floor_t]) mirror([i % 2, 0, 0]) mirror([0, i >= 2 ? 1 : 0, 0]) post();
 }
 
 module shell(open = false) {   // open: no deck, tower or right side, to see inside
     color(c_shell) for (i = [0 : 3]) place_post(i);
     color(c_fascia) translate([0, floor_y0, fascia_z0]) rotate([90, 0, 0]) fascia();
-    color(c_shell) translate([0, back_y - inset, 0]) rotate([90, 0, 0]) back_panel();
+    color("white") translate([0, floor_y0 + 1.2, fascia_z0 + fascia_h - 26 - 5]) rotate([90, 0, 0]) light_bar();
+    color(c_shell) translate([0, back_y - inset, floor_t]) rotate([90, 0, 0]) back_panel();
     for (m = open ? [0] : [0, 1]) mirror([m, 0, 0]) color(c_shell) {
-        translate([-hw + inset, front_y + post_r - groove_d + 0.3, 0]) rotate([90, 0, 90]) side();
-        translate([-hw + inset + pt, front_y + post_r - groove_d + 0.3 + side_piece, post_h]) rotate([90, 0, 90]) rotate([180, 0, 0]) side();
+        translate([-hw + inset, front_y + post_r - groove_d + 0.3, floor_t]) rotate([90, 0, 90]) side();
+        translate([-hw + inset + pt, front_y + post_r - groove_d + 0.3 + side_piece, panel_top]) rotate([90, 0, 90]) rotate([180, 0, 0]) side();
     }
     color(c_inner) for (xi = [0, 1], yi = [0, 1]) floor_tile(xi, yi);
     if (!open) color(c_shell) for (xi = [0, 1], yi = [0, 1]) deck_tile(xi, yi);
@@ -437,9 +485,10 @@ module mechanism() {
 
 // ============================ OUTPUT ==========================================
 
-if (epart == "post") post();
+if (epart == "post") translate([0, 0, post_h]) mirror([0, 0, 1]) post();   // upside down: flat top on the bed, pegs up
 else if (epart == "side") side();
 else if (epart == "fascia") fascia();
+else if (epart == "light_bar") light_bar();
 else if (epart == "back") back_panel();
 else if (epart == "floor_fl") floor_tile(0, 0);
 else if (epart == "floor_fr") floor_tile(1, 0);

@@ -247,10 +247,11 @@ drawer slides out of the sorter and straight into the shelf.
             └──────────────────────────────────────────────────────┘
 ```
 
-- Four **corner posts** with grooves. The **side**, **fascia** and **back** panels slide
-  down into the grooves.
-- The **floor** tiles sit inside the panels. The front ones are the drawer dock: two
-  **dividers** stand in grooves in the floor, between the drawers.
+- The **floor** is a base plate with rounded corners. Everything stands on it: the four
+  **corner posts** peg into it, and the **side**, **fascia** and **back** panels slide
+  down into the posts' grooves and stand in a groove in the floor. Stick-on rubber feet
+  go in the recesses underneath. The front half is the drawer dock: two **dividers**
+  stand in grooves in the floor, between the drawers.
 - The **bridge** is the plate the mechanism stands on, above the drawers. It rests on the
   dividers' top flanges at the front and on two **legs** at the back. The bed walls screw
   to it with a new foot flange (`wall_z0 = 111` in `bed_chute.scad`), the feeder stands on
@@ -261,7 +262,12 @@ drawer slides out of the sorter and straight into the shelf.
   the camera post comes up through a hole and gets a round **sleeve** and a **head cover**;
   the **tower** sits over the hopper, with a lid.
 - The Pi, PCA9685 and motor driver sit in the bay behind the dock, under the bridge, on
-  standoffs in the floor. Ports and vents are cut in the back panel.
+  standoffs in the floor. Ports and vents are cut in the back panel, and there are intake
+  slots in the floor under the Pi, so air can move. Fit the Pi 5's Active Cooler (or any
+  fan heatsink under 25 mm) and it'll stay cool in there.
+- A **light bar** sits behind a slot in the fascia: a white strip the width of the slot
+  with a piece of the LED strip stuck behind it. Lit, it's the thin line across the front
+  that the Roca has. Unlit, it's a white line.
 
 Plates too big for the 256 mm bed are split into tiles that meet at a seam, and joined on
 the bench with **splice** strips that sit in pockets on the underside (M2 screws or glue).
@@ -270,11 +276,12 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 
 | File | How many | Colour | Notes |
 |---|---|---|---|
-| `post` | 4 | black | prints standing, 208 mm tall |
+| `post` | 4 | black | prints standing, pegs up, 204 mm tall |
 | `side` | 4 | black | two per side; flip the second one end for end |
 | `fascia` | 1 | **dark grey** | the lighter band across the front |
+| `light_bar` | 1 | **white** | behind the slot in the fascia |
 | `back` | 1 | black | port and vent cut-outs |
-| `floor_fl`, `floor_fr`, `floor_bl`, `floor_br` | 1 each | any | |
+| `floor_fl`, `floor_fr`, `floor_bl`, `floor_br` | 1 each | black | the base plate; its edge shows |
 | `deck_fl`, `deck_fr`, `deck_bl`, `deck_br` | 1 each | black | print as they open (upside down) |
 | `divider` | 2 | any | |
 | `bridge_front`, `bridge_back` | 1 each | any | |
@@ -290,3 +297,9 @@ walls starting at the bridge, with screw holes in their bottom edge) and
 `export_enclosure.sh` regenerates all of these.
 
 All flat parts print as they open, no supports, 0.2 mm, 15–20% infill. The posts stand up.
+Every seam between two tiles has a small V along it on the visible face, so the joints
+read as panel lines rather than cracks, and the deck has a 2 mm chamfer round its top
+edges and its openings.
+
+Other parts: 6 stick-on rubber feet (8 mm), about 20 M3 × 8 and 30 M2 × 6 self-tapping
+screws, 4 M2.5 × 6 for the Pi.
