@@ -63,18 +63,19 @@ module n20() {   // gearbox + motor, along +x from the origin, shaft along -x
     color("#b8bcc2") translate([9, (n20_w - 0.2) / 2, (n20_h - 0.2) / 2]) rotate([0, 90, 0]) cylinder(d = 10, h = 15, $fn = 24);
     color("#c33") translate([24, 2, 1]) cube([4, 1, 1]);
 }
-module pi5() {   // board corner at the origin, 56 across (x), 85 deep (y), ports at +y
+module pi5() {   // board corner at the origin, 56 across (x), 85 deep (y): USB + ethernet at +y,
+                 // USB-C and micro HDMI on the +x edge, GPIO header along the -x edge
     color("#1f8a4c") cube([56, 85, 1.6]);
     color("#c9ccd0") {
-        translate([2, 85 - 21, 1.6]) cube([16, 22, 13.5]);   // ethernet
+        translate([38, 85 - 21, 1.6]) cube([16, 22, 13.5]);  // ethernet
         translate([21, 85 - 17, 1.6]) cube([14, 18, 16]);    // USB
-        translate([38, 85 - 17, 1.6]) cube([14, 18, 16]);    // USB
-        translate([-1, 6, 1.6]) cube([7, 9, 3.2]);           // USB-C
-        translate([-1, 22, 1.6]) cube([7, 6, 3]);            // micro HDMI
-        translate([-1, 35, 1.6]) cube([7, 6, 3]);
+        translate([4, 85 - 17, 1.6]) cube([14, 18, 16]);     // USB
+        translate([50, 6, 1.6]) cube([7, 9, 3.2]);           // USB-C
+        translate([50, 22, 1.6]) cube([7, 6, 3]);            // micro HDMI
+        translate([50, 35, 1.6]) cube([7, 6, 3]);
     }
     color("#555") translate([20, 25, 1.6]) cube([15, 15, 2]);    // SoC
-    color("#222") translate([50, 3.5, 1.6]) cube([5, 51, 8.5]);  // GPIO header
+    color("#222") translate([1, 3.5, 1.6]) cube([5, 51, 8.5]);   // GPIO header
 }
 module pca9685() {   // 62 x 25
     color("#2457c5") cube([62, 25, 1.6]);
@@ -166,7 +167,7 @@ module feeder_all(e = 0) { feeder_stand_in(e); feeder_hopper_in(e); feeder_gate_
 module floor_electronics(e = 0) {
     translate([pi_pos[0], pi_pos[1], floor_t + 5 + e]) pi5();
     translate([pca_pos[0], pca_pos[1], floor_t + 5 + e]) pca9685();
-    translate([-62, 232, floor_t + e]) drv8833();
+    translate([-100, 232, floor_t + e]) drv8833();
     translate([-floor_x + 22, floor_y1 - 16, floor_t + e]) barrel_jack();
 }
 
@@ -206,10 +207,10 @@ else if (step == 1) {   // floor: four tiles, splices and feet underneath (seen 
 else if (step == 2) {   // electronics on the floor
     color(c_done) floor_tiles();
     floor_electronics(45);
-    for (p = [[pi_pos[0] + 28, pi_pos[1] + 42], [pca_pos[0] + 31, pca_pos[1] + 12], [-53, 240], [-floor_x + 37, floor_y1 - 9]]) arrow([p[0], p[1], 42], [p[0], p[1], 10]);
+    for (p = [[pi_pos[0] + 28, pi_pos[1] + 42], [pca_pos[0] + 31, pca_pos[1] + 12], [-91, 240], [-floor_x + 37, floor_y1 - 9]]) arrow([p[0], p[1], 42], [p[0], p[1], 10]);
     label(1, [pi_pos[0] + 28, pi_pos[1] + 30, 70], [30, 0, 30]);
     label(2, [pca_pos[0] + 10, pca_pos[1] + 12, 60], [-30, 0, 30]);
-    label(3, [-53, 240, 60], [0, 0, 40]);
+    label(3, [-91, 240, 60], [0, 0, 40]);
     label(4, [-floor_x + 30, floor_y1 - 9, 66], [-25, 0, 30]);
 }
 else if (step == 3) {   // corner posts onto their pegs
@@ -356,7 +357,7 @@ else if (step == 20) {  // where all the electronics end up (shell left out)
     floor_electronics(); pin_servo(); tilt_servo(); door_servo(true); door_servo(false); leds(); feeder_motor_in(); camera();
     label(1, [pi_pos[0] + 40, pi_pos[1] + 60, floor_t + 20], [50, 30, 30]);
     label(2, [pca_pos[0] + 10, pca_pos[1] + 12, floor_t + 8], [-40, 30, 30]);
-    label(3, [-53, 240, floor_t + 8], [0, 40, 30]);
+    label(3, [-91, 240, floor_t + 8], [0, 40, 30]);
     label(4, [-floor_x + 30, floor_y1 - 9, floor_t + 12], [-40, 20, 40]);
     on_bed() label(5, [0, card_s + 8, cam_height + 8], [-40, 0, 30]);
     on_bed() label(6, [side_in - 0.5, 70, led_n + 5], [-30, 0, 45]);
