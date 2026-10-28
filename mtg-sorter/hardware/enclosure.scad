@@ -98,7 +98,8 @@ hopper_h = 60;
 stand_h = feeder_floor_z - 3 - bridge_top;   // 92: print feeder_stand with stand_h = this
 
 // --- Electronics -----------------------------------------------------------------
-pi_pos = [40, 178];       // Pi 5 board corner (x, y). Board is 56 across, 85 deep, ports at the back
+pi_pos = [57, 178];       // Pi 5 board corner (x, y). Board is 56 across, 85 deep, ports at the back.
+                          // x = 57 keeps it clear of the right rear leg (x 38..52) and leaves 27 mm for the USB-C plug
 pca_pos = [-110, 190];    // PCA9685 board corner, 62 across, 25 deep
 
 // --- Colours -----------------------------------------------------------------------------
@@ -295,7 +296,7 @@ module floor_full() {
         for (x = [3, 59], y = [3, 22]) translate([pca_pos[0] + x, pca_pos[1] + y, 1]) cylinder(d = 2.2, h = 20);
         for (x = [-1, 1]) translate([x * (bridge_half - 7), bridge_y1 - 8, floor_t]) cylinder(d = 10.4, h = 10);
         // zip-tie slots for the motor driver and cables
-        for (x = [-60, -45], y = [230, 250]) translate([x, y, -1]) cube([4, 2.5, floor_t + 2]);
+        for (x = [-100, -86], y = [230, 250]) translate([x, y, -1]) cube([4, 2.5, floor_t + 2]);   // clear of the left rear leg
     }
 }
 
