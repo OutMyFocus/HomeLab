@@ -20,7 +20,7 @@
 // then the joined plate goes in as one piece.
 //
 // Printable parts (set `epart`, F6, F7). No supports, 0.2 mm, 15-20% infill:
-//   post_front    x2    16 mm quarter-round corner post, prints standing (pegs up); its inner
+//   post_front, post_front_r   left and right front posts (mirror images, not interchangeable): 16 mm quarter-round corner post, prints standing (pegs up); its inner
 //                       face is the dock's cheek, the outer drawer plate slides along it
 //   post_back     x2    same, with the back panel's groove running the full height
 //   side          x4    side panel half (two per side, flip one end for end)
@@ -540,7 +540,8 @@ module mechanism() {
 
 // ============================ OUTPUT ==========================================
 
-if (epart == "post_front") translate([0, 0, post_h]) mirror([0, 0, 1]) post(true);    // upside down: flat top on the bed, pegs up
+if (epart == "post_front") translate([0, 0, post_h]) mirror([0, 0, 1]) post(true);    // front LEFT; upside down: flat top on the bed, pegs up
+else if (epart == "post_front_r") translate([0, 0, post_h]) mirror([0, 0, 1]) mirror([1, 0, 0]) post(true);  // front RIGHT: the mirror image, its short groove is on the other face
 else if (epart == "post_back") translate([0, 0, post_h]) mirror([0, 0, 1]) post(false);
 else if (epart == "side") side();
 else if (epart == "fascia_l") fascia_tile(0);

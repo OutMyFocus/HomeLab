@@ -454,7 +454,7 @@ print first are in [`PRINTING.md`](PRINTING.md). The same steps with a picture e
 
 1. Fix the Pi (4 × M2.5) and the PCA9685 (4 × M2.5) to the standoffs on the floor, the
    motor driver with a zip tie. The Pi's ports face the back.
-2. Push the two `post_front`s and two `post_back`s onto their pegs at the corners (the
+2. Push `post_front` (front left), `post_front_r` (front right) and the two `post_back`s onto their pegs at the corners (the
    front ones have a shorter fascia groove). Slide the fascia (light slots at the top),
    the four `side` pieces (two per side, pockets facing in, splice them) and the back panel
    down the posts' grooves into the groove in the floor. The Pi's ports line up with the
