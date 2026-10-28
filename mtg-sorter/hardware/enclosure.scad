@@ -28,10 +28,12 @@
 //                       gaps between the drawer plates. Print it in a lighter colour
 //   light_bar           white strip behind the three light slots (LED strip behind it); glued
 //                       across the fascia seams, it also ties the three pieces together
-//   back_l back_r       back panel halves (l/r as seen from the front), port cut-outs
+//   back_l back_r       back panel halves (l/r as seen from the front), port cut-outs; the
+//                       power jack hole is in back_l
 //   floor_fl floor_fr   floor, front: the drawers slide on it; stop rail at the back
 //   floor_bl floor_br   floor, back: Pi bay, with the board standoffs and vent slots
-//   deck_fl deck_fr     top deck, front (print upside down, as it opens)
+//   deck_fl deck_fr     top deck, front (print upside down, as it opens); the power
+//                       button hole is in deck_fr
 //   deck_bl deck_br     top deck, back: bay opening and hopper well
 //   divider       x2    between the drawers, carries the bridge
 //   bridge_front bridge_back   the plate the mechanism stands on
@@ -100,6 +102,12 @@ stand_h = feeder_floor_z - 3 - bridge_top;   // 92: print feeder_stand with stan
 // --- Electronics -----------------------------------------------------------------
 pi_pos = [40, 178];       // Pi 5 board corner (x, y). Board is 56 across, 85 deep, ports at the back
 pca_pos = [-110, 190];    // PCA9685 board corner, 62 across, 25 deep
+
+// --- Power (POWER.md): one wall plug at the back, one button on top -------------------------
+jack_d = 11.5;            // panel-mount 5.5 x 2.1 mm DC jack (DC-022B style, 11 mm thread)
+jack_pos = [-103, 16];    // on the back panel: x, and height above the floor plate
+button_d = 16.3;          // 16 mm momentary metal button with an LED ring
+button_in = 30;           // its centre, in from the deck's front and right edges
 
 // --- Colours -----------------------------------------------------------------------------
 c_shell = "#1b1d21";  c_fascia = "#2c3036";  c_inner = "#3a3f47";  c_drawer = ["#e5e2d6", "#2d63b8", "#d8262a"];
@@ -229,8 +237,8 @@ module back_full() {
         translate([-panel_w / 2, 0, 0]) cube([panel_w, post_h, pt]);
         // Pi ports (USB x4 + ethernet, on the board's short edge)
         translate([pi_pos[0] - 2, 4, -1]) cube([60, 24, pt + 2]);
-        // power cables (5 V adapter + Pi USB-C)
-        translate([-floor_x + 24, 6, -1]) cube([28, 14, pt + 2]);
+        // the one power inlet: panel-mount DC jack for the 12 V adapter
+        translate([jack_pos[0], jack_pos[1], -1]) cylinder(d = jack_d, h = pt + 2);
         // vent slots behind the Pi bay
         for (i = [0 : 7]) translate([-50 + i * 14, 40, -1]) cube([6, 50, pt + 2]);
         seam_v(0, post_h / 2, 0, true, post_h);
@@ -337,6 +345,8 @@ module deck_full() {
         if (split_x) seam_v(0, yc, deck_z, true, depth);
         // the camera tower post passes through (tilted with the bed)
         on_bed() translate([tower_x - 15, card_s - 15, -4]) cube([30, 30, 200]);
+        // the power button, front right corner
+        translate([hw - button_in, front_y + button_in, deck_z - deck_t - 1]) cylinder(d = button_d, h = deck_t + 2);
         // post screws, countersunk
         for (x = [-1, 1], y = [front_y + 7, back_y - 7]) translate([x * (hw - 7), y, deck_z - deck_t - 1]) {
             cylinder(d = 3.4, h = 10);
@@ -536,6 +546,14 @@ module mechanism() {
     // Pi 5 and PCA9685
     color("green") translate([pi_pos[0], pi_pos[1], floor_t + 5]) cube([56, 85, 1.6]);
     color("blue") translate([pca_pos[0], pca_pos[1], floor_t + 5]) cube([62, 25, 1.6]);
+    // power (POWER.md): button on the deck, DC jack in the back panel, the two Wago blocks (+5 V, ground)
+    translate([hw - button_in, front_y + button_in, deck_z]) {
+        color("silver") cylinder(d = 19, h = 1.5);
+        color("orange") translate([0, 0, 1.5]) difference() { cylinder(d = 13, h = 0.3); translate([0, 0, -1]) cylinder(d = 11, h = 2); }
+        color("silver") translate([0, 0, -deck_t - 30]) cylinder(d = 16, h = 30);
+    }
+    color("#222") translate([jack_pos[0], back_y - inset - pt, floor_t + jack_pos[1]]) rotate([90, 0, 0]) cylinder(d = 10, h = 16);
+    for (i = [0, 1]) color(i == 0 ? "#d33" : "#444") translate([-floor_x + 2, 220 + i * 16, floor_t]) cube([30, 13, 18]);
 }
 
 // ============================ OUTPUT ==========================================

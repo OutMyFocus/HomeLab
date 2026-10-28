@@ -21,6 +21,14 @@ If Bambu Studio asks whether to load the project's settings, say **yes**. The pr
 Import Configs** (the "Select profile to load" window): flat panels, structural, tall parts
 with brim, and solid. You only need them if you build plates yourself from the STLs.
 
+### Power jack and button holes (2026-10-28)
+
+`back_l` and `deck_fr` gained the holes for the one-plug, one-button power setup
+([`POWER.md`](POWER.md)). Your copy of `MTG_Sorter_Enclosure.3mf` has your own changes in it,
+so it wasn't regenerated: print those two parts from **`bambu/MTG_Sorter_Power_Parts.3mf`**
+instead (File → Open Project, two plates, same settings). Already printed them? Drill the holes
+instead: POWER.md, step 2, has the positions.
+
 ## Building a plate yourself from the STLs
 
 `stl/` holds only what gets printed: the 26 `enc_*.stl` (the box), the two
@@ -85,13 +93,13 @@ Bambu Studio's estimate is the real one.
 | 9 | `post_front` + `post_back` + `leg` | black | 60 g, 4 h | brims on all three |
 | 10 | `post_back` + `leg` + `tower` | black | 90 g, 5 h | brims on all three |
 | 11–14 | `side`, one per plate (4) | black | 75 g, 3.5 h each | |
-| 15 | `back_l` | black | 55 g, 2.5 h | |
+| 15 | `back_l` | black | 55 g, 2.5 h | has the 11 mm power-jack hole: print it from `MTG_Sorter_Power_Parts.3mf` (below) |
 | 16 | `back_r` | black | 55 g, 2.5 h | |
 | 17 | `fascia_l` + `fascia_m` + `fascia_r` | black | 50 g, 2.5 h | |
 | 18 | `light_bar` | **white** | 4 g, 10 min | |
 | 19 | `tower_lid` + `post_sleeve` + `head_cover` | black | 80 g, 4 h | brim on the sleeve |
 | 20 | `deck_fl` | black | 70 g, 3.5 h | the deck last: it goes on once the mechanism is in |
-| 21 | `deck_fr` | black | 70 g, 3.5 h | |
+| 21 | `deck_fr` | black | 70 g, 3.5 h | has the 16 mm power-button hole: print it from `MTG_Sorter_Power_Parts.3mf` (below) |
 | 22 | `deck_bl` | black | 50 g, 2.5 h | |
 | 23 | `deck_br` | black | 50 g, 2.5 h | |
 | - | two more Card Catalog drawers + tops | black | 8 h | from the Card Catalog 3MF |
