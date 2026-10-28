@@ -1,6 +1,6 @@
 # Hardware
 
-Step-by-step build: [ASSEMBLY.md](ASSEMBLY.md).
+Step-by-step build: [ASSEMBLY.md](ASSEMBLY.md). Power (one plug, one button): [POWER.md](POWER.md).
 
 - [Feeder test rig](#feeder-test-rig): the first piece of the full sifter
 - [Scan bed and chute](#scan-bed-and-chute): the middle of the sifter: stops the card for its photo, then sorts it into a bin

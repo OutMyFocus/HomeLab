@@ -304,9 +304,13 @@ There's no motor or servo code in the repo yet, so **these connections are a pro
 picked so they don't clash with anything the Pi or camera uses. When the sorter code gets
 written, it should use these.
 
+Power comes from one 5 V 10 A supply through the back-panel jack and two Wago blocks; the
+full wiring, the power button and the Pi settings are in [`POWER.md`](POWER.md). The short version:
+
 ```
- 5 V 4 A adapter ──► barrel jack adapter ──┬──► PCA9685  V+ / GND  (servo power)
-                                           └──► DRV8833  VM / GND  (motor power)
+ 5 V 10 A supply ──► DC jack ──► Wago +5V / GND ──┬──► Pi 5 USB-C (screw-terminal plug)
+                                                  ├──► PCA9685  V+ / GND  (servo power)
+                                                  └──► DRV8833  VM / GND  (motor power)
 
  Raspberry Pi 5                 PCA9685 servo board
    pin 1  3.3 V  ─────────────► VCC
@@ -329,13 +333,12 @@ written, it should use these.
 
 Rules that matter:
 
-- **The servo supply must be 5 V.** MG90S servos take 4.8–6 V; a 12 V adapter will burn them
-  out in seconds. Check the label on the adapter before connecting it. If it's 12 V, either
-  swap it for a 5 V 4 A one, or add a small **buck converter** (12 V in, set to 5 V out,
-  with screw terminals so it's solder-free) between the adapter and the boards.
-
+- **Everything runs on 5 V.** MG90S servos take 4.8–6 V and the DRV8833 at most 10.8 V; a
+  12 V adapter anywhere will burn them out. For bench tests before the 10 A supply arrives,
+  the 5 V 4 A adapter (item 8) through a barrel jack adapter (item 9) runs the servos and
+  motor fine, with the Pi on its own USB-C supply.
 - **Never power the servos from the Pi's 5 V pin.** Four servos moving at once will crash
-  the Pi. They get the separate 5 V 4 A adapter (item 8) through the barrel jack adapter (item 9).
+  the Pi. Each board gets its own wires from the Wago blocks (see [`POWER.md`](POWER.md)).
 - **Join all the grounds** (Pi, PCA9685, DRV8833, adapter). Without a shared ground the
   signals don't work.
 - Turn on I²C on the Pi: `sudo raspi-config` → Interface Options → I2C → Enable. Then
