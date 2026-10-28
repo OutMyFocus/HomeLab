@@ -1,6 +1,9 @@
 # Assembly guide
 
-How to put the machine together, in the order you'll actually build it:
+How to put the machine together, in the order you'll actually build it.
+For the enclosure build with a picture for every step, see
+[`ASSEMBLY_PICTURES.md`](ASSEMBLY_PICTURES.md) (or the single file
+[`assembly_guide.html`](assembly_guide.html), to open in a browser).
 
 1. [**Part 1: the feeder test**](#part-1-the-feeder-test). Uses only the round 1 parts
    (items 6, 11, 12, 14 and 19 in [`SHOPPING.md`](../SHOPPING.md)) plus printed parts.
@@ -417,7 +420,8 @@ the bin → pins drop → card slides into the chute → doors open (bin 2) or t
 The box from [`README.md`, Enclosure](README.md#enclosure). The open frame and bins that
 Part 2 first had are gone; everything else from Part 2 stays. Print list and part
 names are in the README; the print order, slicer settings and the fit-check plates to
-print first are in [`PRINTING.md`](PRINTING.md).
+print first are in [`PRINTING.md`](PRINTING.md). The same steps with a picture each are in
+[`ASSEMBLY_PICTURES.md`](ASSEMBLY_PICTURES.md).
 
 > **The drawers are Card Catalog v1.2** (MakerWorld 3016550). The dock is sized from
 > Nic's 3MF of it (the `dr_*` block in `enclosure.scad`), so print three drawers and three
@@ -431,10 +435,14 @@ print first are in [`PRINTING.md`](PRINTING.md).
    the six rubber feet in the recesses underneath.
 2. **Bridge:** join `bridge_front` + `bridge_back` the same way. Screw the two new bed walls
    (`..._enclosure.stl`) to it from below (M3 into the holes in their bottom edges), the
-   bed plate between them, then the tilt bracket, pins and camera tower exactly as in
-   Part 2, Stage D. Screw the chute's front axle through the upstand at the front.
-3. **Deck:** join `deck_fl` + `deck_fr`, and `deck_bl` + `deck_br`. Leave the front pair and
-   back pair separate: the back pair lifts off for access to the Pi bay.
+   bed plate between them, then the tilt bracket, pins and camera post exactly as in
+   Part 2, Stage D, but **leave the camera head off the post**: the deck can't be lowered
+   over it, so it goes on last (step 2.7 below). Screw the chute's front axle through the
+   upstand at the front.
+3. **Deck:** join `deck_fl` + `deck_fr` with two splices across their middle seam. Leave the
+   two pockets on the front/back seam empty, so the back of the deck lifts off for access to
+   the Pi bay. `deck_bl` and `deck_br` have no splice between them (the hopper well splits
+   them); they go on as two separate pieces.
 4. **Drawers:** print three Card Catalog drawers and their top bars from the MakerWorld
    3MF. Slide a toploader with a card into each pocket from the top, clip the bar on.
 5. **Fascia and back:** join `fascia_l` + `fascia_m` + `fascia_r` with splices glued in
@@ -444,8 +452,8 @@ print first are in [`PRINTING.md`](PRINTING.md).
 
 ## 2. Assembly, bottom up
 
-1. Fix the Pi (4 × M2.5) and the PCA9685 to the standoffs on the floor, the motor driver
-   with a zip tie. The Pi's ports face the back.
+1. Fix the Pi (4 × M2.5) and the PCA9685 (4 × M2.5) to the standoffs on the floor, the
+   motor driver with a zip tie. The Pi's ports face the back.
 2. Push the two `post_front`s and two `post_back`s onto their pegs at the corners (the
    front ones have a shorter fascia groove). Slide the fascia (light slots at the top),
    the four `side` pieces (two per side, pockets facing in, splice them) and the back panel
@@ -456,10 +464,12 @@ print first are in [`PRINTING.md`](PRINTING.md).
    `leg`s at the back; screw it to the flanges (M3, 3 per side). Wire everything up (Stage C).
 5. Put `feeder_stand_mid` in the fence on the bridge with the hopper on it, exit shelf facing
    the bed.
-6. Slide the `post_sleeve` over the camera post, lay the front deck on, then the back deck.
-   Screw both to the posts (M3, countersunk, 4 corners). Push the `head_cover` over the
-   camera head, the `tower` over the hopper, and its lid on.
-7. Slide the three drawers in.
+6. Slide the `post_sleeve` over the camera post, lay the front deck on, then the two back
+   halves. Screw them to the posts (M3, countersunk, 4 corners).
+7. Screw the camera to the `camera_head` (4 × M2, lens down), push the head onto the top of
+   the camera post and plug in the ribbon, then push the `head_cover` over it. Put the
+   `tower` over the hopper and its lid on.
+8. Slide the three drawers in.
 
 ---
 

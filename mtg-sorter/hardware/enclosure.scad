@@ -568,6 +568,7 @@ else if (epart == "post_sleeve") post_sleeve();
 else if (epart == "head_cover") translate([0, 0, 16]) mirror([0, 0, 1]) head_cover();
 else if (epart == "shell") shell();
 else if (epart == "inside") { shell(true); drawers(); mechanism(); }
+else if (epart == "none") { }   // for files that include this one (guide/scenes.scad)
 else {
     shell();
     drawers();

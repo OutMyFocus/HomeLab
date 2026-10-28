@@ -203,7 +203,7 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `divider` | 2 | any | |
 | `bridge_front`, `bridge_back` | 1 each | any | |
 | `leg` | 2 | any | |
-| `splice` | 10 | any | |
+| `splice` | 26 | any | 24 used (floor 6, bridge 2, deck 2, fascia 4, back 4, sides 6), 2 spare |
 | `tower`, `tower_lid` | 1 each | black | |
 | `post_sleeve`, `head_cover` | 1 each | black | |
 | Card Catalog v1.2 drawer + drawer top | 3 each | your choice | from the MakerWorld 3MF, not this repo |
@@ -218,10 +218,11 @@ flat parts (floor and deck tiles) are 146 × 240 mm, and the shell is 292 wide, 
 All flat parts print as they open, no supports, 0.2 mm, 15–20% infill. The posts stand up.
 **[`bambu/MTG_Sorter_Enclosure.3mf`](bambu/) is all of it as one Bambu Studio project (File → Open Project), every plate laid out and set up. [`PRINTING.md`](PRINTING.md) has the plate-by-plate print order, the slicer settings
 per part, colours, and the three fit-check plates to print first.**
+**[`ASSEMBLY_PICTURES.md`](ASSEMBLY_PICTURES.md) shows the build one picture per step.**
 Every seam between two tiles has a small V along it on the visible face, so the joints
 read as panel lines rather than cracks, and the deck has a 2 mm chamfer round its top
 edges and its openings.
 
 Other parts: 6 stick-on rubber feet (8 mm), about 20 M3 × 8 and 30 M2 × 6 self-tapping
-screws, 4 M2.5 × 6 for the Pi, CA glue for the splices in the thin panels (fascia, back,
+screws, 8 M2.5 × 6 for the Pi and the PCA9685, CA glue for the splices in the thin panels (fascia, back,
 sides: their pockets are too shallow for screws).

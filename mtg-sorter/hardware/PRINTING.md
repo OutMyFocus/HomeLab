@@ -96,6 +96,11 @@ Bambu Studio's estimate is the real one.
 | 23 | `deck_br` | black | 50 g, 2.5 h | |
 | - | two more Card Catalog drawers + tops | black | 8 h | from the Card Catalog 3MF |
 
+**Splices:** the build uses 24 of them (floor 6, bridge 2, front deck 2, fascia 4, back panel 4,
+sides 6), more than the 10 on plates 1 and 7. Count the ones in your project and add more
+`enc_splice` to any plate with room until you have 26 (two spare). They're 40 × 16 mm and take a
+few minutes each.
+
 The order is: fit checks, then the parts the mechanism moves onto (so the machine keeps
 working on the bridge while the shell prints), then the shell from the floor up, trim,
 deck. Swap plates 7–16 around freely; they don't depend on each other.
