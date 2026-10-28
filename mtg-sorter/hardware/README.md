@@ -204,6 +204,7 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `divider` | 2 | any | |
 | `bridge_front`, `bridge_back` | 1 each | any | |
 | `leg` | 2 | any | |
+| `leg_offset` | 0 or 1 | any | only for a floor printed with the Pi at x = 40: replaces the right rear `leg`, standing beside the Pi |
 | `splice` | 26 | any | 24 used (floor 6, bridge 2, deck 2, fascia 4, back 4, sides 6), 2 spare |
 | `tower`, `tower_lid` | 1 each | black | |
 | `post_sleeve`, `head_cover` | 1 each | black | |

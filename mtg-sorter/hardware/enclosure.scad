@@ -433,6 +433,29 @@ module leg() {
     translate([0, 0, 3]) cylinder(d = 14, h = leg_h - 3);
 }
 
+// Stand-in for the right rear leg on floors printed with the Pi at x = 40, where the Pi
+// covers the leg's boss. The column stands on the bare floor beside the Pi (x 24..38,
+// y 231..245, clear of the camera ribbon slot) and an L-shaped arm under the bridge
+// carries the peg over to the leg's hole. Origin = the leg's hole. Prints standing up.
+leg_off = [-14, -15.5];   // column centre relative to the leg hole
+module leg_offset() {
+    translate([leg_off[0], leg_off[1], 0]) {
+        cylinder(d = 18, h = 2);                       // foot: tape or glue it down
+        cylinder(d = 14, h = leg_h);
+    }
+    // the arm: along x, then along y to the hole (an L, so it stays out of the
+    // camera ribbon slot), sloped underneath so it prints without supports
+    hull() {
+        translate([leg_off[0], leg_off[1], leg_h - 40]) cylinder(d = 14, h = 40);
+        translate([0, leg_off[1], leg_h - 22]) cylinder(d = 10, h = 22);
+    }
+    hull() {
+        translate([0, leg_off[1], leg_h - 22]) cylinder(d = 10, h = 22);
+        translate([0, 0, leg_h - 8]) cylinder(d = 10, h = 8);
+    }
+    translate([0, 0, leg_h - 0.01]) cylinder(d = 10, h = 3);   // peg into the bridge
+}
+
 module splice() {
     difference() {
         translate([-splice_l / 2, -splice_w / 2, 0]) cube([splice_l, splice_w, splice_t]);
@@ -563,6 +586,7 @@ else if (epart == "divider") divider();
 else if (epart == "bridge_front") translate([0, 0, -(bridge_top - bridge_t)]) bridge_tile(0);
 else if (epart == "bridge_back") translate([0, 0, -(bridge_top - bridge_t)]) bridge_tile(1);
 else if (epart == "leg") leg();
+else if (epart == "leg_offset") leg_offset();
 else if (epart == "splice") splice();
 else if (epart == "tower") translate([0, 0, -deck_z]) tower();
 else if (epart == "tower_lid") translate([0, 0, deck_z + tower_h + 3]) mirror([0, 0, 1]) tower_lid();
