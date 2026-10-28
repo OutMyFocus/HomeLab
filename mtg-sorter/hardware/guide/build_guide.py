@@ -38,9 +38,9 @@ SECTIONS = [
         ], [], ["8 × M2.5 × 6 (Pi and PCA9685)", "1 zip tie"]),
         (3, "Corner posts", [
             "Push each post onto its two pegs at a corner of the floor. They go on by hand.",
-            "The two front posts are the ones whose front groove stops short of the floor: the drawers slide past there.",
+            "The front posts have one groove that stops 115 mm short of the floor, where the drawers slide past. `post_front` goes front left, `post_front_r` front right: they are mirror images, so two of the same won't do.",
             "A loose post gets a drop of CA glue on its pegs.",
-        ], ["2 × post_front", "2 × post_back"], []),
+        ], ["post_front (left)", "post_front_r (right)", "2 × post_back"], []),
         (4, "Back panel", [
             "On the bench, glue `back_l` and `back_r` together with four splices in the pockets on the inside face.",
             "Slide it down the grooves of the two back posts until it sits in the floor groove.",

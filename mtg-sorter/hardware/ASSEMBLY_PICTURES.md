@@ -47,10 +47,10 @@ Floor, electronics, walls. Build it on the table where the machine will live.
 ![Step 3](img/assembly/step_03.png)
 
 - Push each post onto its two pegs at a corner of the floor. They go on by hand.
-- The two front posts are the ones whose front groove stops short of the floor: the drawers slide past there.
+- The front posts have one groove that stops 115 mm short of the floor, where the drawers slide past. `post_front` goes front left, `post_front_r` front right: they are mirror images, so two of the same won't do.
 - A loose post gets a drop of CA glue on its pegs.
 
-**Parts:** `2 × post_front`, `2 × post_back`
+**Parts:** `post_front (left)`, `post_front_r (right)`, `2 × post_back`
 
 ### 4. Back panel
 

@@ -23,7 +23,7 @@ with brim, and solid. You only need them if you build plates yourself from the S
 
 ## Building a plate yourself from the STLs
 
-`stl/` holds only what gets printed: the 26 `enc_*.stl` (the box), the two
+`stl/` holds only what gets printed: the 27 `enc_*.stl` (the box), the two
 `bed_chute_bed_side_*_enclosure.stl` walls, `feeder_stand_mid.stl`, the mechanism from Part 2
 (`bed_chute_bed_plate`, `chute`, `trapdoor` + `trapdoor_left`, `trapdoor_mount` +
 `trapdoor_mount_left`, `hinge_lug` + `hinge_lug_left`, `pin_rocker`, `tilt_bracket`,
@@ -82,7 +82,7 @@ Bambu Studio's estimate is the real one.
 | 6 | `feeder_stand_mid` | black | 90 g, 4.5 h | the 92 mm stand |
 | 7 | `floor_fr` + 8 × `splice` | black | 100 g, 5 h | |
 | 8 | `floor_bl` + `floor_br` | black | 75 g, 4 h | |
-| 9 | `post_front` + `post_back` + `leg` | black | 60 g, 4 h | brims on all three |
+| 9 | `post_front_r` + `post_back` + `leg` | black | 60 g, 4 h | brims on all three. `post_front_r` is the front-right post, the mirror image of plate 1's |
 | 10 | `post_back` + `leg` + `tower` | black | 90 g, 5 h | brims on all three |
 | 11–14 | `side`, one per plate (4) | black | 75 g, 3.5 h each | |
 | 15 | `back_l` | black | 55 g, 2.5 h | |

@@ -193,7 +193,8 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 
 | File | How many | Colour | Notes |
 |---|---|---|---|
-| `post_front`, `post_back` | 2 each | black | print standing, pegs up, 204 mm tall |
+| `post_front`, `post_front_r` | 1 each | black | front-left and front-right corner posts. Mirror images: printing `post_front` twice gives two left posts. Print standing, pegs up, 204 mm tall |
+| `post_back` | 2 | black | same for both back corners |
 | `side` | 4 | black | two per side; flip the second one end for end |
 | `fascia_l`, `fascia_m`, `fascia_r` | 1 each | black (dark grey later, if you like) | the band across the front, left to right |
 | `light_bar` | 1 | **white** | behind the three slots, glued across the fascia seams |
