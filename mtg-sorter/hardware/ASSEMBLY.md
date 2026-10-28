@@ -461,7 +461,7 @@ print first are in [`PRINTING.md`](PRINTING.md). The same steps with a picture e
    cut-outs in the back panel.
 3. Stand the two `divider`s in the grooves in the middle curbs, flanges facing out.
 4. Lower the bridge (with the whole mechanism on it) onto the dividers' flanges and the two
-   `leg`s at the back; screw it to the flanges (M3, 3 per side). Wire everything up (Stage C).
+   `leg`s at the back (if your back-right floor has the Pi under the right leg's boss, use `leg_offset` there instead: tape its foot to the floor just left of the Pi); screw it to the flanges (M3, 3 per side). Wire everything up (Stage C).
 5. Put `feeder_stand_mid` in the fence on the bridge with the hopper on it, exit shelf facing
    the bed.
 6. Slide the `post_sleeve` over the camera post, lay the front deck on, then the two back
