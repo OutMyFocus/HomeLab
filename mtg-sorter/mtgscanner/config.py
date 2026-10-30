@@ -87,3 +87,21 @@ SLOT_OCCUPIED_EDGES = 0.04
 # Camera picture size to ask for. A webcam that can't do it picks its closest size.
 # Bigger means sharper pictures of small cards, at a bit more work per frame.
 CAMERA_SIZE = (1920, 1080)
+
+# --- The machine: servos and feeder (machine.py) ---------------------------
+# Wiring: hardware/ASSEMBLY.md, Stage C. The servos plug into the PCA9685 board, which
+# the Pi talks to over I2C. Angles are 0-180 with 90 the middle, where each horn was
+# fitted. These are first guesses: try angles on the Machine page (/machine) and
+# put the ones that work here.
+SERVOS = {
+    # part: (PCA9685 channel, {position: angle})
+    "pins":   (0, {"up": 90, "down": 62}),                   # stop pins: up stops the card
+    "chute":  (1, {"centre": 90, "left": 65, "right": 115}),  # tilts the tray to bin 1 or 3
+    "door_r": (2, {"closed": 90, "open": 0}),                 # right trapdoor (bin 2)
+    "door_l": (3, {"closed": 90, "open": 180}),               # left trapdoor (bin 2)
+}
+# The feeder's N20 motor, through the DRV8833 driver: Pi GPIO17 to IN1, GPIO27 to IN2.
+FEEDER_PINS = (17, 27)
+# How fast the feeder turns (0-1) and how long one push lasts (seconds).
+FEEDER_SPEED = 1.0
+FEEDER_SECONDS = 0.6
