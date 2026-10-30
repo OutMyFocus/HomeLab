@@ -78,7 +78,7 @@ Bambu Studio's estimate is the real one.
 | 2 | 2 × `divider` | black | 110 g, 6 h | **fit check C** |
 | 3 | `bridge_front` | black | 35 g, 2 h | the mechanism moves onto the bridge from here |
 | 4 | `bridge_back` | black | 70 g, 3.5 h | |
-| 5 | `bed_chute_bed_side_left_enclosure` + `..._right_enclosure` | black | 100 g, 5 h | the walls with screw holes in their bottom edge |
+| 5 | `bed_chute_bed_side_left_enclosure` + `..._right_enclosure` | black | 100 g, 5 h | the walls with screw holes in their bottom edge. Walls printed before 2026-10-30 have no bed-plate groove (only the LED groove): reprint them from the current STLs. The committed 3MF still has the old walls |
 | 6 | `feeder_stand_mid` | black | 90 g, 4.5 h | the 92 mm stand |
 | 7 | `floor_fr` + 8 × `splice` | black | 100 g, 5 h | |
 | 8 | `floor_bl` + `floor_br` | black | 75 g, 4 h | |

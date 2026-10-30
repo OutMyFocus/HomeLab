@@ -147,7 +147,7 @@ module bed_side(left) {
         }
         on_bed() {
             // groove the bed plate slides into
-            translate([side_in - 2, -1, -bed_t - 0.15]) cube([2.01, bed_len + 2, bed_t + 0.3]);
+            translate([side_in - 0.01, -1, -bed_t - 0.15]) cube([2.01, bed_len + 2, bed_t + 0.3]);   // 2 mm into the wall
             // LED strip groove
             translate([side_in - 0.01, 5, led_n - led_w / 2]) cube([1.6, bed_len - 10, led_w]);
             // tower socket
