@@ -80,6 +80,33 @@ class DemoSource:
         return self.blank if into > self.seconds - 1 else self.frames[int(i)]
 
 
+class WaitingForCamera:
+    """Stands in for the camera when none opens at startup, so the page still loads and
+    says so. Tries again every few seconds and hands the camera to the scanner once one
+    opens. (The Pi camera only shows up after a reboot; a webcam can be plugged in live.)"""
+
+    def __init__(self, index: int | None, seconds: float = 5.0):
+        self.index, self.seconds = index, seconds
+        self.on_found = None  # set to Scanner.use_source
+        self._next_try = time.monotonic() + seconds
+
+    def read(self):
+        time.sleep(0.2)
+        if time.monotonic() < self._next_try:
+            return None
+        self._next_try = time.monotonic() + self.seconds
+        try:
+            camera = startup_camera(self.index)
+        except RuntimeError:
+            return None
+        print(f"Camera found: {camera.name}")
+        if self.on_found:
+            self.on_found(camera)
+        else:
+            camera.release()
+        return None
+
+
 # --- The scanner, running in the background ----------------------------------------
 
 
@@ -361,7 +388,9 @@ class Scanner:
                 key=lambda t: t.number,
             )
             if not self.started:
-                status = "starting"
+                status = (
+                    "waiting" if isinstance(self.source, WaitingForCamera) else "starting"
+                )
             elif not visible:
                 status = "looking"
             elif any(t.status == "recognizing" for t in visible):
@@ -794,7 +823,7 @@ def startup_camera(index: int | None) -> CameraSource:
     try:
         return CameraSource(index, names.get(index))
     except RuntimeError as e:
-        raise SystemExit(f"{e} Try --camera 1, or --demo <folder> to test without one.")
+        raise RuntimeError(f"{e} Try --camera 1, or --demo <folder> to test without one.")
 
 
 def main():
@@ -820,7 +849,14 @@ def main():
         f"US dollar = {rate:.4f} CAD"
         + (f" (Bank of Canada, {rate_date})" if rate_date else " (offline default)")
     )
-    source = DemoSource(args.demo) if args.demo else startup_camera(args.camera)
+    if args.demo:
+        source = DemoSource(args.demo)
+    else:
+        try:
+            source = startup_camera(args.camera)
+        except RuntimeError as e:
+            print(f"{e} Starting anyway; trying again every few seconds.")
+            source = WaitingForCamera(args.camera)
     if isinstance(source, CameraSource):
         print(
             f"Camera: {source.name}, {source.size[0]}x{source.size[1]} {source.format}"
@@ -831,6 +867,8 @@ def main():
             )
         )
     scanner = Scanner(matcher, vault, source)
+    if isinstance(source, WaitingForCamera):
+        source.on_found = scanner.use_source
     scanner.restore(load_settings())
     threading.Thread(target=scanner.run, daemon=True).start()
 
