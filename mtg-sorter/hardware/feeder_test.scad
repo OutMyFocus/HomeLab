@@ -42,6 +42,11 @@ wall = 3;
 floor_t = 3;
 stand_h = 40;
 exit_shelf = 30;    // flat area in front of the gate where cards come out
+// Enclosure build: the stand's front reaches in under the back of the sloped scan bed.
+// bed_cut = true cuts it away under the bed (2 mm clear). bed_low is the height of the bed
+// plate's underside straight below the hopper's front wall, above the stand's bottom.
+bed_cut = false;
+bed_low = 89.1;     // enclosure: 167 + (150 - 54) * tan(20) - 111 - 2 (clearance), at y = 0
 
 $fn = 64;
 
@@ -71,6 +76,8 @@ module stand() {
         // zip-tie slots through the cradle to strap the motor down
         for (x = [roller_w / 2 + 6, roller_w / 2 + n20_len - 4])
             translate([x, roller_y - 10, roller_z - n20_h / 2 - 6]) cube([3.5, 20, 2]);
+        // enclosure: clear the underside of the scan bed (slopes 20 degrees down to the front)
+        if (bed_cut) translate([-out_w, 0.5, bed_low]) rotate([20, 0, 0]) translate([0, -200, 0]) cube([2 * out_w, 200, 200]);
         // the back of the motor (and its wires) pokes out through the side wall
         translate([out_w / 2 - wall - 1, roller_y - n20_w / 2 - 0.5, roller_z - n20_h / 2 - 0.5]) cube([wall + 2, n20_w + 1, n20_h + 1]);
     }

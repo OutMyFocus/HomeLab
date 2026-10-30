@@ -95,7 +95,8 @@ feeder_wall = 3;
 feeder_shelf = 30;        // exit shelf in front of the hopper
 feeder_floor_z = 206;     // top of the hopper floor
 hopper_h = 60;
-stand_h = feeder_floor_z - 3 - bridge_top;   // 92: print feeder_stand with stand_h = this
+stand_h = 96;             // print feeder_stand with stand_h = this and bed_cut = true. 4 mm more than
+                          // feeder_floor_z - 3 - bridge_top, so the hopper clears the back of the bed
 
 // --- Electronics -----------------------------------------------------------------
 pi_pos = [57, 178];       // Pi 5 board corner (x, y). Board is 56 across, 85 deep, ports at the back.

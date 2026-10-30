@@ -11,5 +11,5 @@ done
 # the bed walls starting on the bridge, and the feeder stand that sits on it
 openscad -q -o stl/bed_chute_bed_side_left_enclosure.stl  -D 'part="bed_side_left"'  -D 'wall_z0=111' bed_chute.scad
 openscad -q -o stl/bed_chute_bed_side_right_enclosure.stl -D 'part="bed_side_right"' -D 'wall_z0=111' bed_chute.scad
-openscad -q -o stl/feeder_stand_mid.stl -D 'part="stand"' -D 'stand_h=92' feeder_test.scad
+openscad -q -o stl/feeder_stand_mid.stl -D 'part="stand"' -D 'stand_h=96' -D 'bed_cut=true' feeder_test.scad
 # the drawers themselves come from the Card Catalog 3MF (MakerWorld 3016550), not from here

@@ -21,7 +21,7 @@ edge sits just over one card's thickness above the floor. One card fits under it
 
 | File | Print | Notes |
 |---|---|---|
-| `stl/feeder_stand_mid.stl` | as it opens, 15% infill | The box underneath, with the motor cradle. 92 mm: the height it needs on the enclosure's bridge |
+| `stl/feeder_stand_mid.stl` | as it opens, 15% infill | The box underneath, with the motor cradle. 96 mm, with its front cut away under the sloped bed: the height it needs on the enclosure's bridge |
 | `stl/feeder_hopper.stl` | as it opens, 15% infill | Floor and walls. Holds about 190 cards |
 | `stl/feeder_gate.stl` | flat | The adjustable gate |
 | `stl/feeder_roller.stl` | standing on its end, **100% infill** | Goes on the motor shaft |
@@ -112,7 +112,7 @@ the three bins the bed first sat in (`frame_side`, `front_bar`, `bin`) are gone:
 | Trapdoors | 2× SG90 servos, under the front of the tray |
 
 A PCA9685 servo board connects all four servos to the Raspberry Pi. The feeder rig sits
-behind the bed on its stand (`feeder_stand_mid`, 92 mm, on the enclosure's bridge), so cards
+behind the bed on its stand (`feeder_stand_mid`, 96 mm, on the enclosure's bridge), so cards
 come off its exit shelf straight onto the bed.
 
 # Enclosure
