@@ -90,7 +90,7 @@ SECTIONS = [
             "(1) A servo into the front plate of each `door_carrier` (two tab screws each).",
             "(2) Screw each carrier under the outer edge of the chute floor, servo plate at the front (tall rail), with 3 M2 screws from inside the chute.",
             "(3) Centre both servos at 90° before fitting horns.",
-            "(4) Trapdoors: the back ear goes on an M3 screw through the carrier's back lug (that's the hinge pin), the front ear screws to the servo horn. Closed, both doors sit flush with the floor.",
+            "(4) Fit a single-arm horn on each centred servo first (arm up toward the door's middle), then hang the door: back ear on an M3 screw through the carrier's back lug (the hinge pin), front ear flat behind the horn. Lock it with the horn's centre screw through the ear's small hole into the shaft, plus one tiny screw through the ear into the horn's first hole. Closed, both doors sit flush with the floor.",
         ], ["chute", "trapdoor", "trapdoor_left", "door_carrier", "door_carrier_left"], ["6 × M2 × 6", "2 × M3 × 12 (hinge pins)", "2 MG90S (channels 2, 3)"]),
         (14, "Chute into the bridge", [
             "Push the chute's front axle into the hole in the bridge's front upright.",
