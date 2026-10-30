@@ -105,7 +105,7 @@
   $("closeLook").onclick = $("scrim").onclick = () => setDrawer(false);
 
   // ---------- live ----------
-  const STATUS = { starting: "Starting camera…", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
+  const STATUS = { starting: "Starting camera…", waiting: "No camera found. Check the cable, then restart the Pi", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
   let selected = null;     // the card shown big: its track id
   let editing = false, drag = null;   // Slots mode: drawing boxes on the picture, and the box being dragged
 
