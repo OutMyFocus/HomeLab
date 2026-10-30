@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MTG Sorter · Machine</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    /* Test page for the servos and feeder. Uses the scanner's colours from style.css. */
+    .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 20px; }
+    .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .head h1 { margin: 0; font-size: 1.5rem; letter-spacing: -.01em; }
+    .panel { padding: 18px; display: grid; gap: 14px; }
+    .panel h2 { margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 10px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); flex: none; }
+    .dot.ok { background: var(--good); }
+    .err { color: var(--warn); font-size: .92rem; margin: 0; }
+    .part { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid var(--line); }
+    .part:first-of-type { border-top: 0; padding-top: 0; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .name { font-weight: 650; }
+    .sub { color: var(--muted); font-size: .9rem; }
+    .slider { display: flex; gap: 12px; align-items: center; }
+    .slider input { flex: 1; min-width: 0; accent-color: var(--accent); }
+    .slider output { font: 600 .95rem var(--mono); width: 4ch; text-align: right; }
+    .btn { padding: 9px 14px; cursor: pointer; border-radius: calc(var(--radius) * .6); }
+    label.inline { display: flex; gap: 8px; align-items: center; }
+    label.inline input[type=number] { width: 5.5em; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); }
+    #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--panel-solid);
+             border: 1px solid var(--line-strong); padding: 10px 16px; border-radius: 12px; max-width: calc(100% - 32px); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Machine</h1>
+    <a class="btn ghost" href="/">Back to the scanner</a>
+  </div>
+
+  <section class="panel" id="servoPanel">
+    <h2><span class="dot" id="servoDot"></span>Servos</h2>
+    <p class="err" id="servoErr" hidden></p>
+    <p class="sub">The buttons go to the angles in config.py. Use the slider to find better ones, then put them in config.py.
+      Centre each servo at 90 before pressing its horn on.</p>
+    <div id="parts"></div>
+    <div class="row">
+      <button class="btn" id="centreAll">Centre all at 90</button>
+      <button class="btn ghost" id="relaxAll">Relax all</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="dot" id="feedDot"></span>Feeder</h2>
+    <p class="err" id="feedErr" hidden></p>
+    <div class="row">
+      <label class="inline">Seconds <input type="number" id="feedSecs" min="0.05" max="5" step="0.05"></label>
+      <label class="inline">Speed <input type="number" id="feedSpeed" min="0.1" max="1" step="0.1"></label>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="feedFwd">Feed one card</button>
+      <button class="btn" id="feedBack">Run backwards</button>
+      <button class="btn ghost" id="feedStop">Stop</button>
+    </div>
+  </section>
+</div>
+<div id="toast" hidden></div>
+
+<script>
+const NAMES = { pins: "Stop pins", chute: "Chute tilt", door_r: "Right trapdoor", door_l: "Left trapdoor" };
+const $ = (id) => document.getElementById(id);
+let toastTimer;
+function toast(text) {
+  const t = $("toast"); t.textContent = text; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3500);
+}
+async function call(path, body) {
+  const res = await fetch(path, { method: body ? "POST" : "GET",
+    headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json();
+  if (data.error) { toast(data.error); return null; }
+  show(data); return data;
+}
+function status(dot, err, part) {
+  $(dot).classList.toggle("ok", part.ok);
+  $(err).hidden = part.ok; $(err).textContent = part.error || "";
+}
+let built = false;
+function show(s) {
+  status("servoDot", "servoErr", s.servos);
+  status("feedDot", "feedErr", s.feeder);
+  if (!built) { build(s); built = true; }
+  for (const [part, p] of Object.entries(s.parts)) {
+    if (p.angle == null) continue;
+    $("r-" + part).value = p.angle; $("o-" + part).value = Math.round(p.angle);
+  }
+}
+function build(s) {
+  const box = $("parts");
+  const parts = Object.entries(s.parts).sort((a, b) => a[1].channel - b[1].channel);
+  for (const [part, p] of parts) {
+    const el = document.createElement("div"); el.className = "part";
+    el.innerHTML = `<div class="row"><span class="name">${NAMES[part] || part}</span><span class="sub">channel ${p.channel}</span></div>
+      <div class="row">${Object.entries(p.positions).map(([pos, a]) =>
+        `<button class="btn" data-part="${part}" data-pos="${pos}">${pos} <span class="sub">${a}°</span></button>`).join("")}</div>
+      <div class="slider"><input type="range" min="0" max="180" step="1" value="90" id="r-${part}" aria-label="${NAMES[part]} angle">
+      <output id="o-${part}">90</output></div>`;
+    box.append(el);
+    const range = el.querySelector("input");
+    range.addEventListener("input", () => ($("o-" + part).value = range.value));
+    range.addEventListener("change", () => call("/api/machine/move", { channel: p.channel, angle: +range.value }));
+  }
+  box.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-part]");
+    if (b) call("/api/machine/move", { part: b.dataset.part, position: b.dataset.pos });
+  });
+  $("centreAll").onclick = async () => {
+    for (const p of Object.values(s.parts)) await call("/api/machine/move", { channel: p.channel, angle: 90 });
+  };
+  $("feedSecs").value = s.feeder_defaults.seconds;
+  $("feedSpeed").value = s.feeder_defaults.speed;
+}
+$("relaxAll").onclick = () => call("/api/machine/relax", {});
+const feed = (backward) => call("/api/machine/feed",
+  { seconds: +$("feedSecs").value, speed: +$("feedSpeed").value, backward });
+$("feedFwd").onclick = () => feed(false);
+$("feedBack").onclick = () => feed(true);
+$("feedStop").onclick = () => call("/api/machine/stop", {});
+try {   // same theme and accent as the scanner page (its Customize panel)
+  const look = JSON.parse(localStorage.getItem("mtg-scanner-look") || "{}");
+  if (look.theme) document.documentElement.dataset.theme = look.theme;
+  if (look.accent) document.documentElement.style.setProperty("--accent", look.accent);
+} catch (e) {}
+call("/api/machine");
+</script>
+</body>
+</html>
