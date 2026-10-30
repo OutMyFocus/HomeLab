@@ -121,7 +121,7 @@ Build this on the bench and test it before it goes into the box. It's Part 2 of 
 ![Step 10](img/assembly/step_10.png)
 
 - Stand the two `..._enclosure` bed walls on the bridge's side ears and screw each one from below, two M3 per wall.
-- Slide the white bed plate into the grooves on the inside of the walls: low rails up, pin slots at the low front edge.
+- Slide the white bed plate into the grooves on the inside of the walls: low rails up, pin slots at the low front edge. Use the thin lower groove that runs out through the front edge of each wall, not the wider LED groove above it.
 
 **Parts:** `bed_side_left_enclosure`, `bed_side_right_enclosure`, `bed_plate (white)`  
 **You need:** 4 × M3 × 8

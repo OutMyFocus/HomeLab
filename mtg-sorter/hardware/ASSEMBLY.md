@@ -363,7 +363,8 @@ kit.servo[0].angle = 90   # change the channel and angle to test each servo
 ## Stage D: the scan bed
 
 1. **Bed plate into the walls.** Slide the white bed plate into the grooves on the inside of
-   `bed_side_left` and `bed_side_right`, so the walls stand on the table on either side.
+   `bed_side_left` and `bed_side_right` (the thin lower groove that runs out through the front
+   edge, not the wider LED groove above it), so the walls stand on the table on either side.
    The low rails on the plate face up; the pin slots are at the low (front) edge.
 2. **Tilt bracket.** It goes across between the two walls near the bottom front. Screw it in
    with M3 screws through the holes in each wall (2 per side).

@@ -73,7 +73,7 @@ SECTIONS = [
         ], ["bridge_front", "bridge_back", "2 × splice"], ["M2 × 6 or CA glue"]),
         (10, "Bed walls and scan bed", [
             "Stand the two `..._enclosure` bed walls on the bridge's side ears and screw each one from below, two M3 per wall.",
-            "Slide the white bed plate into the grooves on the inside of the walls: low rails up, pin slots at the low front edge.",
+            "Slide the white bed plate into the grooves on the inside of the walls: low rails up, pin slots at the low front edge. Use the thin lower groove that runs out through the front edge of each wall, not the wider LED groove above it.",
         ], ["bed_side_left_enclosure", "bed_side_right_enclosure", "bed_plate (white)"], ["4 × M3 × 8"]),
         (11, "Tilt bracket, stop pins", [
             "(1) `tilt_bracket` across between the walls under the bed, two M3 through each wall.",
