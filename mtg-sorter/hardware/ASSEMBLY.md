@@ -395,10 +395,13 @@ app recognizes it. Then drop the pins and check the card slides off cleanly.
    tall rail). Built before 2026-10-30 with `trapdoor_mount` + `hinge_lug` instead? Those still
    fit the old holes; the carriers replace them (`downloads/MTG_Sorter_Chute.3mf`: chute,
    carriers and doors on one plate).
-3. **Trapdoors.** Each door has two ears. The back ear's hole goes over a hinge pin through
-   the carrier's back lug: use an M3 screw as the pin (1.75 mm filament is too thin for the 2.9 mm hole and
-   would rattle). The front ear screws to the servo horn.
-   Centre each servo first, so both doors close flush with the chute floor.
+3. **Trapdoors.** Centre each servo, then push a single-arm horn on, arm pointing up toward
+   the middle of the door (the door's front ear sits right behind the horn, so the horn goes
+   on first). Hang the door: its back ear goes over a hinge pin through the carrier's back
+   lug. Use an M3 screw as the pin (1.75 mm filament is too thin for the 2.9 mm hole and
+   would rattle). Lock the front ear to the horn from behind: the horn's centre screw through
+   the ear's small hole into the shaft, and one tiny screw through the ear into the horn's
+   first hole. Trim the horn arm if it touches the door. Both doors close flush with the floor.
 4. **Into the machine.** The chute's front axle goes into the upstand on the enclosure's
    bridge (Part 3). The plate on the chute's back end screws to the **tilt servo's** horn:
    push the tilt servo through the tilt bracket from the back, screw it in, centre it, then
