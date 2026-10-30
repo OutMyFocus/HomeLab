@@ -25,8 +25,8 @@ with brim, and solid. You only need them if you build plates yourself from the S
 
 `stl/` holds only what gets printed: the 27 `enc_*.stl` (the box), the two
 `bed_chute_bed_side_*_enclosure.stl` walls, `feeder_stand_mid.stl`, the mechanism from Part 2
-(`bed_chute_bed_plate`, `chute`, `trapdoor` + `trapdoor_left`, `trapdoor_mount` +
-`trapdoor_mount_left`, `hinge_lug` + `hinge_lug_left`, `pin_rocker`, `tilt_bracket`,
+(`bed_chute_bed_plate`, `chute`, `trapdoor` + `trapdoor_left`, `door_carrier` +
+`door_carrier_left`, `pin_rocker`, `tilt_bracket`,
 `tower_post`, `camera_head`) and the feeder's `hopper`, `gate` and `roller`.
 
 Use **File → New Project**, then **File → Import → Import 3MF/STL/STEP**, pick only the files

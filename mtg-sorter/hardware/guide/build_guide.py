@@ -87,11 +87,11 @@ SECTIONS = [
             "Leave the camera head off for now. The deck can't go on over it (step 18).",
         ], ["tower_post"], ["USB LED strip"]),
         (13, "Build the chute", [
-            "(1) A servo into each `trapdoor_mount` (two screws each). Screw the mounts under the front of the chute floor with M2 from above.",
-            "(2) `hinge_lug` and `hinge_lug_left` under the back of the chute floor, the same way.",
+            "(1) A servo into the front plate of each `door_carrier` (two tab screws each).",
+            "(2) Screw each carrier under the outer edge of the chute floor, servo plate at the front (tall rail), with 3 M2 screws from inside the chute.",
             "(3) Centre both servos at 90° before fitting horns.",
-            "(4) Trapdoors: the back ear goes on an M3 screw through the hinge lug (that's the hinge pin), the front ear screws to the servo horn. Closed, both doors sit flush with the floor.",
-        ], ["chute", "trapdoor", "trapdoor_left", "trapdoor_mount", "trapdoor_mount_left", "hinge_lug", "hinge_lug_left"], ["4 × M2 × 6", "2 × M3 × 12 (hinge pins)", "2 MG90S (channels 2, 3)"]),
+            "(4) Trapdoors: the back ear goes on an M3 screw through the carrier's back lug (that's the hinge pin), the front ear screws to the servo horn. Closed, both doors sit flush with the floor.",
+        ], ["chute", "trapdoor", "trapdoor_left", "door_carrier", "door_carrier_left"], ["6 × M2 × 6", "2 × M3 × 12 (hinge pins)", "2 MG90S (channels 2, 3)"]),
         (14, "Chute into the bridge", [
             "Push the chute's front axle into the hole in the bridge's front upright.",
             "Push the tilt servo through the tilt bracket from the back and screw it in. Centre it, then screw its horn to the small plate on the chute's back end.",

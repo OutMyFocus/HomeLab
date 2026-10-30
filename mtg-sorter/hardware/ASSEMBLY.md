@@ -274,8 +274,7 @@ All from `stl/bed_chute_*.stl`, flat, as they open, no supports, 15–20% infill
 | `tilt_bracket` | 1 | black |
 | `chute` | 1 | any |
 | `trapdoor`, `trapdoor_left` | 1 each | any |
-| `trapdoor_mount`, `trapdoor_mount_left` | 1 each | any |
-| `hinge_lug`, `hinge_lug_left` | 1 each | any |
+| `door_carrier`, `door_carrier_left` | 1 each | any |
 
 The bed walls, the chute and the feeder stand from Part 1 all go on the enclosure's bridge
 (Part 3), which holds them at the right heights: the hopper floor ends up about 2 mm above
@@ -388,12 +387,16 @@ app recognizes it. Then drop the pins and check the card slides off cleanly.
 
 ## Stage E: the chute and trapdoors
 
-1. **Trapdoor servos.** Screw a servo into each `trapdoor_mount` (2 screws each). Screw each
-   mount under the **front** of the chute floor, one each side, with M2 screws from above.
-2. **Hinge lugs.** Screw `hinge_lug` and `hinge_lug_left` under the **back** of the chute floor,
-   same way.
+1. **Door carriers.** Each `door_carrier` is a servo mount and a hinge lug on one bar, so
+   the servo shaft and the hinge pin always line up. Push a servo into each carrier's front
+   plate (shaft toward the back) and fit its 2 tab screws.
+2. **Carriers onto the chute.** Screw each carrier under the chute floor along its outer edge,
+   one each side, with 3 M2 screws from inside the chute. The servo plate is at the front (the
+   tall rail). Built before 2026-10-30 with `trapdoor_mount` + `hinge_lug` instead? Those still
+   fit the old holes; the carriers replace them (`downloads/MTG_Sorter_Chute.3mf`: chute,
+   carriers and doors on one plate).
 3. **Trapdoors.** Each door has two ears. The back ear's hole goes over a hinge pin through
-   the lug: use an M3 screw as the pin (1.75 mm filament is too thin for the 2.9 mm hole and
+   the carrier's back lug: use an M3 screw as the pin (1.75 mm filament is too thin for the 2.9 mm hole and
    would rattle). The front ear screws to the servo horn.
    Centre each servo first, so both doors close flush with the chute floor.
 4. **Into the machine.** The chute's front axle goes into the upstand on the enclosure's

@@ -20,8 +20,8 @@
 //   tilt_bracket     holds the tilt servo, between the two bed side walls
 //   chute            the tray
 //   trapdoor         x2 (print one, then one mirrored: part = "trapdoor_left")
-//   trapdoor_mount   x2 (servo mount, front)  ("trapdoor_mount_left" for the other)
-//   hinge_lug        x2 (back hinge)          ("hinge_lug_left" for the other)
+//   door_carrier     x2 (servo mount + back hinge on one bar) ("door_carrier_left" for the other)
+//   trapdoor_mount, hinge_lug: the older separate versions, replaced by door_carrier
 //   frame_side       x2 (identical)
 //   front_bar        holds the front of the tray's pivot
 //   bin              x3
@@ -244,7 +244,9 @@ module chute() {
         translate([0, back_axle_end - 1, pivot_z]) rotate([-90, 0, 0]) cylinder(d = 7.2, h = 5);
         for (d = [-1, 1]) translate([d * 7, back_axle_end - 1, pivot_z]) rotate([-90, 0, 0]) cylinder(d = 1.5, h = 5);
         // screw holes for the trapdoor mounts and hinge lugs (from above, M2 self-tapping)
-        for (m = [0, 1]) mirror([m, 0, 0]) for (y = [-ch_in + 3, ch_in - 7]) translate([door_half + 8, y + 2, pivot_z - floor_t - 1]) cylinder(d = 2.4, h = floor_t + 2);
+        for (m = [0, 1]) mirror([m, 0, 0]) for (y = [-ch_in + 5, ch_in - 5]) translate([door_half + 8, y, pivot_z - floor_t - 1]) cylinder(d = 2.4, h = floor_t + 2);
+        // ... and for the door carriers that replace them
+        for (m = [0, 1]) mirror([m, 0, 0]) for (y = carrier_screws_y) translate([carrier_x + 3, y, pivot_z - floor_t - 1]) cylinder(d = 2.4, h = floor_t + 2);
     }
 }
 
@@ -292,6 +294,40 @@ module hinge_lug() {
         translate([door_half + 8, ch_in - 5, pivot_z - floor_t - 4]) cylinder(d = 2.4, h = 5);
     }
 }
+
+// Door carrier, right side: the servo mount and the hinge lug joined by a bar, so the
+// servo shaft and the hinge pin can't end up out of line. Three M2 screws from above, along
+// the outer edge of the tray floor (clear of the servo body). Replaces trapdoor_mount +
+// hinge_lug. Prints upside down, bar on the bed.
+carrier_x = door_half + 17.5;    // bar x = carrier_x .. carrier_x + 6, screws on its centre line
+module door_carrier() {
+    top = pivot_z - floor_t;
+    difference() {
+        union() {
+            // servo plate (as trapdoor_mount)
+            translate([door_half - 12, -ch_out - 2.5, hinge_z - 10]) cube([sv_len + 12, 2.5, top - hinge_z + 10]);
+            // bar along the outer edge, front to back
+            translate([carrier_x, -ch_out - 2.5, top - 3]) cube([6, ch_in + ch_out + 2.5, 3]);
+            // stiffening rib under the bar
+            translate([carrier_x + 4, -ch_out, top - 5]) cube([2, ch_in + ch_out - 6, 5]);
+            // hinge lug (as hinge_lug), tied across to the bar behind the door's back ear
+            hull() {
+                translate([door_half + 2, ch_in - 6, top - 3]) cube([10, 6, 3]);
+                translate([door_half, ch_in - 6, hinge_z]) rotate([-90, 0, 0]) cylinder(r = 4, h = 6);
+            }
+            translate([door_half + 2, ch_in - 6, top - 3]) cube([carrier_x + 6 - door_half - 2, 6, 3]);
+        }
+        // servo hole and its two tab screws
+        translate([door_half, -ch_out - 2.5 - 1, hinge_z]) rotate([-90, 0, 0])
+            translate([-sv_shaft_off - 0.3, -sv_w / 2 - 0.3, 0]) cube([sv_len + 0.6, sv_w + 0.6, 6]);
+        for (d = [-1, 1]) translate([door_half + sv_len / 2 - sv_shaft_off + d * sv_screw / 2, -ch_out - 4, hinge_z]) rotate([-90, 0, 0]) cylinder(d = 1.8, h = 5);
+        // hinge pin
+        translate([door_half, ch_in - 7, hinge_z]) rotate([-90, 0, 0]) cylinder(d = 2.9, h = 8);
+        // screws up into the tray floor
+        for (y = carrier_screws_y) translate([carrier_x + 3, y, top - 9]) cylinder(d = 2.4, h = 10);
+    }
+}
+carrier_screws_y = [-ch_in + 6, 0, ch_in - 3];
 
 // Tilt servo bracket: a plate across between the bed side walls, with the servo through it.
 module tilt_bracket() {
@@ -356,6 +392,8 @@ else if (part == "trapdoor_mount") translate([0, 0, ch_out + 2.5]) rotate([90, 0
 else if (part == "trapdoor_mount_left") mirror([1, 0, 0]) translate([0, 0, ch_out + 2.5]) rotate([90, 0, 0]) trapdoor_mount();
 else if (part == "hinge_lug") translate([0, 0, -(ch_in - 6)]) rotate([90, 0, 0]) hinge_lug();
 else if (part == "hinge_lug_left") mirror([1, 0, 0]) translate([0, 0, -(ch_in - 6)]) rotate([90, 0, 0]) hinge_lug();
+else if (part == "door_carrier") mirror([0, 0, 1]) translate([0, 0, -(pivot_z - floor_t)]) door_carrier();
+else if (part == "door_carrier_left") mirror([1, 0, 0]) mirror([0, 0, 1]) translate([0, 0, -(pivot_z - floor_t)]) door_carrier();
 else if (part == "frame_side") translate([0, 0, -frame_x]) rotate([0, -90, 0]) frame_side();
 else if (part == "front_bar") translate([0, 0, -(front_bar_y - 6)]) rotate([90, 0, 0]) front_bar();
 else if (part == "bin") bin();
