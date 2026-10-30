@@ -149,8 +149,8 @@ module chute_frame() { children(); }   // chute parts are modelled in place, lev
 module trapdoors(open = false) {
     for (m = [0, 1]) mirror([m, 0, 0]) translate([door_half, 0, hinge_z]) rotate([0, open ? -90 : 0, 0]) translate([-door_half, 0, -hinge_z]) trapdoor();
 }
-module mounts() { for (m = [0, 1]) mirror([m, 0, 0]) trapdoor_mount(); }
-module lugs() { for (m = [0, 1]) mirror([m, 0, 0]) hinge_lug(); }
+module mounts() { for (m = [0, 1]) mirror([m, 0, 0]) door_carrier(); }   // carriers: mount + lug in one
+module lugs() { }
 
 // feeder, on its 92 mm stand on the bridge. feeder_test.scad's origin is the inside of the
 // hopper's front wall, on the table; here that is (0, feeder_front_y, bridge_top).
@@ -291,8 +291,8 @@ else if (step == 13) {  // chute, built on the bench: mounts + servos at the fro
     translate([0, 0, -25]) { door_servo(true, 22); door_servo(false, 22); }
     color(c_white) translate([0, 0, -70]) trapdoors();
     for (m = [-1, 1]) arrow([m * (door_half - 12), 0, hinge_z - 62], [m * (door_half - 12), 0, hinge_z - 32]);
-    for (m = [-1, 1]) arrow([m * (door_half + 8), ch_in - 5, pivot_z - 36], [m * (door_half + 8), ch_in - 5, pivot_z - 10]);
-    for (m = [-1, 1], y = [ch_in - 5, -ch_in + 5]) screw([m * (door_half + 8), y, pivot_z + 14], [0, 0, -1], 8, 2);
+    for (m = [-1, 1]) arrow([m * (carrier_x + 3), 0, pivot_z - 36], [m * (carrier_x + 3), 0, pivot_z - 10]);
+    for (m = [-1, 1], y = carrier_screws_y) screw([m * (carrier_x + 3), y, pivot_z + 14], [0, 0, -1], 8, 2);
     label(1, [door_half + 14, -ch_out - 2.5, hinge_z - 25], [25, -10, -25], 6);
     label(2, [door_half + 7, ch_in - 3, hinge_z - 25], [30, 10, -15], 6);
     label(3, [door_half + 14, -ch_out - 26, hinge_z - 30], [0, -10, -30], 6);

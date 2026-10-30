@@ -153,13 +153,13 @@ Build this on the bench and test it before it goes into the box. It's Part 2 of 
 
 ![Step 13](img/assembly/step_13.png)
 
-- **(1)** A servo into each `trapdoor_mount` (two screws each). Screw the mounts under the front of the chute floor with M2 from above.
-- **(2)** `hinge_lug` and `hinge_lug_left` under the back of the chute floor, the same way.
+- **(1)** A servo into the front plate of each `door_carrier` (two tab screws each).
+- **(2)** Screw each carrier under the outer edge of the chute floor, servo plate at the front (tall rail), with 3 M2 screws from inside the chute.
 - **(3)** Centre both servos at 90° before fitting horns.
-- **(4)** Trapdoors: the back ear goes on an M3 screw through the hinge lug (that's the hinge pin), the front ear screws to the servo horn. Closed, both doors sit flush with the floor.
+- **(4)** Trapdoors: the back ear goes on an M3 screw through the carrier's back lug (that's the hinge pin), the front ear screws to the servo horn. Closed, both doors sit flush with the floor.
 
-**Parts:** `chute`, `trapdoor`, `trapdoor_left`, `trapdoor_mount`, `trapdoor_mount_left`, `hinge_lug`, `hinge_lug_left`  
-**You need:** 4 × M2 × 6, 2 × M3 × 12 (hinge pins), 2 MG90S (channels 2, 3)
+**Parts:** `chute`, `trapdoor`, `trapdoor_left`, `door_carrier`, `door_carrier_left`  
+**You need:** 6 × M2 × 6, 2 × M3 × 12 (hinge pins), 2 MG90S (channels 2, 3)
 
 ### 14. Chute into the bridge
 

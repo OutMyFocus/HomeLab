@@ -97,8 +97,7 @@ the tray tilted both ways, the trapdoors open, and the pins up and down.
 | `tilt_bracket` | 1 | black | |
 | `chute` | 1 | any | The tray |
 | `trapdoor`, `trapdoor_left` | 1 each | any | |
-| `trapdoor_mount`, `trapdoor_mount_left` | 1 each | any | |
-| `hinge_lug`, `hinge_lug_left` | 1 each | any | |
+| `door_carrier`, `door_carrier_left` | 1 each | any | servo mount + hinge lug in one; prints upside down (as exported). Replaces `trapdoor_mount` + `hinge_lug` |
 
 All print flat, as they open, with no supports. 15–20% infill is fine. The open frame and
 the three bins the bed first sat in (`frame_side`, `front_bar`, `bin`) are gone: the
