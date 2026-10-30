@@ -369,7 +369,7 @@ kit.servo[0].angle = 90   # change the channel and angle to test each servo
    with M3 screws through the holes in each wall (2 per side).
 3. **Stop-pin servo.** Push a servo into the rectangular hole in the **left** wall from the
    outside, shaft pointing into the bed, and screw it in with the two screws that came with it.
-4. **Pin rocker.** Centre the servo (see above), fit a single-arm horn, and screw the rocker's
+4. **Pin rocker.** Centre the servo (see above), fit the double-arm horn, and screw the rocker's
    flat plate to the horn with the two tiny horn screws. With the servo at "up", the two pins
    should poke up through the slots at the front of the bed. Set the servo to "down" (28° the
    other way): the pins must drop fully below the bed surface.
