@@ -369,8 +369,10 @@ kit.servo[0].angle = 90   # change the channel and angle to test each servo
    with M3 screws through the holes in each wall (2 per side).
 3. **Stop-pin servo.** Push a servo into the rectangular hole in the **left** wall from the
    outside, shaft pointing into the bed, and screw it in with the two screws that came with it.
-4. **Pin rocker.** Centre the servo (see above), fit the double-arm horn, and screw the rocker's
-   flat plate to the horn with the two tiny horn screws. With the servo at "up", the two pins
+4. **Pin rocker.** First, off the machine, screw the double-arm horn to the rocker's flat plate
+   (hub in the plate's round hole, the two tiny horn screws through the horn's innermost holes).
+   Centre the servo (see above), push horn and rocker onto the shaft with the pins pointing up,
+   and fit the horn's centre screw through the round hole. With the servo at "up", the two pins
    should poke up through the slots at the front of the bed. Set the servo to "down" (28° the
    other way): the pins must drop fully below the bed surface.
 5. **LED strips.** Cut two pieces about 9 cm long and stick one in the groove along each

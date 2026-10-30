@@ -79,7 +79,7 @@ SECTIONS = [
             "(1) `tilt_bracket` across between the walls under the bed, two M3 through each wall.",
             "(2) Stop-pin servo into the rectangular hole in the left wall from the outside, shaft pointing in. Use the two screws that came with it.",
             "Centre the servo at 90° before you fit the horn (see the box below).",
-            "(3) `pin_rocker`: screw its flat plate to the double-arm horn (the two holes nearest the hub, 5.5 mm each side). Servo at \"up\": both pins poke up through the slots at the front of the bed. 28° the other way: they drop below the surface.",
+            "(3) `pin_rocker`: screw the double-arm horn to its flat plate first (the two horn holes nearest the hub), then push the pair onto the centred servo, pins up, and fit the centre screw through the round hole. Servo at \"up\": both pins poke up through the slots at the front of the bed. 28° the other way: they drop below the surface.",
         ], ["tilt_bracket", "pin_rocker"], ["4 × M3 × 8", "1 MG90S (channel 0)"]),
         (12, "Lights and camera post", [
             "Stick an LED strip in the groove along the inside of each wall, just above the bed (about 9 cm each). Don't cut the wire between the two pieces if you want to skip soldering: loop it under the bed.",
