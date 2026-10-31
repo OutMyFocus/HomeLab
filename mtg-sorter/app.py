@@ -34,6 +34,9 @@ from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.exchange import load_rate
+from mtgscanner import sort_rules
+from mtgscanner.bins import add_bins_routes
+from mtgscanner.decks import add_deck_routes
 from mtgscanner.library import add_collection_routes, lookup
 from mtgscanner.live import Live
 from mtgscanner.machine import Machine, add_machine_routes
@@ -521,6 +524,8 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
     add_machine_routes(app, machine, WEB)  # the /machine test page
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
     add_collection_routes(app, scanner, WEB)  # the /collection page
+    add_deck_routes(app, scanner, WEB)  # the /decks page
+    add_bins_routes(app, scanner, WEB)  # the /bins page
     live = scanner.live
 
     def unknown_card():
@@ -561,6 +566,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
             else f"Scryfall {'live ' if live else ''}prices in CAD ({rate})"
         )
         s["live"] = bool(live)
+        s["bin_names"] = sort_rules.names()
         return jsonify(s)
 
     @app.post("/api/settings")

@@ -3,7 +3,8 @@
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = v => v == null ? "No price" : "$" + v.toFixed(2);
-  const BIN_NAMES = { 0: "Unknown", 1: "Bulk", 2: "$1–10", 3: "$10+" };
+  // Bin names come from the Bins page (state.bin_names); these are the defaults until it answers.
+  let BIN_NAMES = { 0: "Unknown", 1: "Bulk", 2: "$1–10", 3: "$10+" };
   let state = null, shownId = null, toastT;
 
   function toast(msg) {
@@ -152,6 +153,7 @@
 
   function render(s) {
     state = s;
+    if (s.bin_names) BIN_NAMES = s.bin_names;
     $("meta").classList.remove("down");
     $("metaText").textContent = `${s.db_count.toLocaleString()} cards` + (s.learned ? ` + ${s.learned.toLocaleString()} learned` : "") + ` · ${s.prices}`;
     const st = $("camStatus"); st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status;
@@ -228,7 +230,7 @@
         <td>${esc(r.name)}${r.foil ? '<span class="foil-tag">foil</span>' : ""}</td>
         <td>${esc(r.set)} #${esc(r.number)}</td>
         <td class="num">${money(r.price)}</td>
-        <td><span class="pill bin-${r.bin}">${r.bin} · ${esc(BIN_NAMES[r.bin] || r.bin_label)}</span></td>
+        <td><span class="pill bin-${r.bin}">${r.bin} · ${esc(r.bin_label || BIN_NAMES[r.bin])}</span></td>
         <td class="num opt-time">${esc(r.time)}</td></tr>`).join("")
       : '<tr class="empty-row"><td colspan="5">No cards saved yet</td></tr>';
     $("undoBtn").disabled = !s.session.length;

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MTG Scanner · Decks</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/decks.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.7" /></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Scanner</span></div>
+    <nav class="pages" aria-label="Pages">
+      <a href="/">Scanner</a>
+      <a href="/collection">Collection</a>
+      <a href="/decks" aria-current="page">Decks</a>
+      <a href="/bins">Bins</a>
+      <a href="/machine">Machine</a>
+      <a href="/maintenance">Maintenance</a>
+    </nav>
+  </header>
+
+  <main class="coll decks">
+    <section class="deck-layout">
+      <aside class="panel deck-list">
+        <div class="panel-head"><h3>Your decks</h3><button class="btn ghost small-btn" id="newDeck"><svg><use href="#i-plus" /></svg>New</button></div>
+        <div id="savedDecks"></div>
+      </aside>
+
+      <div class="panel deck-edit">
+        <input id="deckName" class="deck-name" placeholder="Deck name" maxlength="80" aria-label="Deck name">
+        <textarea id="deckText" spellcheck="false" placeholder="Paste a decklist, one card per line:
+
+4 Lightning Bolt
+1 Sol Ring (C21) 263
+2x Counterspell
+
+Sideboard
+2 Duress
+
+Works with lists copied from Moxfield, Archidekt, MTG Arena, MTGO and most websites."></textarea>
+        <div class="deck-acts">
+          <span class="sub" id="lineCount"></span>
+          <button class="btn ghost danger" id="deleteDeck" hidden><svg><use href="#i-trash" /></svg>Delete</button>
+          <button class="btn ghost" id="saveDeck">Save deck</button>
+          <button class="btn primary" id="checkDeck">Check my collection <kbd>Ctrl+Enter</kbd></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="result" hidden>
+      <div class="tiles">
+        <div class="stat panel"><span class="label">Complete</span><b id="rPercent">0%</b><div class="progress"><span id="rBar"></span></div></div>
+        <div class="stat panel"><span class="label">You have</span><b id="rHave">0</b><small class="sub" id="rHaveSub"></small></div>
+        <div class="stat panel"><span class="label">Missing</span><b id="rMissing">0</b><small class="sub" id="rMissingSub"></small></div>
+        <div class="stat panel"><span class="label">Cost to finish</span><b id="rCost">$0.00</b><small class="sub" id="rCostSub"></small></div>
+      </div>
+      <p class="warn-line" id="rUnknown" hidden></p>
+      <div class="panel browse">
+        <div class="toolbar">
+          <div class="seg small" id="showSeg">
+            <button data-v="all" aria-pressed="true">All</button><button data-v="missing" aria-pressed="false">Missing</button><button data-v="have" aria-pressed="false">Have</button>
+          </div>
+          <div class="actions">
+            <button class="btn ghost" id="copyMissing" title="One line per card, like 2 Lightning Bolt. Pastes into TCGplayer Mass Entry, Card Kingdom, Moxfield and most shops"><svg><use href="#i-copy" /></svg>Copy the missing cards</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="list deck-table">
+            <thead><tr><th>Card</th><th class="num">Need</th><th class="num">Have</th><th class="hide-sm">Where it is</th><th class="num">Each</th><th class="num">To buy</th></tr></thead>
+            <tbody id="rRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <p class="hint center">Your cards are matched by name, so any printing counts. A card needed in both the main deck and sideboard uses your copies once.</p>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/decks.js"></script>
+</body>
+</html>
