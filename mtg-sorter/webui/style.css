@@ -264,7 +264,7 @@ main { max-width: 1320px; margin: 0 auto; padding: calc(var(--gap) + 4px) 24px 6
 /* session */
 .session { margin-top: var(--gap); padding: var(--pad); }
 .session-head { display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap; margin-bottom: 10px; }
-.actions { margin-left: auto; display: flex; gap: 6px; }
+.actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; }
 .actions .btn { padding: 7px 12px; font-size: .87rem; }
 .actions svg { width: 16px; height: 16px; }
 .table-wrap { overflow-x: auto; }
@@ -389,6 +389,7 @@ input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
 .link-btn:hover { color: var(--text); text-decoration-color: currentColor; }
 .link-btn kbd { text-decoration: none; display: inline-block; }
 #whichBtn { margin-top: 2px; }
+.fix-links { display: flex; flex-wrap: wrap; gap: 0 16px; }
 
 /* pick-a-card dialog */
 .modal { position: fixed; inset: 0; z-index: 35; display: grid; place-items: start center; padding: 9vh 16px 16px; background: rgba(0, 0, 0, .45);
@@ -406,6 +407,7 @@ input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
 .pick-card { border: 1px solid transparent; background: none; padding: 6px; border-radius: calc(var(--radius) * .6); cursor: pointer; text-align: left;
   display: flex; flex-direction: column; gap: 4px; transition: background var(--speed), border-color var(--speed); }
 .pick-card:hover, .pick-card:focus-visible { background: var(--raised); border-color: var(--line-strong); }
+.pick-card.is-current { border-color: var(--accent); }
 .pick-card img { width: 100%; aspect-ratio: 63 / 88; object-fit: cover; border-radius: 4.5% / 3.2%; background: var(--raised); }
 .pick-card b { font-size: .84rem; font-weight: 600; line-height: 1.2; }
 .pick-card span { font-size: .75rem; color: var(--muted); }
@@ -476,6 +478,7 @@ input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
   .card-view .card-art { width: min(220px, 70%); }
   .badges { justify-content: center; }
   .card-view .link-btn { align-self: center; }
+  .fix-links { justify-content: center; }
   .pick-scan { display: none; }
   .scan-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .scan { padding: 8px; }
