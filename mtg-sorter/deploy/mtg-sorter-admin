@@ -1,0 +1,58 @@
+#!/bin/bash
+# The few jobs the web app's Maintenance page may do as root, and nothing else.
+# Installed to /usr/local/sbin/mtg-sorter-admin by install.sh; the sudoers file next to it
+# lets the user nic run it without a password. Each job is fixed: nothing typed on the page
+# ever reaches a shell. Wi-Fi names and passwords arrive on stdin, so they don't show up in logs.
+set -euo pipefail
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+job=${1:-}
+case "$job" in
+    restart)  systemctl restart --no-block mtg-sorter ;;
+    reboot)   systemctl reboot ;;
+    poweroff) systemctl poweroff ;;
+    update)   systemctl start --no-block mtg-sorter-update.service ;;
+    update-force)
+        # update.sh sees this and sets aside edits made on the Pi (git stash) before updating.
+        touch /run/mtg-sorter-force-update
+        systemctl start --no-block mtg-sorter-update.service ;;
+    autoupdate)
+        case "${2:-}" in
+            on)  systemctl enable --now mtg-sorter-update.timer ;;
+            off) systemctl disable --now mtg-sorter-update.timer ;;
+            *)   echo "autoupdate on|off" >&2; exit 2 ;;
+        esac ;;
+    logs)
+        lines=${3:-200}
+        [[ $lines =~ ^[0-9]{1,4}$ ]] || { echo "lines must be a number" >&2; exit 2; }
+        case "${2:-}" in
+            app)     journalctl --no-pager -o short -n "$lines" -u mtg-sorter ;;
+            updates) journalctl --no-pager -o short -n "$lines" -u mtg-sorter-update ;;
+            system)  journalctl --no-pager -o short -n "$lines" -b -p warning ;;
+            *)       echo "logs app|updates|system [lines]" >&2; exit 2 ;;
+        esac ;;
+    wifi-add)
+        # stdin: the network name on line 1, its password on line 2 (empty for an open network).
+        IFS= read -r ssid; IFS= read -r pass || true
+        [ -n "$ssid" ] || { echo "No network name" >&2; exit 2; }
+        if nmcli -t -f NAME connection show | grep -qxF -- "$ssid"; then
+            nmcli connection delete id "$ssid" >/dev/null
+        fi
+        if [ -n "$pass" ]; then
+            nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid" \
+                wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pass" connection.autoconnect yes >/dev/null
+        else
+            nmcli connection add type wifi con-name "$ssid" ifname wlan0 ssid "$ssid" \
+                connection.autoconnect yes >/dev/null
+        fi
+        echo "Saved $ssid" ;;
+    wifi-forget)
+        IFS= read -r name
+        type=$(nmcli -g connection.type connection show id "$name" 2>/dev/null || true)
+        [ "$type" = "802-11-wireless" ] || { echo "No saved Wi-Fi network called $name" >&2; exit 2; }
+        nmcli connection delete id "$name" >/dev/null
+        echo "Forgot $name" ;;
+    *)
+        echo "Usage: mtg-sorter-admin restart|reboot|poweroff|update|update-force|autoupdate on|off|logs app|updates|system [lines]|wifi-add|wifi-forget" >&2
+        exit 2 ;;
+esac

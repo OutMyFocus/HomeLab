@@ -524,7 +524,17 @@
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
   drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); scanPhotos(e.dataTransfer.files); });
 
+  // The Maintenance button shows a dot when the Pi's check-up finds a problem.
+  async function checkHealth() {
+    try {
+      const h = await api("/api/health"), b = $("healthBtn");
+      if (h.overall === "ok") { delete b.dataset.state; b.title = "Maintenance"; }
+      else { b.dataset.state = h.overall; b.title = "Maintenance: " + h.problems.map(p => p.label + ": " + p.summary).join(" · "); }
+    } catch (e) {}
+  }
+
   buildControls();
   applyLook();
   poll();
+  checkHealth(); setInterval(checkHealth, 60000);
 })();
