@@ -14,6 +14,7 @@
   async function api(path, body) {
     const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const js = await r.json().catch(() => ({}));
+    if (r.status === 401 && js.locked) { location.href = "/lock?next=" + encodeURIComponent(location.pathname); throw new Error("Locked"); }
     if (!r.ok) throw new Error(js.error || `Error ${r.status}`);
     return js;
   }
@@ -109,6 +110,13 @@
   $("copyMissing").onclick = () => {
     const t = missingList(); if (!t) return toast("Nothing missing");
     copy(t).then(() => toast("Copied. Paste it into a shop's mass entry box"), () => toast("Couldn't copy"));
+  };
+
+  $("wishMissing").onclick = async () => {
+    const cards = (result?.lines || []).filter(x => x.missing && x.found).map(x => ({ name: x.name }));
+    if (!cards.length) return toast("Nothing missing");
+    try { await api("/api/wishlist/add", { cards }); toast(`Added ${cards.length} cards to your wishlist`); }
+    catch (e) { toast(e.message); }
   };
 
   async function start() {

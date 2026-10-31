@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MTG Scanner · Locked</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/extras.css">
+  <script src="/static/look.js"></script>
+</head>
+<body class="lock-body">
+  <form class="panel lock-box" id="form" autocomplete="off">
+    <svg class="lock-logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </svg>
+    <h2>MTG Scanner is locked</h2>
+    <p class="sub">Type the PIN to open it on this device.</p>
+    <input id="pin" class="pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="current-password" aria-label="PIN" autofocus>
+    <div class="keypad" id="keypad">
+      <button type="button">1</button><button type="button">2</button><button type="button">3</button>
+      <button type="button">4</button><button type="button">5</button><button type="button">6</button>
+      <button type="button">7</button><button type="button">8</button><button type="button">9</button>
+      <button type="button" data-k="clear">Clear</button><button type="button">0</button><button type="submit" class="go">Open</button>
+    </div>
+    <p class="err" id="err" hidden></p>
+    <p class="sub small">Forgot it? On the Pi, delete <code>data/pin.json</code>.</p>
+  </form>
+  <script>
+    (() => {
+      const pin = document.getElementById("pin"), err = document.getElementById("err");
+      const next = new URLSearchParams(location.search).get("next");
+      const go = () => location.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : (location.pathname === "/lock" ? "/" : location.href));
+      fetch("/api/lock").then(r => r.json()).then(s => { if (s.unlocked) go(); }).catch(() => {});
+      document.getElementById("keypad").onclick = e => {
+        const b = e.target.closest("button"); if (!b || b.type === "submit") return;
+        if (b.dataset.k === "clear") pin.value = ""; else if (pin.value.length < 8) pin.value += b.textContent;
+        pin.focus();
+      };
+      document.getElementById("form").onsubmit = async e => {
+        e.preventDefault(); err.hidden = true;
+        const r = await fetch("/api/unlock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: pin.value }) });
+        if (r.ok) return go();
+        const js = await r.json().catch(() => ({}));
+        err.textContent = js.error || "That didn't work"; err.hidden = false; pin.value = ""; pin.focus();
+      };
+    })();
+  </script>
+</body>
+</html>
