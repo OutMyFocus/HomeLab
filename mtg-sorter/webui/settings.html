@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MTG Scanner · Settings</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/decks.css">
+  <link rel="stylesheet" href="/static/extras.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Scanner</span></div>
+    <nav class="pages" aria-label="Pages">
+      <a href="/">Scanner</a>
+      <a href="/collection">Collection</a>
+      <a href="/decks">Decks</a>
+      <a href="/wishlist">Wishlist</a>
+      <a href="/history">History</a>
+      <a href="/bins">Bins</a>
+      <a href="/machine">Machine</a>
+      <a href="/maintenance">Maintenance</a>
+      <a href="/settings" aria-current="page">Settings</a>
+    </nav>
+  </header>
+
+  <main class="coll">
+    <section class="panel setting">
+      <h3>Alerts while scanning</h3>
+      <p class="sub">The scanner page chimes and shows a banner for these, on every phone and laptop.</p>
+      <label class="row">Valuable card: worth at least $<input class="field price" id="aBig" type="number" min="0" step="1" placeholder="off"></label>
+      <label class="switch"><input type="checkbox" id="aWish"><span></span>A card on your wishlist is scanned</label>
+      <label class="switch"><input type="checkbox" id="aSound"><span></span>Play a chime</label>
+      <div class="row"><button class="btn ghost" id="aTest">Try it</button><span class="sub" id="aSaved"></span></div>
+    </section>
+    <section class="panel setting">
+      <h3>PIN lock</h3>
+      <p class="sub" id="pinState">Checking…</p>
+      <p class="sub">With a PIN, every page asks for it before anyone can see or change anything, so other people on your
+        Wi-Fi can't. Each phone or laptop stays unlocked for 30 days after typing it. The Pi itself is never locked out.
+        Forgot it? On the Pi, delete <code>data/pin.json</code>.</p>
+      <div class="row">
+        <input class="field pin" id="pin1" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="New PIN (4 to 8 digits)">
+        <input class="field pin" id="pin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="Type it again">
+        <button class="btn primary" id="pinSet">Set PIN</button>
+      </div>
+      <div class="row" id="pinOn" hidden>
+        <button class="btn ghost" id="pinLock">Lock this device now</button>
+        <button class="btn ghost danger" id="pinRemove">Turn the PIN off</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
+  <script src="/static/chime.js"></script>
+  <script src="/static/settings.js"></script>
+</body>
+</html>
