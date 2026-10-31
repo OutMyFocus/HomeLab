@@ -22,7 +22,8 @@ from flask import Response, jsonify, request, send_from_directory
 from . import config
 from .collection import COLUMNS, add_card
 from .database import Card
-from .sorting import bin_for_price, card_price
+from . import sort_rules
+from .sorting import bin_for, card_price
 
 HISTORY_FILE_NAME = "price_history.json"
 COLOR_ORDER = ["W", "U", "B", "R", "G", "M", "C"]
@@ -120,7 +121,7 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
         scanned_price = round(sum(g["paid"]) / len(g["paid"]), 2) if g["paid"] else None
         if price is None and scanned_price is not None:
             price, source = scanned_price, "Price when it was scanned"
-        bin_no, bin_label = bin_for_price(price)
+        bin_no, bin_label = bin_for(card, foil, price)
         times = [r.get("Scanned at", "") for r in g["rows"] if r.get("Scanned at")]
         set_code = card.set_code.upper()
         items.append({
@@ -415,8 +416,7 @@ def add_collection_routes(app, scanner, web_dir):
             "prices": (f"Commander Vault prices, {scanner.vault.date}" if scanner.vault else
                        f"Scryfall {'live ' if live else ''}prices, US$1 = CA${config.USD_TO_CAD:.4f}"),
             "exports": [{"id": k, "label": v[0], "hint": v[1]} for k, v in EXPORTS.items()],
-            "bins": [{"bin": n, "label": label} for n, label, _ in config.PRICE_BINS]
-                    + [{"bin": config.NO_PRICE_BIN[0], "label": config.NO_PRICE_BIN[1]}],
+            "bins": [{"bin": int(n), "label": label} for n, label in sort_rules.names().items()],
         })
 
     def body() -> dict:
@@ -475,7 +475,7 @@ def add_collection_routes(app, scanner, web_dir):
         price = card_price(card, foil, scanner.vault, live)
         with scanner.lock:
             for _ in range(count):
-                add_card(config.COLLECTION_CSV, card, foil, bin_for_price(price[0])[1], price)
+                add_card(config.COLLECTION_CSV, card, foil, bin_for(card, foil, price[0])[1], price)
         return everything()
 
     @app.post("/api/collection/refresh")

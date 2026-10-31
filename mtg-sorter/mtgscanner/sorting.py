@@ -1,6 +1,7 @@
-"""Decide which bin a card goes into. Change the bins in config.py."""
+"""Decide which bin a card goes into. Set the bins on the Bins page (sort_rules.py);
+without saved rules they're the price bins in config.py."""
 
-from . import config
+from . import config, sort_rules
 from .database import Card
 from .vault_prices import VaultPrices
 
@@ -44,7 +45,13 @@ def card_price(card: Card, foil: bool, vault: VaultPrices | None = None, live=No
     return round(usd * rate, 2), f"{source} US price × {rate:.2f}{', ' + note if note else ''}"
 
 
+def bin_for(card: Card, foil: bool, price: float | None) -> tuple[int, str]:
+    """Return (bin number, bin name) for a card whose price you already know."""
+    return sort_rules.pick(card, foil, price)
+
+
 def bin_for_price(price: float | None) -> tuple[int, str]:
+    """The config.py price bins only (ignores the Bins page)."""
     if price is None:
         return config.NO_PRICE_BIN
     for number, label, minimum in config.PRICE_BINS:
@@ -54,5 +61,5 @@ def bin_for_price(price: float | None) -> tuple[int, str]:
 
 
 def choose_bin(card: Card, foil: bool = False, vault: VaultPrices | None = None, live=None) -> tuple[int, str]:
-    """Return (bin number, bin label) for this card, based on its price."""
-    return bin_for_price(card_price(card, foil, vault, live)[0])
+    """Return (bin number, bin label) for this card, by the rules on the Bins page."""
+    return bin_for(card, foil, card_price(card, foil, vault, live)[0])

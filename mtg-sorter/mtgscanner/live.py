@@ -179,3 +179,31 @@ class Live:
     def cached_count(self) -> int:
         with self._lock:
             return sum(1 for _, js in self._cards.values() if js)
+
+    def by_names(self, names: list[str]) -> dict[str, dict]:
+        """Scryfall's usual printing of each card name (for pricing cards you don't own),
+        75 names per request. Returns {lowercase name: card json}; names Scryfall doesn't
+        know, or all of them when offline, are left out."""
+        now = time.time()
+        with self._lock:
+            known = getattr(self, "_names", None)
+            if known is None:
+                known = self._names = {}
+        todo = [n for n in dict.fromkeys(n.strip() for n in names if n.strip())
+                if not ((hit := known.get(n.lower())) and now - hit[0] < (CARD_TTL if hit[1] else FAIL_TTL))]
+        for start in range(0, len(todo), BATCH):
+            chunk = todo[start:start + BATCH]
+            page = self._get(f"{API}/cards/collection", {"identifiers": [{"name": n} for n in chunk]})
+            if not page:
+                break
+            found = {}
+            for js in page.get("data", []):
+                self._remember(js)
+                found[js["name"].lower()] = js
+                found.setdefault(js["name"].split(" // ")[0].lower(), js)
+            with self._lock:
+                for n in chunk:
+                    known[n.lower()] = (now, found.get(n.lower()))
+        with self._lock:
+            return {n.lower(): known[n.lower()][1] for n in names
+                    if n.strip() and n.lower() in known and known[n.lower()][1]}
