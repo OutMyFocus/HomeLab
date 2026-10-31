@@ -91,8 +91,9 @@ CAMERA_SIZE = (1920, 1080)
 # --- The machine: servos and feeder (machine.py) ---------------------------
 # Wiring: hardware/ASSEMBLY.md, Stage C. The servos plug into the PCA9685 board, which
 # the Pi talks to over I2C. Angles are 0-180 with 90 the middle, where each horn was
-# fitted. These are first guesses: try angles on the Machine page (/machine) and
-# put the ones that work here.
+# fitted. These are first guesses: find better ones on the Machine page (/machine) and
+# press Save there. Saved angles live in data/machine_settings.json and win over these, so
+# there's no need to edit this file on the Pi (which would stop automatic updates).
 SERVOS = {
     # part: (PCA9685 channel, {position: angle})
     "pins":   (0, {"up": 90, "down": 62}),                   # stop pins: up stops the card

@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MTG Sorter · Maintenance</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    /* Looking after the Pi. Uses the scanner's colours from style.css. */
+    .wrap { max-width: 920px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 20px; }
+    .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .head h1 { margin: 0 auto 0 0; font-size: 1.5rem; letter-spacing: -.01em; }
+    .panel { padding: 18px; display: grid; gap: 14px; align-content: start; }
+    .panel h2 { margin: 0; font-size: 1.05rem; }
+    .sub { color: var(--muted); font-size: .9rem; margin: 0; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .btn { padding: 9px 14px; cursor: pointer; border-radius: calc(var(--radius) * .6); text-decoration: none; color: inherit; }
+    .btn.danger { color: var(--bad); }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; margin-top: 6px; }
+    .ok > .dot, .dot.ok { background: var(--good); }
+    .warn > .dot, .dot.warn { background: var(--warn); }
+    .bad > .dot, .dot.bad { background: var(--bad); }
+    .off { opacity: .55; }
+
+    .hero { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; }
+    .hero .big { width: 18px; height: 18px; margin: 0; box-shadow: 0 0 0 6px color-mix(in oklab, currentColor 0%, transparent); }
+    .hero h2 { font-size: 1.25rem; }
+    .checks { display: grid; gap: 0; }
+    .check { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+    .check:first-child { border-top: 0; }
+    .check .label { font-weight: 650; }
+    .check .fix { grid-column: 2 / 4; color: var(--text); font-size: .92rem; background: var(--raised); padding: 8px 10px; border-radius: 10px; }
+    .check .act { align-self: start; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: .95rem; }
+    .facts dt { color: var(--muted); }
+    .facts dd { margin: 0; overflow-wrap: anywhere; }
+    input[type=text], input[type=password], select { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font: inherit; min-width: 0; }
+    form.row input { flex: 1 1 160px; }
+    .saved-nets { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+    .saved-nets li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: var(--raised); }
+    .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .seg button { border: 0; background: transparent; color: var(--muted); padding: 8px 12px; cursor: pointer; font: inherit; }
+    .seg button[aria-pressed=true] { background: var(--raised); color: var(--text); font-weight: 650; }
+    pre.log { margin: 0; max-height: 420px; overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 12px;
+              padding: 12px; font: .78rem/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; }
+    .report { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+    .report li { display: flex; gap: 10px; }
+    #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--panel-solid); z-index: 10;
+             border: 1px solid var(--line-strong); padding: 10px 16px; border-radius: 12px; max-width: calc(100% - 32px); }
+    #waiting { position: fixed; inset: 0; display: grid; place-items: center; background: color-mix(in oklab, var(--bg) 88%, transparent); z-index: 20; }
+    #waiting div { text-align: center; display: grid; gap: 10px; padding: 24px; }
+    #waiting h2 { margin: 0; }
+    .spin { width: 34px; height: 34px; margin: 0 auto; border-radius: 50%; border: 3px solid var(--line-strong); border-top-color: var(--accent); animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } .hero { grid-template-columns: auto 1fr; } .hero .row { grid-column: 1 / 3; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Maintenance</h1>
+    <a class="btn ghost" href="/machine">Machine</a>
+    <a class="btn ghost" href="/">Back to the scanner</a>
+  </div>
+
+  <!-- How it's doing, in one line -->
+  <section class="panel hero" id="hero">
+    <span class="dot big" id="heroDot"></span>
+    <div>
+      <h2 id="heroTitle">Checking…</h2>
+      <p class="sub" id="heroSub"></p>
+    </div>
+    <div class="row"><button class="btn" id="recheck">Check again</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>Check-up</h2>
+    <div class="checks" id="checks"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="panel">
+      <h2>Restart and power</h2>
+      <p class="sub">Restart the app if the page misbehaves. Reboot if the camera or Wi-Fi went missing.
+        Always shut down before unplugging, so the SD card isn't damaged.</p>
+      <div class="row">
+        <button class="btn" data-do="restart">Restart app</button>
+        <button class="btn" data-do="reboot">Reboot Pi</button>
+        <button class="btn danger" data-do="poweroff">Shut down</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Updates</h2>
+      <dl class="facts" id="versionFacts"></dl>
+      <label class="switch"><input type="checkbox" id="autoUpdate"><span></span>Update automatically (checks GitHub every 5 minutes)</label>
+      <div class="row">
+        <button class="btn" data-do="update">Update now</button>
+        <button class="btn ghost" data-do="update_force" title="Sets aside edits made on the Pi (nothing is deleted), then updates">Fix updates</button>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>Test the moving parts</h2>
+    <p class="sub">Moves every servo through its positions and back, then turns the feeder for a moment.
+      Keep fingers and cards clear. To change the angles, use the <a href="/machine">Machine</a> page.</p>
+    <div class="row"><button class="btn primary" id="testParts">Run the test</button></div>
+    <ul class="report" id="report" hidden></ul>
+  </section>
+
+  <div class="grid2">
+    <section class="panel">
+      <h2>Wi-Fi</h2>
+      <dl class="facts" id="netFacts"></dl>
+      <p class="sub">Saved networks. The Pi joins any of these by itself, so add your other home's or your phone's hotspot before you move the sorter.</p>
+      <ul class="saved-nets" id="savedNets"></ul>
+      <form class="row" id="wifiForm" autocomplete="off">
+        <input type="text" id="ssid" placeholder="Network name" maxlength="32" required>
+        <input type="password" id="wifiPass" placeholder="Password" maxlength="63">
+        <button class="btn" type="submit">Save network</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Backup</h2>
+      <p class="sub">Your collection, card database, what the scanner learned, and your settings, in one zip.
+        Keep a copy on your PC: if the SD card ever dies, it's all you need.</p>
+      <label class="switch"><input type="checkbox" id="withScans"><span></span>Include the saved scan pictures (much bigger)</label>
+      <div class="row">
+        <a class="btn primary" id="backupBtn" href="/api/system/backup">Download backup</a>
+        <label class="btn ghost">Restore a backup…<input type="file" id="restoreFile" accept=".zip" hidden></label>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="row" style="justify-content: space-between">
+      <h2>Logs</h2>
+      <div class="row">
+        <div class="seg" id="logPick">
+          <button aria-pressed="true" data-log="app">App</button>
+          <button aria-pressed="false" data-log="updates">Updates</button>
+          <button aria-pressed="false" data-log="system">System warnings</button>
+        </div>
+        <button class="btn ghost" id="logRefresh">Refresh</button>
+        <a class="btn ghost" id="logDownload" href="/api/system/logs?which=app&lines=2000&download=1">Download</a>
+      </div>
+    </div>
+    <p class="sub">What the app and the Pi wrote down, newest at the bottom. If something goes wrong, download this and share it.</p>
+    <pre class="log" id="log">Loading…</pre>
+  </section>
+</div>
+
+<div id="waiting" hidden><div><span class="spin"></span><h2 id="waitTitle">Restarting…</h2><p class="sub" id="waitSub"></p></div></div>
+<div id="toast" hidden></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let toastTimer, sys = null, logWhich = "app";
+
+function toast(text, ms = 4500) {
+  const t = $("toast"); t.textContent = text; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), ms);
+}
+async function api(path, body, form) {
+  const opts = body || form ? { method: "POST" } : {};
+  if (body) { opts.headers = { "Content-Type": "application/json" }; opts.body = JSON.stringify(body); }
+  if (form) opts.body = form;
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({ error: "No answer from the app" }));
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+function ago(iso) {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 90) return "just now";
+  if (s < 5400) return Math.round(s / 60) + " minutes ago";
+  if (s < 129600) return Math.round(s / 3600) + " hours ago";
+  return Math.round(s / 86400) + " days ago";
+}
+function duration(s) {
+  if (s == null) return "";
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d} day${d > 1 ? "s" : ""}, ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+}
+
+// ---------- the check-up ----------
+const ACTION_LABEL = { restart: "Restart app", update: "Update now", update_force: "Fix updates", autoupdate_on: "Turn on" };
+async function load() {
+  try { sys = await api("/api/system"); } catch (e) { $("heroTitle").textContent = "Couldn't reach the app"; return; }
+  const live = sys.checks.filter((c) => c.state !== "off");
+  const bad = live.filter((c) => c.state === "bad"), warn = live.filter((c) => c.state === "warn");
+  $("heroDot").className = "dot big " + sys.overall;
+  $("heroTitle").textContent = bad.length ? (bad.length === 1 ? bad[0].label + ": " + bad[0].summary : `${bad.length} problems need fixing`)
+    : warn.length ? (warn.length === 1 ? warn[0].label + ": " + warn[0].summary : `${warn.length} things to look at`)
+    : "Everything looks good";
+  $("heroSub").textContent = [sys.hostname, sys.model, sys.uptime_s != null && "on for " + duration(sys.uptime_s),
+    !sys.on_pi && "on this computer, Pi-only checks are greyed out"].filter(Boolean).join(" · ");
+  const order = { bad: 0, warn: 1, ok: 2, off: 3 };
+  $("checks").innerHTML = [...sys.checks].sort((a, b) => order[a.state] - order[b.state]).map((c) => `
+    <div class="check ${c.state}">
+      <span class="dot"></span>
+      <div><span class="label">${esc(c.label)}</span> <span class="sub">${esc(c.summary)}</span></div>
+      ${c.action && c.state !== "ok" ? `<button class="btn act" data-do="${c.action}">${ACTION_LABEL[c.action]}</button>` : "<span></span>"}
+      ${c.fix && c.state !== "ok" ? `<div class="fix">${esc(c.fix)}</div>` : ""}
+    </div>`).join("");
+
+  const v = sys.version, u = sys.update;
+  $("versionFacts").innerHTML = v.available ? `
+    <dt>Version</dt><dd>${esc(v.commit)}, ${esc(new Date(v.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }))}</dd>
+    <dt>Latest change</dt><dd>${esc(v.subject)}</dd>
+    <dt>Last check</dt><dd>${u ? esc(u.message) + " <span class='sub'>(" + ago(u.time) + ")</span>" : "not yet"}</dd>`
+    : `<dt>Version</dt><dd>Not a git copy</dd>`;
+  $("autoUpdate").checked = !!sys.auto_updates;
+  $("autoUpdate").disabled = sys.auto_updates == null;
+
+  const w = sys.wifi || {};
+  $("netFacts").innerHTML = `
+    <dt>Network</dt><dd>${w.ssid ? esc(w.ssid) + (w.signal != null ? `, signal ${w.signal}%` : "") : w.available ? "Not on Wi-Fi" : "Only shown on the Pi"}</dd>
+    <dt>Address</dt><dd>${sys.ip ? `<a href="http://${esc(sys.ip)}:5000">http://${esc(sys.ip)}:5000</a>` : "none"}<br><span class="sub">or http://${esc(sys.hostname)}.local:5000</span></dd>
+    ${sys.tailscale_ip ? `<dt>Tailscale</dt><dd>${esc(sys.tailscale_ip)}</dd>` : ""}`;
+  $("savedNets").innerHTML = (w.saved || []).map((n) => `<li><span>${esc(n)}${n === w.ssid ? ' <span class="sub">(in use)</span>' : ""}</span>
+    ${n === w.ssid ? "" : `<button class="btn ghost" data-forget="${esc(n)}">Forget</button>`}</li>`).join("")
+    || `<li class="sub">${w.available ? "None saved" : "Only on the Pi"}</li>`;
+}
+
+// ---------- buttons that need the Pi's helper ----------
+const CONFIRM = {
+  reboot: "Reboot the Pi? The page comes back in about a minute.",
+  poweroff: "Shut the Pi down? You'll need to unplug it and plug it back in (or press its power button) to start it again.",
+  update_force: "Set aside any edits made to files on the Pi and update? Nothing is deleted: they're kept in git stash.",
+};
+async function act(what) {
+  if (CONFIRM[what] && !confirm(CONFIRM[what])) return;
+  if (what === "autoupdate_on") return setAuto(true);
+  const path = { restart: "restart", reboot: "reboot", poweroff: "poweroff", update: "update", update_force: "update" }[what];
+  try {
+    const r = await api("/api/system/" + path, { force: what === "update_force" });
+    toast(r.message, 7000);
+    if (what === "restart") waitForApp("Restarting the app…", "About 10 seconds.");
+    if (what === "reboot") waitForApp("Rebooting the Pi…", "About a minute. This page reloads when it's back.");
+    if (what === "poweroff") { $("waiting").hidden = false; $("waitTitle").textContent = "Shutting down";
+      $("waitSub").textContent = "Wait until the green light on the Pi stops flashing (about 20 seconds), then it's safe to unplug.";
+      document.querySelector("#waiting .spin").hidden = true; }
+    if (what.startsWith("update")) setTimeout(load, 15000);
+  } catch (e) { toast(e.message, 9000); }
+}
+async function setAuto(on) {
+  try { toast((await api("/api/system/autoupdate", { on })).message); } catch (e) { toast(e.message, 9000); }
+  load();
+}
+function waitForApp(title, sub) {
+  $("waiting").hidden = false; $("waitTitle").textContent = title; $("waitSub").textContent = sub;
+  let wentDown = false;
+  const started = Date.now();
+  const poll = async () => {
+    try {
+      const r = await fetch("/api/health", { cache: "no-store" });
+      if (r.ok && (wentDown || Date.now() - started > 20000)) return location.reload();
+    } catch (e) { wentDown = true; }
+    if (Date.now() - started > 180000) { $("waitSub").textContent = "It's taking longer than usual. If the page doesn't come back, unplug the Pi and plug it back in."; }
+    setTimeout(poll, 2000);
+  };
+  setTimeout(poll, 3000);
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-do]");
+  if (b) act(b.dataset.do);
+  const f = e.target.closest("[data-forget]");
+  if (f && confirm(`Forget the Wi-Fi network "${f.dataset.forget}"?`)) {
+    api("/api/system/wifi/forget", { name: f.dataset.forget }).then((r) => { toast(r.message); load(); }, (err) => toast(err.message, 9000));
+  }
+});
+$("recheck").onclick = () => { $("heroTitle").textContent = "Checking…"; load(); };
+$("autoUpdate").onchange = (e) => setAuto(e.target.checked);
+
+// ---------- moving parts ----------
+const PART_NAMES = { pins: "Stop pins", chute: "Chute tilt", door_r: "Right trapdoor", door_l: "Left trapdoor", feeder: "Feeder" };
+$("testParts").onclick = async () => {
+  const b = $("testParts"); b.disabled = true; b.textContent = "Testing…";
+  try {
+    const r = await api("/api/machine/test", {});
+    $("report").hidden = false;
+    $("report").innerHTML = r.test.map((t) => `<li class="${t.ok ? "ok" : "bad"}"><span class="dot"></span>
+      <span><b>${esc(PART_NAMES[t.part] || t.part)}</b> <span class="sub">${esc(t.detail)}</span></span></li>`).join("");
+    const failed = r.test.filter((t) => !t.ok).length;
+    toast(failed ? `${failed} part${failed > 1 ? "s" : ""} didn't respond. See the list.` : "Every part moved.");
+  } catch (e) { toast(e.message, 9000); }
+  b.disabled = false; b.textContent = "Run the test";
+};
+
+// ---------- Wi-Fi ----------
+$("wifiForm").onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    const r = await api("/api/system/wifi", { ssid: $("ssid").value, password: $("wifiPass").value });
+    toast(r.message, 8000); $("ssid").value = $("wifiPass").value = ""; load();
+  } catch (err) { toast(err.message, 9000); }
+};
+
+// ---------- backup ----------
+$("withScans").onchange = (e) => ($("backupBtn").href = "/api/system/backup" + (e.target.checked ? "?scans=1" : ""));
+$("restoreFile").onchange = async (e) => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file || !confirm(`Restore "${file.name}"? It replaces the collection, card database and settings on the Pi. ` +
+      "A copy of what's there now is kept in data/backups first.")) return;
+  const form = new FormData(); form.append("backup", file);
+  try {
+    const r = await api("/api/system/restore", null, form);
+    toast(r.message, 8000);
+    if (sys?.helper) waitForApp("Loading the backup…", "The app restarts to use it.");
+  } catch (err) { toast(err.message, 9000); }
+};
+
+// ---------- logs ----------
+async function loadLog() {
+  $("logDownload").href = `/api/system/logs?which=${logWhich}&lines=2000&download=1`;
+  const pre = $("log");
+  try {
+    pre.textContent = (await api(`/api/system/logs?which=${logWhich}&lines=300`)).text || "(empty)";
+    pre.scrollTop = pre.scrollHeight;
+  } catch (e) { pre.textContent = e.message; }
+}
+$("logPick").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  logWhich = b.dataset.log;
+  for (const x of $("logPick").children) x.setAttribute("aria-pressed", x === b);
+  loadLog();
+};
+$("logRefresh").onclick = loadLog;
+
+try {   // same theme and accent as the scanner page (its Customize panel)
+  const look = JSON.parse(localStorage.getItem("mtg-scanner-look") || "{}");
+  if (look.theme) document.documentElement.dataset.theme = look.theme;
+  if (look.accent) document.documentElement.style.setProperty("--accent", look.accent);
+} catch (e) {}
+load(); loadLog();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

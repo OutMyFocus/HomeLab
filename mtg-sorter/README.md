@@ -11,6 +11,10 @@ It has three parts, built in this order:
 | 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Stand designed ([`hardware/`](hardware/)) |
 | 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
 
+**Looking after it:** the wrench button in the app opens the Maintenance page (health
+check-up, updates, restart, backups, logs). What to do when something goes wrong:
+[MAINTENANCE.md](MAINTENANCE.md).
+
 ## How recognition works (plain English)
 
 1. **Find the card.** The code looks for edges in the camera picture and finds the
@@ -79,6 +83,9 @@ Then open **http://localhost:5000** in your browser. You get:
   the slot. **Edit slots** to draw more or remove one (the red ×); slots are kept for next time.
 - **Wrong card?** (W): pick the right card by name. It's saved instead, and remembered for training.
 - **Train** tab: teach the scanner from your own scans (see below).
+- **Machine** (the lightning button): move each servo and the feeder by hand, and save the angles that work.
+- **Maintenance** (the wrench button): the Pi's health, updates, restart and shut down, Wi-Fi,
+  backups and logs. See [MAINTENANCE.md](MAINTENANCE.md).
 - **Customize** (the sliders button, or C): light/dark/black theme, accent color, bin colors,
   layout, spacing, font and which details to show. Saved in your browser.
 

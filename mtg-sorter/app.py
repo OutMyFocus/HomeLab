@@ -37,6 +37,7 @@ from mtgscanner.exchange import load_rate
 from mtgscanner.machine import Machine, add_machine_routes
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
 from mtgscanner.sorting import card_price, choose_bin
+from mtgscanner.system import add_system_routes
 from mtgscanner.tracking import Track, free_number, pair_up
 from mtgscanner.training import forget_all, ready_to_learn, train
 from mtgscanner.vault_prices import VaultPrices
@@ -512,7 +513,9 @@ def candidate_info(card: Card, distance: int, foil: bool, vault) -> dict:
 
 def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
-    add_machine_routes(app, machine or Machine(), WEB)  # the /machine test page
+    machine = machine or Machine()
+    add_machine_routes(app, machine, WEB)  # the /machine test page
+    add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
 
     @app.get("/")
     def index():

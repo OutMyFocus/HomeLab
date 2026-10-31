@@ -23,7 +23,9 @@
     .slider { display: flex; gap: 12px; align-items: center; }
     .slider input { flex: 1; min-width: 0; accent-color: var(--accent); }
     .slider output { font: 600 .95rem var(--mono); width: 4ch; text-align: right; }
-    .btn { padding: 9px 14px; cursor: pointer; border-radius: calc(var(--radius) * .6); }
+    .btn { padding: 9px 14px; cursor: pointer; border-radius: calc(var(--radius) * .6); text-decoration: none; color: inherit; }
+    .btn.small { padding: 5px 10px; font-size: .88rem; }
+    .changed { color: var(--accent); }
     label.inline { display: flex; gap: 8px; align-items: center; }
     label.inline input[type=number] { width: 5.5em; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); }
     #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--panel-solid);
@@ -34,18 +36,23 @@
 <div class="wrap">
   <div class="head">
     <h1>Machine</h1>
-    <a class="btn ghost" href="/">Back to the scanner</a>
+    <div class="row">
+      <a class="btn ghost" href="/maintenance">Maintenance</a>
+      <a class="btn ghost" href="/">Back to the scanner</a>
+    </div>
   </div>
 
   <section class="panel" id="servoPanel">
     <h2><span class="dot" id="servoDot"></span>Servos</h2>
     <p class="err" id="servoErr" hidden></p>
-    <p class="sub">The buttons go to the angles in config.py. Use the slider to find better ones, then put them in config.py.
+    <p class="sub">The buttons go to each part's saved angles. To change one, move the slider until the part sits right,
+      then press that position under <b>Save the slider's angle as</b>. It's kept on the Pi, so there's no file to edit.
       Centre each servo at 90 before pressing its horn on.</p>
     <div id="parts"></div>
     <div class="row">
       <button class="btn" id="centreAll">Centre all at 90</button>
       <button class="btn ghost" id="relaxAll">Relax all</button>
+      <button class="btn ghost" id="resetAll" hidden>Back to the original angles</button>
     </div>
   </section>
 
@@ -60,6 +67,7 @@
       <button class="btn primary" id="feedFwd">Feed one card</button>
       <button class="btn" id="feedBack">Run backwards</button>
       <button class="btn ghost" id="feedStop">Stop</button>
+      <button class="btn ghost" id="feedSave">Save as the usual push</button>
     </div>
   </section>
 </div>
@@ -90,9 +98,13 @@ function show(s) {
   status("feedDot", "feedErr", s.feeder);
   if (!built) { build(s); built = true; }
   for (const [part, p] of Object.entries(s.parts)) {
+    $("pos-" + part).innerHTML = Object.entries(p.positions).map(([pos, a]) =>
+      `<button class="btn" data-part="${part}" data-pos="${pos}">${pos} <span class="sub ${a !== p.factory[pos] ? "changed" : ""}"
+        title="${a !== p.factory[pos] ? "Saved on this Pi (was " + p.factory[pos] + "°)" : ""}">${a}°</span></button>`).join("");
     if (p.angle == null) continue;
     $("r-" + part).value = p.angle; $("o-" + part).value = Math.round(p.angle);
   }
+  $("resetAll").hidden = !s.customized;
 }
 function build(s) {
   const box = $("parts");
@@ -100,18 +112,25 @@ function build(s) {
   for (const [part, p] of parts) {
     const el = document.createElement("div"); el.className = "part";
     el.innerHTML = `<div class="row"><span class="name">${NAMES[part] || part}</span><span class="sub">channel ${p.channel}</span></div>
-      <div class="row">${Object.entries(p.positions).map(([pos, a]) =>
-        `<button class="btn" data-part="${part}" data-pos="${pos}">${pos} <span class="sub">${a}°</span></button>`).join("")}</div>
+      <div class="row" id="pos-${part}"></div>
       <div class="slider"><input type="range" min="0" max="180" step="1" value="90" id="r-${part}" aria-label="${NAMES[part]} angle">
-      <output id="o-${part}">90</output></div>`;
+      <output id="o-${part}">90</output></div>
+      <div class="row"><span class="sub">Save the slider's angle as:</span>${Object.keys(p.positions).map((pos) =>
+        `<button class="btn ghost small" data-save="${part}" data-pos="${pos}">${pos}</button>`).join("")}</div>`;
     box.append(el);
     const range = el.querySelector("input");
     range.addEventListener("input", () => ($("o-" + part).value = range.value));
     range.addEventListener("change", () => call("/api/machine/move", { channel: p.channel, angle: +range.value }));
   }
-  box.addEventListener("click", (e) => {
+  box.addEventListener("click", async (e) => {
     const b = e.target.closest("button[data-part]");
     if (b) call("/api/machine/move", { part: b.dataset.part, position: b.dataset.pos });
+    const sv = e.target.closest("button[data-save]");
+    if (sv) {
+      const part = sv.dataset.save, angle = +$("r-" + part).value;
+      if (await call("/api/machine/save", { part, position: sv.dataset.pos, angle }))
+        toast(`Saved: ${NAMES[part] || part} "${sv.dataset.pos}" is now ${angle}°`);
+    }
   });
   $("centreAll").onclick = async () => {
     for (const p of Object.values(s.parts)) await call("/api/machine/move", { channel: p.channel, angle: 90 });
@@ -120,6 +139,14 @@ function build(s) {
   $("feedSpeed").value = s.feeder_defaults.speed;
 }
 $("relaxAll").onclick = () => call("/api/machine/relax", {});
+$("resetAll").onclick = async () => {
+  if (confirm("Forget the angles and feeder settings saved here, and go back to the ones in config.py?")
+      && await call("/api/machine/reset", {})) toast("Back to the original angles.");
+};
+$("feedSave").onclick = async () => {
+  if (await call("/api/machine/save", { seconds: +$("feedSecs").value, speed: +$("feedSpeed").value }))
+    toast("Saved. The feeder uses these from now on.");
+};
 const feed = (backward) => call("/api/machine/feed",
   { seconds: +$("feedSecs").value, speed: +$("feedSpeed").value, backward });
 $("feedFwd").onclick = () => feed(false);
