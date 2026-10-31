@@ -1,6 +1,9 @@
 # Assembly guide
 
-How to put the machine together, in the order you'll actually build it:
+How to put the machine together, in the order you'll actually build it.
+For the enclosure build with a picture for every step, see
+[`ASSEMBLY_PICTURES.md`](ASSEMBLY_PICTURES.md) (or the single file
+[`assembly_guide.html`](assembly_guide.html), to open in a browser).
 
 1. [**Part 1: the feeder test**](#part-1-the-feeder-test). Uses only the round 1 parts
    (items 6, 11, 12, 14 and 19 in [`SHOPPING.md`](../SHOPPING.md)) plus printed parts.
@@ -271,8 +274,7 @@ All from `stl/bed_chute_*.stl`, flat, as they open, no supports, 15–20% infill
 | `tilt_bracket` | 1 | black |
 | `chute` | 1 | any |
 | `trapdoor`, `trapdoor_left` | 1 each | any |
-| `trapdoor_mount`, `trapdoor_mount_left` | 1 each | any |
-| `hinge_lug`, `hinge_lug_left` | 1 each | any |
+| `door_carrier`, `door_carrier_left` | 1 each | any |
 
 The bed walls, the chute and the feeder stand from Part 1 all go on the enclosure's bridge
 (Part 3), which holds them at the right heights: the hopper floor ends up about 2 mm above
@@ -360,14 +362,17 @@ kit.servo[0].angle = 90   # change the channel and angle to test each servo
 ## Stage D: the scan bed
 
 1. **Bed plate into the walls.** Slide the white bed plate into the grooves on the inside of
-   `bed_side_left` and `bed_side_right`, so the walls stand on the table on either side.
+   `bed_side_left` and `bed_side_right` (the thin lower groove that runs out through the front
+   edge, not the wider LED groove above it), so the walls stand on the table on either side.
    The low rails on the plate face up; the pin slots are at the low (front) edge.
 2. **Tilt bracket.** It goes across between the two walls near the bottom front. Screw it in
    with M3 screws through the holes in each wall (2 per side).
 3. **Stop-pin servo.** Push a servo into the rectangular hole in the **left** wall from the
    outside, shaft pointing into the bed, and screw it in with the two screws that came with it.
-4. **Pin rocker.** Centre the servo (see above), fit a single-arm horn, and screw the rocker's
-   flat plate to the horn with the two tiny horn screws. With the servo at "up", the two pins
+4. **Pin rocker.** First, off the machine, screw the double-arm horn to the rocker's flat plate
+   (hub in the plate's round hole, the two tiny horn screws through the horn's innermost holes).
+   Centre the servo (see above), push horn and rocker onto the shaft with the pins pointing up,
+   and fit the horn's centre screw through the round hole. With the servo at "up", the two pins
    should poke up through the slots at the front of the bed. Set the servo to "down" (28° the
    other way): the pins must drop fully below the bed surface.
 5. **LED strips.** Cut two pieces about 9 cm long and stick one in the groove along each
@@ -382,14 +387,21 @@ app recognizes it. Then drop the pins and check the card slides off cleanly.
 
 ## Stage E: the chute and trapdoors
 
-1. **Trapdoor servos.** Screw a servo into each `trapdoor_mount` (2 screws each). Screw each
-   mount under the **front** of the chute floor, one each side, with M2 screws from above.
-2. **Hinge lugs.** Screw `hinge_lug` and `hinge_lug_left` under the **back** of the chute floor,
-   same way.
-3. **Trapdoors.** Each door has two ears. The back ear's hole goes over a hinge pin through
-   the lug: use an M3 screw as the pin (1.75 mm filament is too thin for the 2.9 mm hole and
-   would rattle). The front ear screws to the servo horn.
-   Centre each servo first, so both doors close flush with the chute floor.
+1. **Door carriers.** Each `door_carrier` is a servo mount and a hinge lug on one bar, so
+   the servo shaft and the hinge pin always line up. Push a servo into each carrier's front
+   plate (shaft toward the back) and fit its 2 tab screws.
+2. **Carriers onto the chute.** Screw each carrier under the chute floor along its outer edge,
+   one each side, with 3 M2 screws from inside the chute. The servo plate is at the front (the
+   tall rail). Built before 2026-10-30 with `trapdoor_mount` + `hinge_lug` instead? Those still
+   fit the old holes; the carriers replace them (`downloads/MTG_Sorter_Chute.3mf`: chute,
+   carriers and doors on one plate).
+3. **Trapdoors.** Centre each servo, then push a single-arm horn on, arm pointing up toward
+   the middle of the door (the door's front ear sits right behind the horn, so the horn goes
+   on first). Hang the door: its back ear goes over a hinge pin through the carrier's back
+   lug. Use an M3 screw as the pin (1.75 mm filament is too thin for the 2.9 mm hole and
+   would rattle). Lock the front ear to the horn from behind: the horn's centre screw through
+   the ear's small hole into the shaft, and one tiny screw through the ear into the horn's
+   first hole. Trim the horn arm if it touches the door. Both doors close flush with the floor.
 4. **Into the machine.** The chute's front axle goes into the upstand on the enclosure's
    bridge (Part 3). The plate on the chute's back end screws to the **tilt servo's** horn:
    push the tilt servo through the tilt bracket from the back, screw it in, centre it, then
@@ -417,7 +429,8 @@ the bin → pins drop → card slides into the chute → doors open (bin 2) or t
 The box from [`README.md`, Enclosure](README.md#enclosure). The open frame and bins that
 Part 2 first had are gone; everything else from Part 2 stays. Print list and part
 names are in the README; the print order, slicer settings and the fit-check plates to
-print first are in [`PRINTING.md`](PRINTING.md).
+print first are in [`PRINTING.md`](PRINTING.md). The same steps with a picture each are in
+[`ASSEMBLY_PICTURES.md`](ASSEMBLY_PICTURES.md).
 
 > **The drawers are Card Catalog v1.2** (MakerWorld 3016550). The dock is sized from
 > Nic's 3MF of it (the `dr_*` block in `enclosure.scad`), so print three drawers and three
@@ -431,10 +444,14 @@ print first are in [`PRINTING.md`](PRINTING.md).
    the six rubber feet in the recesses underneath.
 2. **Bridge:** join `bridge_front` + `bridge_back` the same way. Screw the two new bed walls
    (`..._enclosure.stl`) to it from below (M3 into the holes in their bottom edges), the
-   bed plate between them, then the tilt bracket, pins and camera tower exactly as in
-   Part 2, Stage D. Screw the chute's front axle through the upstand at the front.
-3. **Deck:** join `deck_fl` + `deck_fr`, and `deck_bl` + `deck_br`. Leave the front pair and
-   back pair separate: the back pair lifts off for access to the Pi bay.
+   bed plate between them, then the tilt bracket, pins and camera post exactly as in
+   Part 2, Stage D, but **leave the camera head off the post**: the deck can't be lowered
+   over it, so it goes on last (step 2.7 below). Screw the chute's front axle through the
+   upstand at the front.
+3. **Deck:** join `deck_fl` + `deck_fr` with two splices across their middle seam. Leave the
+   two pockets on the front/back seam empty, so the back of the deck lifts off for access to
+   the Pi bay. `deck_bl` and `deck_br` have no splice between them (the hopper well splits
+   them); they go on as two separate pieces.
 4. **Drawers:** print three Card Catalog drawers and their top bars from the MakerWorld
    3MF. Slide a toploader with a card into each pocket from the top, clip the bar on.
 5. **Fascia and back:** join `fascia_l` + `fascia_m` + `fascia_r` with splices glued in
@@ -444,22 +461,24 @@ print first are in [`PRINTING.md`](PRINTING.md).
 
 ## 2. Assembly, bottom up
 
-1. Fix the Pi (4 × M2.5) and the PCA9685 to the standoffs on the floor, the motor driver
-   with a zip tie. The Pi's ports face the back.
-2. Push the two `post_front`s and two `post_back`s onto their pegs at the corners (the
+1. Fix the Pi (4 × M2.5) and the PCA9685 (4 × M2.5) to the standoffs on the floor, the
+   motor driver with a zip tie. The Pi's ports face the back.
+2. Push `post_front` (front left), `post_front_r` (front right) and the two `post_back`s onto their pegs at the corners (the
    front ones have a shorter fascia groove). Slide the fascia (light slots at the top),
    the four `side` pieces (two per side, pockets facing in, splice them) and the back panel
    down the posts' grooves into the groove in the floor. The Pi's ports line up with the
    cut-outs in the back panel.
 3. Stand the two `divider`s in the grooves in the middle curbs, flanges facing out.
 4. Lower the bridge (with the whole mechanism on it) onto the dividers' flanges and the two
-   `leg`s at the back; screw it to the flanges (M3, 3 per side). Wire everything up (Stage C).
+   `leg`s at the back (if your back-right floor has the Pi under the right leg's boss, use `leg_offset` there instead: tape its foot to the floor just left of the Pi); screw it to the flanges (M3, 3 per side). Wire everything up (Stage C).
 5. Put `feeder_stand_mid` in the fence on the bridge with the hopper on it, exit shelf facing
    the bed.
-6. Slide the `post_sleeve` over the camera post, lay the front deck on, then the back deck.
-   Screw both to the posts (M3, countersunk, 4 corners). Push the `head_cover` over the
-   camera head, the `tower` over the hopper, and its lid on.
-7. Slide the three drawers in.
+6. Slide the `post_sleeve` over the camera post, lay the front deck on, then the two back
+   halves. Screw them to the posts (M3, countersunk, 4 corners).
+7. Screw the camera to the `camera_head` (4 × M2, lens down), push the head onto the top of
+   the camera post and plug in the ribbon, then push the `head_cover` over it. Put the
+   `tower` over the hopper and its lid on.
+8. Slide the three drawers in.
 
 ---
 

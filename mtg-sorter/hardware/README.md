@@ -21,7 +21,7 @@ edge sits just over one card's thickness above the floor. One card fits under it
 
 | File | Print | Notes |
 |---|---|---|
-| `stl/feeder_stand_mid.stl` | as it opens, 15% infill | The box underneath, with the motor cradle. 92 mm: the height it needs on the enclosure's bridge |
+| `stl/feeder_stand_mid.stl` | as it opens, 15% infill | The box underneath, with the motor cradle. 96 mm, with its front cut away under the sloped bed: the height it needs on the enclosure's bridge |
 | `stl/feeder_hopper.stl` | as it opens, 15% infill | Floor and walls. Holds about 190 cards |
 | `stl/feeder_gate.stl` | flat | The adjustable gate |
 | `stl/feeder_roller.stl` | standing on its end, **100% infill** | Goes on the motor shaft |
@@ -97,8 +97,7 @@ the tray tilted both ways, the trapdoors open, and the pins up and down.
 | `tilt_bracket` | 1 | black | |
 | `chute` | 1 | any | The tray |
 | `trapdoor`, `trapdoor_left` | 1 each | any | |
-| `trapdoor_mount`, `trapdoor_mount_left` | 1 each | any | |
-| `hinge_lug`, `hinge_lug_left` | 1 each | any | |
+| `door_carrier`, `door_carrier_left` | 1 each | any | servo mount + hinge lug in one; prints upside down (as exported). Replaces `trapdoor_mount` + `hinge_lug` |
 
 All print flat, as they open, with no supports. 15–20% infill is fine. The open frame and
 the three bins the bed first sat in (`frame_side`, `front_bar`, `bin`) are gone: the
@@ -113,7 +112,7 @@ the three bins the bed first sat in (`frame_side`, `front_bar`, `bin`) are gone:
 | Trapdoors | 2× SG90 servos, under the front of the tray |
 
 A PCA9685 servo board connects all four servos to the Raspberry Pi. The feeder rig sits
-behind the bed on its stand (`feeder_stand_mid`, 92 mm, on the enclosure's bridge), so cards
+behind the bed on its stand (`feeder_stand_mid`, 96 mm, on the enclosure's bridge), so cards
 come off its exit shelf straight onto the bed.
 
 # Enclosure
@@ -193,7 +192,8 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 
 | File | How many | Colour | Notes |
 |---|---|---|---|
-| `post_front`, `post_back` | 2 each | black | print standing, pegs up, 204 mm tall |
+| `post_front`, `post_front_r` | 1 each | black | front-left and front-right corner posts. Mirror images: printing `post_front` twice gives two left posts. Print standing, pegs up, 204 mm tall |
+| `post_back` | 2 | black | same for both back corners |
 | `side` | 4 | black | two per side; flip the second one end for end |
 | `fascia_l`, `fascia_m`, `fascia_r` | 1 each | black (dark grey later, if you like) | the band across the front, left to right |
 | `light_bar` | 1 | **white** | behind the three slots, glued across the fascia seams |
@@ -203,7 +203,8 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `divider` | 2 | any | |
 | `bridge_front`, `bridge_back` | 1 each | any | |
 | `leg` | 2 | any | |
-| `splice` | 10 | any | |
+| `leg_offset` | 0 or 1 | any | only for a floor printed with the Pi at x = 40: replaces the right rear `leg`, standing beside the Pi |
+| `splice` | 26 | any | 24 used (floor 6, bridge 2, deck 2, fascia 4, back 4, sides 6), 2 spare |
 | `tower`, `tower_lid` | 1 each | black | |
 | `post_sleeve`, `head_cover` | 1 each | black | |
 | Card Catalog v1.2 drawer + drawer top | 3 each | your choice | from the MakerWorld 3MF, not this repo |
@@ -218,10 +219,11 @@ flat parts (floor and deck tiles) are 146 × 240 mm, and the shell is 292 wide, 
 All flat parts print as they open, no supports, 0.2 mm, 15–20% infill. The posts stand up.
 **[`bambu/MTG_Sorter_Enclosure.3mf`](bambu/) is all of it as one Bambu Studio project (File → Open Project), every plate laid out and set up. [`PRINTING.md`](PRINTING.md) has the plate-by-plate print order, the slicer settings
 per part, colours, and the three fit-check plates to print first.**
+**[`ASSEMBLY_PICTURES.md`](ASSEMBLY_PICTURES.md) shows the build one picture per step.**
 Every seam between two tiles has a small V along it on the visible face, so the joints
 read as panel lines rather than cracks, and the deck has a 2 mm chamfer round its top
 edges and its openings.
 
 Other parts: 6 stick-on rubber feet (8 mm), about 20 M3 × 8 and 30 M2 × 6 self-tapping
-screws, 4 M2.5 × 6 for the Pi, CA glue for the splices in the thin panels (fascia, back,
+screws, 8 M2.5 × 6 for the Pi and the PCA9685, CA glue for the splices in the thin panels (fascia, back,
 sides: their pockets are too shallow for screws).

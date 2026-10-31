@@ -23,10 +23,10 @@ with brim, and solid. You only need them if you build plates yourself from the S
 
 ## Building a plate yourself from the STLs
 
-`stl/` holds only what gets printed: the 26 `enc_*.stl` (the box), the two
+`stl/` holds only what gets printed: the 27 `enc_*.stl` (the box), the two
 `bed_chute_bed_side_*_enclosure.stl` walls, `feeder_stand_mid.stl`, the mechanism from Part 2
-(`bed_chute_bed_plate`, `chute`, `trapdoor` + `trapdoor_left`, `trapdoor_mount` +
-`trapdoor_mount_left`, `hinge_lug` + `hinge_lug_left`, `pin_rocker`, `tilt_bracket`,
+(`bed_chute_bed_plate`, `chute`, `trapdoor` + `trapdoor_left`, `door_carrier` +
+`door_carrier_left`, `pin_rocker`, `tilt_bracket`,
 `tower_post`, `camera_head`) and the feeder's `hopper`, `gate` and `roller`.
 
 Use **File → New Project**, then **File → Import → Import 3MF/STL/STEP**, pick only the files
@@ -78,11 +78,11 @@ Bambu Studio's estimate is the real one.
 | 2 | 2 × `divider` | black | 110 g, 6 h | **fit check C** |
 | 3 | `bridge_front` | black | 35 g, 2 h | the mechanism moves onto the bridge from here |
 | 4 | `bridge_back` | black | 70 g, 3.5 h | |
-| 5 | `bed_chute_bed_side_left_enclosure` + `..._right_enclosure` | black | 100 g, 5 h | the walls with screw holes in their bottom edge |
-| 6 | `feeder_stand_mid` | black | 90 g, 4.5 h | the 92 mm stand |
+| 5 | `bed_chute_bed_side_left_enclosure` + `..._right_enclosure` | black | 100 g, 5 h | the walls with screw holes in their bottom edge. Walls printed before 2026-10-30 have no bed-plate groove (only the LED groove): reprint them from the current STLs. The committed 3MF still has the old walls |
+| 6 | `feeder_stand_mid` | black | 90 g, 4.5 h | the 96 mm stand, front cut away under the bed. Stands printed before 2026-10-30 (92 mm, square front) hit the bed plate: reprint |
 | 7 | `floor_fr` + 8 × `splice` | black | 100 g, 5 h | |
 | 8 | `floor_bl` + `floor_br` | black | 75 g, 4 h | |
-| 9 | `post_front` + `post_back` + `leg` | black | 60 g, 4 h | brims on all three |
+| 9 | `post_front_r` + `post_back` + `leg` | black | 60 g, 4 h | brims on all three. `post_front_r` is the front-right post, the mirror image of plate 1's |
 | 10 | `post_back` + `leg` + `tower` | black | 90 g, 5 h | brims on all three |
 | 11–14 | `side`, one per plate (4) | black | 75 g, 3.5 h each | |
 | 15 | `back_l` | black | 55 g, 2.5 h | |
@@ -95,6 +95,11 @@ Bambu Studio's estimate is the real one.
 | 22 | `deck_bl` | black | 50 g, 2.5 h | |
 | 23 | `deck_br` | black | 50 g, 2.5 h | |
 | - | two more Card Catalog drawers + tops | black | 8 h | from the Card Catalog 3MF |
+
+**Splices:** the build uses 24 of them (floor 6, bridge 2, front deck 2, fascia 4, back panel 4,
+sides 6), more than the 10 on plates 1 and 7. Count the ones in your project and add more
+`enc_splice` to any plate with room until you have 26 (two spare). They're 40 × 16 mm and take a
+few minutes each.
 
 The order is: fit checks, then the parts the mechanism moves onto (so the machine keeps
 working on the bridge while the shell prints), then the shell from the floor up, trim,
