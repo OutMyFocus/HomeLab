@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MTG Scanner · Wishlist</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/decks.css">
+  <link rel="stylesheet" href="/static/extras.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Scanner</span></div>
+    <nav class="pages" aria-label="Pages">
+      <a href="/">Scanner</a>
+      <a href="/collection">Collection</a>
+      <a href="/decks">Decks</a>
+      <a href="/wishlist" aria-current="page">Wishlist</a>
+      <a href="/history">History</a>
+      <a href="/bins">Bins</a>
+      <a href="/machine">Machine</a>
+      <a href="/maintenance">Maintenance</a>
+      <a href="/settings">Settings</a>
+    </nav>
+  </header>
+
+  <main class="coll">
+    <section class="tiles">
+      <div class="stat panel"><span class="label">On your wishlist</span><b id="tCount">0</b><small class="sub" id="tCountSub"></small></div>
+      <div class="stat panel"><span class="label">At your price</span><b id="tDeals">0</b><small class="sub">Price is at or under what you'd pay</small></div>
+      <div class="stat panel"><span class="label">Already scanned</span><b id="tOwned">0</b><small class="sub">You have at least one</small></div>
+      <div class="stat panel"><span class="label">To buy them all</span><b id="tCost">$0.00</b><small class="sub">The ones you don't own, today</small></div>
+    </section>
+    <section class="panel wish-add">
+      <div class="panel-head"><h3>Add a card</h3><span class="sub">The scanner page tells you when a wishlist card is scanned</span></div>
+      <div class="toolbar">
+        <label class="search"><svg><use href="#i-search" /></svg><input id="wName" placeholder="Card name" autocomplete="off" spellcheck="false" list="wNames"></label>
+        <datalist id="wNames"></datalist>
+        <label class="price-range">I'd pay up to $<input id="wTarget" type="number" min="0" step="0.5" placeholder="any"></label>
+        <label class="switch"><input type="checkbox" id="wFoil"><span></span>Foil</label>
+        <button class="btn primary" id="wAdd"><svg><use href="#i-plus" /></svg>Add</button>
+      </div>
+    </section>
+    <section class="panel browse">
+      <div class="toolbar second">
+        <div class="seg small" id="showSeg"><button data-v="all" aria-pressed="true">All</button><button data-v="deal" aria-pressed="false">At my price</button><button data-v="owned" aria-pressed="false">Already scanned</button><button data-v="need" aria-pressed="false">Still need</button></div>
+        <div class="actions"><button class="btn ghost" id="copyBtn">Copy the ones I still need</button></div>
+      </div>
+      <div class="wish-grid" id="wish"></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
+  <script src="/static/wishlist.js"></script>
+</body>
+</html>

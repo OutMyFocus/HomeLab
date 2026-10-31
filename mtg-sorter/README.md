@@ -84,7 +84,9 @@ Then open **http://localhost:5000** in your browser. You get:
 - **Wrong card?** (W): pick the right card by name. It's saved instead, and remembered for training.
 - **Other printing?** (P): right card, wrong set. Lists every printing of it (Scryfall's full
   list when online) so you can pick the one you really have.
-- **Collection** (the cards button, or **Whole collection**): everything you've ever saved.
+- **Pages menu** (the ☰ button, or M): every other page, listed with what it's for. Each page
+  also has the same row of links at the top.
+- **Collection** (in the menu, or **Whole collection**): everything you've ever saved.
   Search and filter by color, rarity, set, bin, foil and price, sort it, and switch between
   pictures and a list. Tap a card to change how many you have, mark it foil, pick a different
   printing or delete it. **Add a card** adds one you didn't scan. It shows the total value,
@@ -93,19 +95,32 @@ Then open **http://localhost:5000** in your browser. You get:
   Scryfall price for everything. **Export** downloads (or copies) the collection for Moxfield,
   Archidekt, Deckbox, ManaBox / Commander Vault, TCGplayer mass entry, a text list, or a
   spreadsheet with prices, either all of it or just the cards your filters show.
-- **Decks** (the two-cards button): paste a decklist from Moxfield, Archidekt, MTG Arena, MTGO or
+- **Decks**: paste a decklist from Moxfield, Archidekt, MTG Arena, MTGO or
   any website. It shows how much of the deck you already own (any printing counts), which cards
   are missing, what they'd cost at today's prices, and which bin your copies are in. **Copy the
   missing cards** gives a shopping list for TCGplayer's Mass Entry or any shop. Save decks to
-  check them again later.
-- **Bins** (the box button): choose what goes into each of the sorter's 4 bins, by price, color,
+  check them again later. **Add the missing cards to my wishlist** puts them on your wishlist.
+- **Wishlist**: cards you want, with the most you'd pay. It shows today's price, marks the ones
+  at or under your price, and the ones you've already scanned. When a wishlist card is scanned,
+  the scanner page shows a pink banner and chimes. **Copy the ones I still need** gives a
+  shopping list.
+- **History**: every scanning session (cards saved within half an hour of each other), with a
+  chart of cards scanned per day for the last 30 days, your biggest session and best find. Open a
+  session to see its cards, download just that session for Commander Vault or Moxfield, or remove
+  a session you scanned by mistake.
+- **Settings**: the valuable-card alert (a banner and chime on the scanner page when a card
+  worth at least $20, or whatever you choose, is saved), the wishlist alert, the sound, and the
+  **PIN lock**. With a PIN set, other phones and laptops have to type it before they can see or
+  change anything, and they stay unlocked for 30 days. The Pi itself is never locked out.
+  Forgot the PIN? On the Pi, delete `data/pin.json`.
+- **Bins**: choose what goes into each of the sorter's 4 bins, by price, color,
   rarity, set and foil, without editing any code. Pick a ready-made setup (by price, by rarity,
   by color, keep the good stuff, pull valuable then by color) or write your own rules. The
   counts show how your collection would be split before you save. Saved in
   `data/sort_rules.json`; **Back to the original price bins** undoes it.
 - **Train** tab: teach the scanner from your own scans (see below).
-- **Machine** (the lightning button): move each servo and the feeder by hand, and save the angles that work.
-- **Maintenance** (the wrench button): the Pi's health, updates, restart and shut down, Wi-Fi,
+- **Machine**: move each servo and the feeder by hand, and save the angles that work.
+- **Maintenance** (also the wrench button): the Pi's health, updates, restart and shut down, Wi-Fi,
   backups and logs. See [MAINTENANCE.md](MAINTENANCE.md).
 - **Customize** (the sliders button, or C): light/dark/black theme, accent color, bin colors,
   layout, spacing, font and which details to show. Saved in your browser.

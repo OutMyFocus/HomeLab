@@ -34,10 +34,13 @@ from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.exchange import load_rate
-from mtgscanner import sort_rules
+from mtgscanner import security, sort_rules, wishlist
+from mtgscanner.decks import name_key
+from mtgscanner.history import add_history_routes
 from mtgscanner.bins import add_bins_routes
 from mtgscanner.decks import add_deck_routes
 from mtgscanner.library import add_collection_routes, lookup
+from mtgscanner.wishlist import add_wishlist_routes
 from mtgscanner.live import Live
 from mtgscanner.machine import Machine, add_machine_routes
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
@@ -521,11 +524,18 @@ def candidate_info(card: Card, distance: int, foil: bool, vault, live=None) -> d
 def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
     machine = machine or Machine()
+    security.install(app, WEB)  # the optional PIN lock, checked before every page
     add_machine_routes(app, machine, WEB)  # the /machine test page
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
     add_collection_routes(app, scanner, WEB)  # the /collection page
     add_deck_routes(app, scanner, WEB)  # the /decks page
     add_bins_routes(app, scanner, WEB)  # the /bins page
+    add_history_routes(app, scanner, WEB)  # the /history page
+    add_wishlist_routes(app, scanner, WEB)  # the /wishlist page and alerts
+
+    @app.get("/settings")
+    def settings_page():
+        return send_from_directory(WEB, "settings.html")
     live = scanner.live
 
     def unknown_card():
@@ -567,6 +577,13 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
         )
         s["live"] = bool(live)
         s["bin_names"] = sort_rules.names()
+        s["alerts"] = wishlist.load_alerts()
+        wanted = wishlist.wanted_names()
+        for c in s["cards"]:
+            if c["card"]:
+                c["card"]["wanted"] = name_key(c["card"]["name"]) in wanted
+        s["session"] = [c | {"wanted": name_key(c["name"]) in wanted} for c in s["session"]]
+        s["locked"] = security.enabled()
         return jsonify(s)
 
     @app.post("/api/settings")

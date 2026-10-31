@@ -14,6 +14,7 @@
   async function api(path, body) {
     const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const js = await r.json().catch(() => ({}));
+    if (r.status === 401 && js.locked) { location.href = "/lock?next=" + encodeURIComponent(location.pathname); throw new Error("Locked"); }
     if (!r.ok) throw new Error(js.error || `Error ${r.status}`);
     return js;
   }

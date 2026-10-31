@@ -15,6 +15,7 @@
 
   async function api(path, body) {
     const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (r.status === 401) { location.href = "/lock?next=/"; throw new Error("Locked"); }   // the PIN lock (Settings page)
     if (!r.ok) throw new Error(r.status);
     return r.json();
   }
@@ -185,6 +186,7 @@
       $("cardSource").textContent = c.price_source ? c.price_source : "";
       const b = $("cardBin"); b.textContent = `Bin ${c.bin} · ${c.bin_label}`; b.className = "bin bin-" + c.bin;
       const m = $("cardMatch"); m.className = "match opt-match " + (c.match || "good");
+      $("cardWanted").hidden = !c.wanted;
       m.textContent = c.match == null ? "You picked this" : c.match === "good" ? "Good match" : "Fair match: check the set";
     } else shownId = null;
 
@@ -226,7 +228,8 @@
     $("binBar").innerHTML = bins.map(([b, n]) => `<span class="bin-${b}" style="flex-grow:${n}"></span>`).join("");
     $("binLegend").innerHTML = bins.map(([b, n]) => `<span><i class="bin-${b}"></i>${BIN_NAMES[b]} <b>${n}</b></span>`).join("");
 
-    $("sessionRows").innerHTML = s.session.length ? s.session.map(r => `<tr>
+    announce(s);
+    $("sessionRows").innerHTML = s.session.length ? s.session.map(r => `<tr${r.wanted ? ' class="wanted"' : ""}>
         <td>${esc(r.name)}${r.foil ? '<span class="foil-tag">foil</span>' : ""}</td>
         <td>${esc(r.set)} #${esc(r.number)}</td>
         <td class="num">${money(r.price)}</td>
@@ -235,6 +238,36 @@
       : '<tr class="empty-row"><td colspan="5">No cards saved yet</td></tr>';
     $("undoBtn").disabled = !s.session.length;
   }
+
+  // ---------- alerts: a valuable card or a wishlist card was just saved (Settings page) ----------
+  let lastSaved = null, bannerT;
+  function announce(s) {
+    const newest = s.session[0]?.scanned_at || "";
+    if (lastSaved === null) { lastSaved = newest; return; }      // the page just opened: nothing is new
+    if (!newest || newest === lastSaved) return;
+    const fresh = s.session.filter(r => r.scanned_at > lastSaved);
+    lastSaved = newest;
+    const a = s.alerts || {};
+    const big = a.big_card != null ? fresh.filter(r => (r.price || 0) >= a.big_card).sort((x, y) => y.price - x.price)[0] : null;
+    const wish = a.wishlist ? fresh.find(r => r.wanted) : null;
+    const hit = wish || big;
+    if (!hit) return;
+    const b = $("alertBanner");
+    b.className = "alert-banner" + (hit === wish ? " wish" : "");
+    b.innerHTML = `<img src="${esc(hit.image.replace("version=normal", "version=small"))}" alt=""><span>${hit === wish ? "On your wishlist!" : "Valuable card!"} ${esc(hit.name)}<small>${money(hit.price)} · ${esc(hit.set)} · bin ${hit.bin}</small></span>`;
+    b.hidden = true; void b.offsetWidth; b.hidden = false;
+    clearTimeout(bannerT); bannerT = setTimeout(() => b.hidden = true, 5000);
+    if (a.sound) window.mtgChime?.(hit === wish ? "wish" : "big");
+  }
+  $("alertBanner").onclick = () => $("alertBanner").hidden = true;
+
+  // ---------- pages menu ----------
+  function setMenu(open) {
+    $("menu").hidden = !open; $("menuBtn").setAttribute("aria-expanded", open);
+    if (open) $("menu").querySelector("a").focus();
+  }
+  $("menuBtn").onclick = e => { e.stopPropagation(); setMenu($("menu").hidden); };
+  document.addEventListener("click", e => { if (!$("menu").hidden && !e.target.closest(".menu-wrap")) setMenu(false); });
 
   async function poll() {
     try {
@@ -318,9 +351,11 @@
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && !$("pick").hidden) return closePicker();
     if (e.key === "Escape" && drawerOpen()) return setDrawer(false);
+    if (e.key === "Escape" && !$("menu").hidden) return setMenu(false);
     if (e.key === "Escape" && editing) return setEditing(false);
     if (e.target.matches("input, textarea") || e.metaKey || e.ctrlKey || e.altKey || drawerOpen() || !$("pick").hidden) return;
     if (e.key === "c" || e.key === "C") return setDrawer(true);
+    if (e.key === "m" || e.key === "M") return setMenu($("menu").hidden);
     if ($("tab-live").hidden) return;
     if (e.code === "Space") { e.preventDefault(); saveCurrent(); }
     else if (e.key === "f" || e.key === "F") setting("foil");
