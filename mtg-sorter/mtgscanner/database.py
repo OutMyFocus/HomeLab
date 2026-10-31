@@ -34,7 +34,24 @@ CREATE TABLE IF NOT EXISTS learned (
     fingerprint BLOB NOT NULL,
     added TEXT
 );
+
+-- Printings picked by hand that aren't in the cards table (fetched from Scryfall with
+-- the "Other printing" picker). No fingerprint of their own; scans taught to them in the
+-- Train tab work like any other learned scan.
+CREATE TABLE IF NOT EXISTS extra_cards (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    set_code TEXT NOT NULL,
+    set_name TEXT,
+    collector_number TEXT,
+    rarity TEXT,
+    colors TEXT,
+    price_usd REAL,
+    price_usd_foil REAL
+);
 """
+
+_COLUMNS = "id, name, set_code, set_name, collector_number, rarity, colors, price_usd, price_usd_foil"
 
 
 @dataclass
@@ -100,7 +117,8 @@ class Matcher:
         with self._lock:
             rows = self.conn.execute("SELECT id, name, fingerprint FROM cards").fetchall()
             learned = self.conn.execute(
-                "SELECT l.card_id, c.name, l.fingerprint FROM learned l JOIN cards c ON c.id = l.card_id").fetchall()
+                "SELECT l.card_id, c.name, l.fingerprint FROM learned l JOIN "
+                "(SELECT id, name FROM cards UNION ALL SELECT id, name FROM extra_cards) c ON c.id = l.card_id").fetchall()
         if not rows:
             raise RuntimeError("The card database is empty. Run build_db.py first.")
         rows += learned
@@ -120,6 +138,8 @@ class Matcher:
             self.conn.execute("INSERT OR REPLACE INTO learned VALUES (?, ?, ?, datetime('now', 'localtime'))", (scan, card_id, fp))
             self.conn.commit()
             row = self._card_row(card_id)
+            if row is None:
+                return   # a card it doesn't know at all: nothing to learn it as
             ids, hashes, names = self._table
             number = self._name_numbers.setdefault(_name_key(row[1]), len(self._name_numbers))
             self._table = (ids + [card_id], np.vstack([hashes, np.frombuffer(fp, dtype=np.uint64)]),
@@ -171,14 +191,36 @@ class Matcher:
                 (f"%{text}%", f"{text}%", limit))]
         return [self.get_card(i) for i in ids]
 
+    def printings(self, name: str) -> list[Card]:
+        """Every printing of this exact card name in the database."""
+        with self._lock:
+            rows = self.conn.execute(f"SELECT {_COLUMNS} FROM cards WHERE name = ? COLLATE NOCASE "
+                                     f"UNION SELECT {_COLUMNS} FROM extra_cards WHERE name = ? COLLATE NOCASE "
+                                     "ORDER BY set_code", (name, name)).fetchall()
+        return [Card(*r) for r in rows]
+
     def get_card(self, card_id: str) -> Card:
+        card = self.find_card(card_id)
+        if card is None:
+            raise KeyError(card_id)
+        return card
+
+    def find_card(self, card_id: str) -> Card | None:
+        """The card with this Scryfall id, or None if the database doesn't have it."""
         with self._lock:
             row = self._card_row(card_id)
-        return Card(*row)
+        return Card(*row) if row else None
+
+    def remember(self, card: Card):
+        """Keep a printing that isn't in the cards table (picked from Scryfall by hand)."""
+        with self._lock:
+            if self.conn.execute("SELECT 1 FROM cards WHERE id = ?", (card.id,)).fetchone():
+                return
+            self.conn.execute(f"INSERT OR REPLACE INTO extra_cards ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                              (card.id, card.name, card.set_code, card.set_name, card.collector_number,
+                               card.rarity, card.colors, card.price_usd, card.price_usd_foil))
+            self.conn.commit()
 
     def _card_row(self, card_id: str):
-        return self.conn.execute(
-            "SELECT id, name, set_code, set_name, collector_number, rarity, colors, price_usd, price_usd_foil "
-            "FROM cards WHERE id = ?",
-            (card_id,),
-        ).fetchone()
+        return (self.conn.execute(f"SELECT {_COLUMNS} FROM cards WHERE id = ?", (card_id,)).fetchone()
+                or self.conn.execute(f"SELECT {_COLUMNS} FROM extra_cards WHERE id = ?", (card_id,)).fetchone())

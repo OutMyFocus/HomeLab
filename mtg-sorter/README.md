@@ -82,6 +82,17 @@ Then open **http://localhost:5000** in your browser. You get:
   number, and a card the detector can't outline, like one sitting in a box, is still read from
   the slot. **Edit slots** to draw more or remove one (the red ×); slots are kept for next time.
 - **Wrong card?** (W): pick the right card by name. It's saved instead, and remembered for training.
+- **Other printing?** (P): right card, wrong set. Lists every printing of it (Scryfall's full
+  list when online) so you can pick the one you really have.
+- **Collection** (the cards button, or **Whole collection**): everything you've ever saved.
+  Search and filter by color, rarity, set, bin, foil and price, sort it, and switch between
+  pictures and a list. Tap a card to change how many you have, mark it foil, pick a different
+  printing or delete it. **Add a card** adds one you didn't scan. It shows the total value,
+  how much it changed since you scanned the cards, a value-over-time chart, a breakdown by
+  color, rarity, bin and set, and your 10 most valuable cards. **Refresh prices** gets today's
+  Scryfall price for everything. **Export** downloads (or copies) the collection for Moxfield,
+  Archidekt, Deckbox, ManaBox / Commander Vault, TCGplayer mass entry, a text list, or a
+  spreadsheet with prices, either all of it or just the cards your filters show.
 - **Train** tab: teach the scanner from your own scans (see below).
 - **Machine** (the lightning button): move each servo and the feeder by hand, and save the angles that work.
 - **Maintenance** (the wrench button): the Pi's health, updates, restart and shut down, Wi-Fi,
@@ -168,7 +179,8 @@ Vault, open **Collection** and press **Save prices for scanner**. Put the saved
 Prices update weekly, so save a fresh copy now and then. It
 uses the exact printing's price when the Vault has one. Cards the Vault hasn't priced fall
 back to Scryfall's USD price, converted with the Bank of Canada's exchange rate for the
-day. The rate is fetched once a day and saved in `data/usd_cad.json`. Offline, it uses the
+day. While the app runs it also checks Scryfall for today's price of each card it
+recognizes (start it with `--offline` to skip that and use the database's prices). The rate is fetched once a day and saved in `data/usd_cad.json`. Offline, it uses the
 last saved rate, or `USD_TO_CAD` in `config.py`. The `data/` folder is never committed, so
 your prices stay on your computer.
 

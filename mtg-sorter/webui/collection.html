@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MTG Scanner · Collection</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.6-4.5M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5M20 20v-4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7" /></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /><circle cx="5" cy="6" r="1.2" fill="currentColor" /><circle cx="5" cy="12" r="1.2" fill="currentColor" /><circle cx="5" cy="18" r="1.2" fill="currentColor" /></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z" fill="currentColor" /></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.7" /></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Scanner</span></div>
+    <nav class="pages" aria-label="Pages">
+      <a href="/">Scanner</a>
+      <a href="/collection" aria-current="page">Collection</a>
+      <a href="/machine">Machine</a>
+      <a href="/maintenance">Maintenance</a>
+    </nav>
+    <div class="meta"><span class="pulse"></span><span id="metaText">Loading your collection…</span></div>
+  </header>
+
+  <main class="coll">
+    <!-- headline numbers -->
+    <section class="tiles">
+      <div class="stat panel"><span class="label">Cards</span><b id="tCards">0</b><small class="sub" id="tCardsSub"></small></div>
+      <div class="stat panel"><span class="label">Collection value</span><b id="tValue">$0.00</b><small class="sub" id="tValueSub"></small></div>
+      <div class="stat panel"><span class="label">Most valuable</span><b class="small-b" id="tTop">None yet</b><small class="sub" id="tTopSub"></small></div>
+      <div class="stat panel"><span class="label">Sets</span><b id="tSets">0</b><small class="sub" id="tSetsSub"></small></div>
+    </section>
+
+    <!-- charts -->
+    <section class="charts">
+      <div class="panel chart-panel">
+        <div class="panel-head"><h3>Value over time</h3><span class="sub" id="histNote"></span></div>
+        <div class="line-chart" id="lineChart"></div>
+      </div>
+      <div class="panel chart-panel">
+        <div class="panel-head">
+          <h3>Breakdown</h3>
+          <div class="seg small" id="breakSeg">
+            <button data-v="color" aria-pressed="true">Color</button><button data-v="rarity" aria-pressed="false">Rarity</button><button data-v="bin" aria-pressed="false">Bin</button><button data-v="set" aria-pressed="false">Set</button>
+          </div>
+        </div>
+        <div class="seg small measure" id="measureSeg">
+          <button data-v="cards" aria-pressed="true">By cards</button><button data-v="value" aria-pressed="false">By value</button>
+        </div>
+        <div class="bars" id="bars"></div>
+      </div>
+    </section>
+
+    <section class="panel top-cards">
+      <div class="panel-head"><h3>Your 10 most valuable cards</h3><span class="sub">Tap one for details</span></div>
+      <div class="strip" id="topStrip"></div>
+    </section>
+
+    <!-- browse -->
+    <section class="panel browse">
+      <div class="toolbar">
+        <label class="search">
+          <svg><use href="#i-search" /></svg>
+          <input id="q" type="search" placeholder="Search name, set or number  ( / )" autocomplete="off" spellcheck="false">
+        </label>
+        <select id="fColor" aria-label="Color"><option value="">All colors</option></select>
+        <select id="fRarity" aria-label="Rarity"><option value="">All rarities</option></select>
+        <select id="fSet" aria-label="Set"><option value="">All sets</option></select>
+        <select id="fBin" aria-label="Bin"><option value="">All bins</option></select>
+        <select id="fFoil" aria-label="Finish">
+          <option value="">Foil and normal</option><option value="foil">Foil only</option><option value="normal">Normal only</option>
+        </select>
+        <label class="price-range">$<input id="fMin" type="number" min="0" step="0.5" placeholder="min" aria-label="Lowest price"> – <input id="fMax" type="number" min="0" step="0.5" placeholder="max" aria-label="Highest price"></label>
+        <select id="sort" aria-label="Sort">
+          <option value="value">Most value first</option>
+          <option value="price">Highest price first</option>
+          <option value="cheap">Lowest price first</option>
+          <option value="name">Name A–Z</option>
+          <option value="set">Set, then number</option>
+          <option value="new">Newest scans first</option>
+          <option value="old">Oldest scans first</option>
+          <option value="qty">Most copies first</option>
+          <option value="up">Price went up most</option>
+          <option value="down">Price went down most</option>
+        </select>
+        <button class="btn ghost" id="clearFilters" hidden>Clear filters</button>
+      </div>
+      <div class="toolbar second">
+        <span class="sub" id="showing"></span>
+        <div class="actions">
+          <div class="seg small view-seg" id="viewSeg">
+            <button data-v="grid" aria-pressed="true" title="Pictures (G)"><svg><use href="#i-grid" /></svg></button><button data-v="list" aria-pressed="false" title="List (L)"><svg><use href="#i-list" /></svg></button>
+          </div>
+          <button class="btn ghost" id="addBtn" title="Add a card you didn't scan (N)"><svg><use href="#i-plus" /></svg>Add a card</button>
+          <button class="btn ghost" id="refreshBtn" title="Get today's Scryfall price for every card"><svg><use href="#i-refresh" /></svg><span id="refreshText">Refresh prices</span></button>
+          <button class="btn primary" id="exportBtn" title="Export (E)"><svg><use href="#i-download" /></svg>Export</button>
+        </div>
+      </div>
+      <div id="results"></div>
+      <div class="more"><button class="btn ghost" id="moreBtn" hidden>Show more</button></div>
+    </section>
+    <p class="hint center">Everything here is <code>data/collection.csv</code>, the file Commander Vault imports. Shortcuts: <kbd>/</kbd> search, <kbd>G</kbd>/<kbd>L</kbd> pictures or list, <kbd>N</kbd> add a card, <kbd>E</kbd> export.</p>
+  </main>
+
+  <!-- one card -->
+  <div class="modal" id="detail" hidden>
+    <div class="modal-box detail-box" role="dialog" aria-modal="true" aria-labelledby="dName">
+      <div class="modal-head">
+        <h3 id="dName"></h3>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-close" /></svg></button>
+      </div>
+      <div class="detail-body">
+        <div class="card-art" id="dArt"><img id="dImg" alt=""></div>
+        <div class="detail-info">
+          <div class="sub" id="dSet"></div>
+          <div class="price" id="dPrice"></div>
+          <div class="sub" id="dSource"></div>
+          <dl class="facts" id="dFacts"></dl>
+          <div class="stepper" aria-label="How many you have">
+            <button class="icon-btn" id="dMinus" aria-label="One fewer"><svg><use href="#i-minus" /></svg></button>
+            <b id="dQty">1</b>
+            <button class="icon-btn" id="dPlus" aria-label="One more"><svg><use href="#i-plus" /></svg></button>
+            <span class="sub">copies</span>
+          </div>
+          <div class="detail-acts">
+            <button class="toggle" id="dFoil" aria-pressed="false"><svg><use href="#i-sparkle" /></svg>Foil</button>
+            <button class="btn ghost" id="dPrintings">Different printing?</button>
+            <a class="btn ghost" id="dScryfall" target="_blank" rel="noopener">Open on Scryfall</a>
+            <button class="btn ghost danger" id="dDelete"><svg><use href="#i-trash" /></svg>Delete</button>
+          </div>
+          <div class="printings" id="dPrintList" hidden></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- add a card by hand -->
+  <div class="modal" id="add" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label="Add a card">
+      <div class="modal-head">
+        <svg><use href="#i-search" /></svg>
+        <input id="addInput" type="search" placeholder="Which card? Type its name" autocomplete="off" spellcheck="false">
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-close" /></svg></button>
+      </div>
+      <div class="add-opts">
+        <label class="inline">How many <input id="addQty" type="number" min="1" max="100" value="1"></label>
+        <label class="switch"><input type="checkbox" id="addFoil"><span></span>Foil</label>
+        <button class="link-btn" id="addAllPrints" hidden>Show every printing</button>
+      </div>
+      <div class="pick-body"><div class="pick-results" id="addResults"></div></div>
+    </div>
+  </div>
+
+  <!-- export -->
+  <div class="modal" id="export" hidden>
+    <div class="modal-box export-box" role="dialog" aria-modal="true" aria-labelledby="exTitle">
+      <div class="modal-head">
+        <h3 id="exTitle">Export your collection</h3>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-close" /></svg></button>
+      </div>
+      <div class="export-body">
+        <div class="formats" id="formats"></div>
+        <label class="switch"><input type="checkbox" id="exOnly"><span></span><span id="exOnlyText">Only the cards showing</span></label>
+        <div class="export-acts">
+          <button class="btn ghost" id="exCopy"><svg><use href="#i-copy" /></svg>Copy as text</button>
+          <button class="btn primary" id="exGo"><svg><use href="#i-download" /></svg>Download</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/collection.js"></script>
+</body>
+</html>
