@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MTG Scanner · Bins</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/decks.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Scanner</span></div>
+    <nav class="pages" aria-label="Pages">
+      <a href="/">Scanner</a>
+      <a href="/collection">Collection</a>
+      <a href="/decks">Decks</a>
+      <a href="/bins" aria-current="page">Bins</a>
+      <a href="/machine">Machine</a>
+      <a href="/maintenance">Maintenance</a>
+    </nav>
+  </header>
+
+  <main class="coll">
+    <section class="panel bins-intro">
+      <h3>What goes in each bin</h3>
+      <p>The sorter has 4 bins. The rules below are checked from the top, and a card goes into the bin of the
+        first rule it fits. Cards that fit no rule go to the "anything else" bin. The counts show how your
+        collection would be split, so you can try things before saving.</p>
+      <div class="presets" id="presets"></div>
+    </section>
+
+    <section class="bin-cards" id="binCards"></section>
+
+    <section class="panel rules">
+      <div class="panel-head"><h3>Rules</h3><span class="sub">First match wins</span></div>
+      <div id="rules"></div>
+      <div class="rules-foot">
+        <button class="btn ghost" id="addRule"><svg><use href="#i-plus" /></svg>Add a rule</button>
+        <label class="goto-else">Anything else goes to <select class="field" id="fallback"></select></label>
+      </div>
+    </section>
+
+    <div class="panel save-bar">
+      <span class="sub" id="saveNote"></span>
+      <button class="btn ghost" id="resetBtn" title="Go back to the price bins in config.py">Back to the original price bins</button>
+      <button class="btn ghost" id="undoBtn" disabled>Undo changes</button>
+      <button class="btn primary" id="saveBtn" disabled>Save</button>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/bins.js"></script>
+</body>
+</html>

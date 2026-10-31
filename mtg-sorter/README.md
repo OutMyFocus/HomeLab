@@ -93,6 +93,16 @@ Then open **http://localhost:5000** in your browser. You get:
   Scryfall price for everything. **Export** downloads (or copies) the collection for Moxfield,
   Archidekt, Deckbox, ManaBox / Commander Vault, TCGplayer mass entry, a text list, or a
   spreadsheet with prices, either all of it or just the cards your filters show.
+- **Decks** (the two-cards button): paste a decklist from Moxfield, Archidekt, MTG Arena, MTGO or
+  any website. It shows how much of the deck you already own (any printing counts), which cards
+  are missing, what they'd cost at today's prices, and which bin your copies are in. **Copy the
+  missing cards** gives a shopping list for TCGplayer's Mass Entry or any shop. Save decks to
+  check them again later.
+- **Bins** (the box button): choose what goes into each of the sorter's 4 bins, by price, color,
+  rarity, set and foil, without editing any code. Pick a ready-made setup (by price, by rarity,
+  by color, keep the good stuff, pull valuable then by color) or write your own rules. The
+  counts show how your collection would be split before you save. Saved in
+  `data/sort_rules.json`; **Back to the original price bins** undoes it.
 - **Train** tab: teach the scanner from your own scans (see below).
 - **Machine** (the lightning button): move each servo and the feeder by hand, and save the angles that work.
 - **Maintenance** (the wrench button): the Pi's health, updates, restart and shut down, Wi-Fi,
@@ -161,7 +171,8 @@ importing, rename or delete `collection.csv` so the next session starts fresh.
 
 ## Price bins (CAD)
 
-Edit `PRICE_BINS` in `mtgscanner/config.py`. Defaults:
+Set the bins on the **Bins** page. Until you save rules there, the bins are `PRICE_BINS`
+in `mtgscanner/config.py`. Defaults:
 
 | Bin | Cards |
 |---|---|
