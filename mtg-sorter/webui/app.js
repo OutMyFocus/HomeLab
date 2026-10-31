@@ -308,6 +308,7 @@
   $("collectSwitch").onchange = e => api("/api/settings", { collect: e.target.checked }).then(render);
   $("learnSwitch").onchange = e => api("/api/settings", { learn: e.target.checked }).then(render);
   $("wrongBtn").onclick = markWrong;
+  $("printBtn").onclick = otherPrinting;
   $("whichBtn").onclick = () => openPicker({ live: true, track: selected });
   $("undoBtn").onclick = async () => { const name = state.session[0]?.name; render(await api("/api/undo", {})); if (name) toast(`Removed ${name}`); };
   $("stream").onerror = () => { $("camStatus").textContent = "Camera stream lost. Reload the page"; };
@@ -325,6 +326,7 @@
     else if (e.key === "r" || e.key === "R") $("collectBtn").click();
     else if (e.key === "s" || e.key === "S") $("modeBtn").click();
     else if ((e.key === "w" || e.key === "W") && selected != null) markWrong();
+    else if ((e.key === "p" || e.key === "P") && selected != null) otherPrinting();
   });
 
   // ---------- "which card is it?" ----------
@@ -344,6 +346,25 @@
     $("pick").hidden = false;
     $("pickInput").value = ""; $("pickInput").focus();
   }
+  // Right card, wrong set: list every printing of it (Scryfall's full list when online).
+  async function otherPrinting() {
+    const c = state?.cards.find(x => x.track === selected)?.card;
+    if (!c) return;
+    openPicker({ live: true, track: selected });
+    $("pickInput").value = c.name;
+    $("pickResults").innerHTML = '<p class="pick-hint">Looking up every printing…</p>';
+    const n = ++searchN;
+    try {
+      const cards = await api(`/api/printings?name=${encodeURIComponent(c.name)}&foil=${state.foil ? 1 : 0}`);
+      if (n === searchN) showPicks(cards, c.id);
+    } catch (e) { if (n === searchN) $("pickResults").innerHTML = '<p class="pick-hint">Couldn\'t look up the printings</p>'; }
+  }
+  function showPicks(cards, current) {
+    $("pickResults").innerHTML = cards.length ? cards.map(c => `<button class="pick-card${c.id === current ? " is-current" : ""}" data-id="${esc(c.id)}" data-name="${esc(c.name)}">
+        <img src="${esc(c.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">
+        <b>${esc(c.name)}</b><span>${esc(c.set)} #${esc(c.number)} · ${money(c.price)}</span></button>`).join("")
+      : '<p class="pick-hint">No card by that name in the database</p>';
+  }
   function closePicker() { $("pick").hidden = true; pickFor = null; }
   $("pickClose").onclick = closePicker;
   $("pick").onclick = e => { if (e.target === $("pick")) closePicker(); };
@@ -354,10 +375,7 @@
       if (q.length < 2) { $("pickResults").innerHTML = '<p class="pick-hint">Type at least 2 letters of the card\'s name</p>'; return; }
       const cards = await api("/api/search?q=" + encodeURIComponent(q));
       if (n !== searchN) return;     // a newer search already answered
-      $("pickResults").innerHTML = cards.length ? cards.map(c => `<button class="pick-card" data-id="${esc(c.id)}" data-name="${esc(c.name)}">
-          <img src="${esc(c.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">
-          <b>${esc(c.name)}</b><span>${esc(c.set)} #${esc(c.number)} · ${money(c.price)}</span></button>`).join("")
-        : '<p class="pick-hint">No card by that name in the database</p>';
+      showPicks(cards);
     }, 180);
   };
   $("pickInput").onkeydown = e => { if (e.key === "Enter") $("pickResults").querySelector(".pick-card")?.click(); };

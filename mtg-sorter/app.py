@@ -34,6 +34,8 @@ from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.exchange import load_rate
+from mtgscanner.library import add_collection_routes, lookup
+from mtgscanner.live import Live
 from mtgscanner.machine import Machine, add_machine_routes
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
 from mtgscanner.sorting import card_price, choose_bin
@@ -120,8 +122,8 @@ def _smooth(old: float | None, new: float, weight: float = 0.2) -> float:
 class Scanner:
     """Looks at every card in the camera picture, all the time, in a background thread."""
 
-    def __init__(self, matcher: Matcher, vault: VaultPrices | None, source):
-        self.matcher, self.vault, self.source = matcher, vault, source
+    def __init__(self, matcher: Matcher, vault: VaultPrices | None, source, live: Live | None = None):
+        self.matcher, self.vault, self.source, self.live = matcher, vault, source, live
         self.lock = threading.Lock()
         self.jpeg = None  # latest camera picture for the page
         self.frame_size = None  # (width, height) of the camera picture
@@ -276,6 +278,8 @@ class Scanner:
             time.monotonic(),
         )
         key = card.id if card else "unknown"
+        if card and self.live:
+            self.live.prefetch(card.id)  # today's price, usually ready by the time it's saved
         settled = t.note_check(key, result.confidence or "unknown")
         fixed = t.fix[1] if t.fix and t.fix[0] == key else None
         if not settled:
@@ -306,11 +310,11 @@ class Scanner:
     def _save(
         self, card: Card, foil: bool, track: Track | None = None, auto: bool = False
     ):
-        bin_no, bin_label = choose_bin(card, foil, self.vault)
-        price = card_price(card, foil, self.vault)
+        bin_no, bin_label = choose_bin(card, foil, self.vault, self.live)
+        price = card_price(card, foil, self.vault, self.live)
         scanned_at = add_card(config.COLLECTION_CSV, card, foil, bin_label, price)
         self.session.append(
-            card_info(card, foil, self.vault)
+            card_info(card, foil, self.vault, live=self.live)
             | {
                 "time": time.strftime("%H:%M:%S"),
                 "scanned_at": scanned_at,
@@ -424,12 +428,12 @@ class Scanner:
                         "distance": t.distance,
                         "margin": t.margin,
                         "card": card_info(
-                            t.card, self.foil, self.vault, None if t.fix else t.distance
+                            t.card, self.foil, self.vault, None if t.fix else t.distance, self.live
                         )
                         if t.card
                         else None,
                         "candidates": [
-                            candidate_info(c, d, self.foil, self.vault)
+                            candidate_info(c, d, self.foil, self.vault, self.live)
                             for c, d in t.candidates
                             if t.status in ("unsure", "unknown")
                             and not (t.card and c.id == t.card.id)
@@ -478,9 +482,9 @@ def camera_info(source) -> dict | None:
     return {"index": source.index, "name": source.name}
 
 
-def card_info(card: Card, foil: bool, vault, distance=None) -> dict:
-    price, source = card_price(card, foil, vault)
-    bin_no, bin_label = choose_bin(card, foil, vault)
+def card_info(card: Card, foil: bool, vault, distance=None, live=None) -> dict:
+    price, source = card_price(card, foil, vault, live)
+    bin_no, bin_label = choose_bin(card, foil, vault, live)
     return {
         "id": card.id,
         "name": card.name,
@@ -499,9 +503,9 @@ def card_info(card: Card, foil: bool, vault, distance=None) -> dict:
     }
 
 
-def candidate_info(card: Card, distance: int, foil: bool, vault) -> dict:
+def candidate_info(card: Card, distance: int, foil: bool, vault, live=None) -> dict:
     """A possible other answer for a card the scanner isn't sure about."""
-    info = card_info(card, foil, vault, distance)
+    info = card_info(card, foil, vault, distance, live)
     return {
         k: info[k]
         for k in ("id", "name", "set", "set_name", "number", "image", "price", "bin")
@@ -516,6 +520,11 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
     machine = machine or Machine()
     add_machine_routes(app, machine, WEB)  # the /machine test page
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
+    add_collection_routes(app, scanner, WEB)  # the /collection page
+    live = scanner.live
+
+    def unknown_card():
+        return jsonify({"error": "Unknown card"}), 404
 
     @app.get("/")
     def index():
@@ -549,8 +558,9 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
         s["prices"] = (
             f"Commander Vault prices, {scanner.vault.date}"
             if scanner.vault
-            else f"Scryfall prices in CAD ({rate})"
+            else f"Scryfall {'live ' if live else ''}prices in CAD ({rate})"
         )
+        s["live"] = bool(live)
         return jsonify(s)
 
     @app.post("/api/settings")
@@ -621,14 +631,27 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
     def search():
         text = request.args.get("q", "").strip()
         cards = scanner.matcher.search(text) if len(text) >= 2 else []
-        return jsonify([card_info(c, False, scanner.vault) for c in cards])
+        return jsonify([card_info(c, False, scanner.vault, live=live) for c in cards])
+
+    @app.get("/api/printings")
+    def printings():
+        """Every printing of a card name, newest first, with prices: Scryfall's list when
+        online, plus the ones in the database."""
+        name = request.args.get("name", "").strip()
+        foil = request.args.get("foil") == "1"
+        found = {c.id: c for c in (live.printings(name) if live and name else [])}
+        for c in scanner.matcher.printings(name):
+            found.setdefault(c.id, c)
+        return jsonify([card_info(c, foil, scanner.vault, live=live) for c in found.values()])
 
     @app.post("/api/correct")
     def correct():
         """You picked the card that's really under the camera: save it, and remember the
         right answer for training."""
         body = request.get_json(force=True)
-        card = scanner.matcher.get_card(body["id"])
+        card = lookup(scanner, body.get("id"))
+        if card is None:
+            return unknown_card()
         with scanner.lock:
             t = scanner.track(body.get("track"))
             if t:
@@ -665,7 +688,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
         for r in rows[::-1][:120]:
             truth = true_card(r)
             scans.append(
-                r | {"true_name": scanner.matcher.get_card(truth).name if truth else ""}
+                r | {"true_name": getattr(scanner.matcher.find_card(truth), "name", "") if truth else ""}
             )
         return jsonify(
             {
@@ -721,7 +744,9 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
     @app.post("/api/add")
     def add():
         body = request.get_json(force=True)
-        card = scanner.matcher.get_card(body["id"])
+        card = lookup(scanner, body.get("id"))
+        if card is None:
+            return unknown_card()
         with scanner.lock:
             scanner._save(
                 card, bool(body.get("foil")), scanner.track(body.get("track"))
@@ -781,7 +806,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
                 results.append(
                     {
                         "file": f.filename,
-                        "card": card_info(m.card, False, scanner.vault, m.distance)
+                        "card": card_info(m.card, False, scanner.vault, m.distance, live)
                         | {"confidence": m.confidence},
                     }
                 )
@@ -845,6 +870,11 @@ def main():
         "--host", default="127.0.0.1", help="0.0.0.0 to open it from other devices"
     )
     parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="don't look up today's prices or other printings on Scryfall",
+    )
     args = parser.parse_args()
 
     matcher = Matcher(connect(config.DB_PATH))
@@ -871,7 +901,7 @@ def main():
                 else " (not MJPG: expect a low frame rate)"
             )
         )
-    scanner = Scanner(matcher, vault, source)
+    scanner = Scanner(matcher, vault, source, None if args.offline else Live())
     if isinstance(source, WaitingForCamera):
         source.on_found = scanner.use_source
     scanner.restore(load_settings())
