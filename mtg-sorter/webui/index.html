@@ -142,6 +142,10 @@
           stroke-linecap="round"
           stroke-linejoin="round" />
       </symbol>
+      <symbol id="i-stack" viewBox="0 0 24 24">
+        <rect x="7" y="3.5" width="12" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M5 7v11.5A2.5 2.5 0 0 0 7.5 21H15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
       <symbol id="i-check" viewBox="0 0 24 24">
         <path
           d="m5 12.5 4.5 4.5L19 7.5"
@@ -225,6 +229,9 @@
       <div class="meta" id="meta">
         <span class="pulse"></span><span id="metaText">Connecting…</span>
       </div>
+      <a class="icon-btn" href="/collection" aria-label="Collection: every card you've saved" title="Collection">
+        <svg><use href="#i-stack" /></svg>
+      </a>
       <a class="icon-btn" href="/machine" aria-label="Machine: test the servos and feeder" title="Machine">
         <svg><use href="#i-bolt" /></svg>
       </a>
@@ -320,9 +327,14 @@
                   <span class="bin" id="cardBin"></span>
                   <span class="match opt-match" id="cardMatch"></span>
                 </div>
-                <button class="link-btn" id="wrongBtn">
-                  Wrong card? <kbd>W</kbd>
-                </button>
+                <div class="fix-links">
+                  <button class="link-btn" id="wrongBtn">
+                    Wrong card? <kbd>W</kbd>
+                  </button>
+                  <button class="link-btn" id="printBtn">
+                    Other printing? <kbd>P</kbd>
+                  </button>
+                </div>
               </div>
             </div>
             <div class="card-list" id="cardList"></div>
@@ -375,6 +387,9 @@
               </button>
               <a class="btn ghost" id="csvBtn" href="/api/collection.csv"
                 ><svg><use href="#i-download" /></svg>Download CSV</a
+              >
+              <a class="btn ghost" href="/collection"
+                ><svg><use href="#i-stack" /></svg>Whole collection</a
               >
             </div>
           </div>
