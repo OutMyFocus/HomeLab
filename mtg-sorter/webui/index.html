@@ -154,6 +154,20 @@
         <path d="M3.5 9h17l-1.5 10.5h-14L3.5 9ZM8 9V5.5h8V9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
         <path d="M12 12v4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
       </symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24">
+        <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24">
+        <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M12 8v4.5l3 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
       <symbol id="i-check" viewBox="0 0 24 24">
         <path
           d="m5 12.5 4.5 4.5L19 7.5"
@@ -237,18 +251,21 @@
       <div class="meta" id="meta">
         <span class="pulse"></span><span id="metaText">Connecting…</span>
       </div>
-      <a class="icon-btn" href="/collection" aria-label="Collection: every card you've saved" title="Collection">
-        <svg><use href="#i-stack" /></svg>
-      </a>
-      <a class="icon-btn" href="/decks" aria-label="Decks: check a decklist against your cards" title="Decks">
-        <svg><use href="#i-deck" /></svg>
-      </a>
-      <a class="icon-btn" href="/bins" aria-label="Bins: choose what goes in each bin" title="Bins">
-        <svg><use href="#i-bins" /></svg>
-      </a>
-      <a class="icon-btn" href="/machine" aria-label="Machine: test the servos and feeder" title="Machine">
-        <svg><use href="#i-bolt" /></svg>
-      </a>
+      <div class="menu-wrap">
+        <button class="icon-btn" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="menu" title="All pages (M)">
+          <svg><use href="#i-menu" /></svg>
+        </button>
+        <nav class="menu panel" id="menu" hidden aria-label="Pages">
+          <a href="/collection"><svg><use href="#i-stack" /></svg><span><b>Collection</b><small>Every card you've saved, stats and exports</small></span></a>
+          <a href="/decks"><svg><use href="#i-deck" /></svg><span><b>Decks</b><small>Check a decklist against your cards</small></span></a>
+          <a href="/wishlist"><svg><use href="#i-heart" /></svg><span><b>Wishlist</b><small>Cards you want, and the price you'd pay</small></span></a>
+          <a href="/history"><svg><use href="#i-clock" /></svg><span><b>History</b><small>Past scanning sessions</small></span></a>
+          <a href="/bins"><svg><use href="#i-bins" /></svg><span><b>Bins</b><small>What goes in each bin</small></span></a>
+          <a href="/machine"><svg><use href="#i-bolt" /></svg><span><b>Machine</b><small>Test the servos and feeder</small></span></a>
+          <a href="/maintenance"><svg><use href="#i-wrench" /></svg><span><b>Maintenance</b><small>Health, updates, backups</small></span></a>
+          <a href="/settings"><svg><use href="#i-gear" /></svg><span><b>Settings</b><small>Alerts and the PIN lock</small></span></a>
+        </nav>
+      </div>
       <a class="icon-btn health" id="healthBtn" href="/maintenance" aria-label="Maintenance: health, updates, backups" title="Maintenance">
         <svg><use href="#i-wrench" /></svg>
       </a>
@@ -340,6 +357,7 @@
                 <div class="badges">
                   <span class="bin" id="cardBin"></span>
                   <span class="match opt-match" id="cardMatch"></span>
+                  <span class="wanted-tag" id="cardWanted" hidden>On your wishlist</span>
                 </div>
                 <div class="fix-links">
                   <button class="link-btn" id="wrongBtn">
@@ -682,6 +700,8 @@
     <div class="toast" id="toast" hidden>
       <svg><use href="#i-check" /></svg><span id="toastText"></span>
     </div>
+    <div class="alert-banner" id="alertBanner" hidden role="status"></div>
+    <script src="/static/chime.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>
