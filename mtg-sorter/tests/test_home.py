@@ -46,7 +46,7 @@ def test_home_is_the_dashboard_and_the_scanner_moved(client):
 
 def test_every_page_has_the_shared_menu(client):
     for page in ["/", "/scan", "/collection", "/decks", "/wishlist", "/history", "/bins", "/machine",
-                 "/maintenance", "/settings", "/lights"]:
+                 "/maintenance", "/settings", "/lights", "/cards", "/play"]:
         html = client.get(page).get_data(as_text=True)
         assert 'src="/static/shell.js"' in html, page
         assert 'src="/static/look.js"' in html or "mtg-scanner-look" in html, page   # the saved theme
@@ -54,7 +54,7 @@ def test_every_page_has_the_shared_menu(client):
 
 def test_menu_links_go_to_real_pages(client):
     links = re.findall(r'href: "(/[a-z]*)"', (WEB / "shell.js").read_text())
-    assert "/" in links and "/scan" in links and "/lights" in links and len(links) == 11
+    assert "/" in links and "/scan" in links and "/lights" in links and "/cards" in links and len(links) == 13
     for href in links:
         assert client.get(href).status_code == 200, href
 
@@ -106,7 +106,7 @@ def test_scanner_state_lists_only_the_newest_cards(client, scanner):
 def test_pages_have_one_header_and_no_old_menus(client):
     """Guards against a merge bringing back the old per-page menus next to the shared one."""
     for page in ["/", "/scan", "/collection", "/decks", "/wishlist", "/history", "/bins", "/machine",
-                 "/maintenance", "/settings", "/lights"]:
+                 "/maintenance", "/settings", "/lights", "/cards", "/play"]:
         html = client.get(page).get_data(as_text=True)
         assert html.count('class="brand"') == 1, page
         assert 'class="pages"' not in html and 'id="menuBtn"' not in html, page

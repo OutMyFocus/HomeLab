@@ -65,4 +65,26 @@
     copy(lines + "\n").then(() => toast("Copied. Paste it into a shop's mass entry box"), () => toast("Couldn't copy"));
   };
   load();
+
+  // ---------- trade binder ----------
+  let binder = [];
+  function renderBinder(js) {
+    binder = js.cards || [];
+    $("bValue").textContent = binder.length ? (n => `${n} card${n === 1 ? "" : "s"} worth ${money(js.value)}`)(binder.reduce((n, c) => n + c.qty, 0)) : "Cards you'd trade away. Mark them with For trade on a card in your Collection.";
+    $("binderCards").innerHTML = binder.length ? binder.map(c => `<div class="wish-card" data-bid="${esc(c.id)}">
+        <span class="art">${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : `<span class="noimg">${esc(c.name)}</span>`}</span>
+        <div class="wish-info"><b>${esc(c.name)}${c.foil ? '<span class="foil-tag">foil</span>' : ""}</b>
+          <span class="sub">${c.qty}x · ${esc(c.set)} ${esc(c.number)} · ${money(c.price)} each</span>
+          <button class="link-btn" data-bremove>Take back</button></div></div>`).join("")
+      : '<p class="results-empty">Nothing in your trade binder yet.</p>';
+  }
+  $("binderCards").onclick = async e => {
+    if (!e.target.closest("[data-bremove]")) return;
+    try { renderBinder(await api("/api/trades/remove", { id: e.target.closest("[data-bid]").dataset.bid })); toast("Taken out of the binder"); } catch (err) { toast(err.message); }
+  };
+  $("binderCopy").onclick = () => {
+    if (!binder.length) return toast("The binder is empty");
+    copy(binder.map(c => `${c.qty} ${c.name} (${c.set}) ${c.number}${c.foil ? " *F*" : ""}`).join("\n") + "\n").then(() => toast("Copied"), () => toast("Couldn't copy"));
+  };
+  api("/api/trades").then(renderBinder).catch(() => { });
 })();
