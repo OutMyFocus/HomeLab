@@ -157,15 +157,24 @@ def _write(decks):
     tmp.replace(decks_file())
 
 
-def save_deck(name: str, text: str, deck_id: str | None = None) -> dict:
+# Extra things a deck can keep, besides its name and list (from the deck builder).
+DECK_FLAGS = {"proxied": bool, "accent": str, "guide": str}
+
+
+def save_deck(name: str, text: str, deck_id: str | None = None, create: bool = False,
+              extra: dict | None = None) -> dict:
+    """Save a deck (a new one without deck_id, or with create=True and an id of your own)."""
     name = (str(name or "").strip() or "Untitled deck")[:80]
     text = str(text or "")[:40000]
     decks = load_decks()
     deck = next((d for d in decks if d["id"] == deck_id), None) if deck_id else None
     if deck is None:
-        deck = {"id": uuid.uuid4().hex[:12]}
+        deck = {"id": str(deck_id)[:40] if create and deck_id else uuid.uuid4().hex[:12]}
         decks.append(deck)
     deck.update(name=name, text=text, updated=time.strftime("%Y-%m-%d %H:%M"))
+    for k, kind in DECK_FLAGS.items():
+        if extra and k in extra:
+            deck[k] = kind(extra[k])[:200] if kind is str else kind(extra[k])
     _write(decks)
     return deck
 
@@ -206,7 +215,8 @@ def add_deck_routes(app, scanner, web_dir):
     @app.post("/api/decks/save")
     def decks_save():
         js = body()
-        deck = save_deck(js.get("name"), js.get("text"), js.get("id"))
+        deck = save_deck(js.get("name"), js.get("text"), js.get("id"),
+                         extra={k: js[k] for k in ("proxied",) if k in js})
         return jsonify({"deck": deck, "decks": load_decks()})
 
     @app.post("/api/decks/delete")

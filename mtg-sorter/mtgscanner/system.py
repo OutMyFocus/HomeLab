@@ -482,7 +482,8 @@ def forget_wifi(name: str):
 # What a backup holds, all from data/. Scans (captures/) are big and optional: what the
 # scanner learned from them is already in cards.db.
 BACKUP_FILES = ["collection.csv", "cards.db", "app_settings.json", "machine_settings.json",
-                "vault_prices.json", "usd_cad.json"]
+                "vault_prices.json", "usd_cad.json", "decks.json", "wishlist.json", "alerts.json",
+                "sort_rules.json", "games.json", "trades.json"]
 
 
 def make_backup(with_scans: bool = False) -> io.BytesIO:
