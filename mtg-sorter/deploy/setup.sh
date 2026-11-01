@@ -10,7 +10,7 @@
 #
 # It asks for your password once (for sudo). What it does, in order:
 #   1. System packages: git, Python, the Pi camera library, I2C tools
-#   2. Turns on I2C (the servo board) and, if the camera isn't seen, its driver
+#   2. Turns on I2C (the servo board), SPI (the light bars) and, if the camera isn't seen, its driver
 #   3. Gets the code from GitHub (or checks the copy that's there)
 #   4. The Python environment and packages
 #   5. A starter card database, if there isn't one
@@ -53,18 +53,24 @@ main() {
     else
         ok "all there"
     fi
-    for g in adm video i2c gpio systemd-journal; do
+    for g in adm video i2c spi gpio systemd-journal; do
         if getent group "$g" >/dev/null && ! id -nG "$USER_NAME" | grep -qw "$g"; then
             sudo usermod -aG "$g" "$USER_NAME"; ok "added $USER_NAME to the $g group"; reboot_needed=1
         fi
     done
 
-    step "2/7 I2C and camera"
+    step "2/7 I2C, SPI and camera"
     if command -v raspi-config >/dev/null; then
         if [ "$(sudo raspi-config nonint get_i2c)" != 0 ]; then
             sudo raspi-config nonint do_i2c 0; ok "turned I2C on"; reboot_needed=1
         else
             ok "I2C is on"
+        fi
+        # SPI drives the RGB light bars (data wire on GPIO10). Harmless without them.
+        if [ "$(sudo raspi-config nonint get_spi)" != 0 ]; then
+            sudo raspi-config nonint do_spi 0; ok "turned SPI on (light bars)"; reboot_needed=1
+        else
+            ok "SPI is on"
         fi
     else
         note "raspi-config not found (not Raspberry Pi OS?), skipping I2C"
