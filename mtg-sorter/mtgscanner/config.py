@@ -106,3 +106,15 @@ FEEDER_PINS = (17, 27)
 # How fast the feeder turns (0-1) and how long one push lasts (seconds).
 FEEDER_SPEED = 1.0
 FEEDER_SECONDS = 0.6
+
+# --- The light bars (lights.py) --------------------------------------------
+# 5 V addressable RGB bars (WS2812, "3-pin ARGB"). Their data wire goes to GPIO10 (pin 19),
+# the SPI MOSI pin, so SPI has to be on (the Lights page has a button for it). Color,
+# brightness, effect and how many LEDs there are are set on the Lights page (/lights).
+LIGHTS_SPI = (0, 0)            # /dev/spidev0.0
+LIGHTS_SPI_HZ = 6_400_000      # 8 SPI bits for each LED bit, at the LEDs' 800 kHz
+LIGHTS_ORDER = "GRB"           # the order WS2812 LEDs take their colors in
+LIGHTS_COUNT = 60              # first guess; set the real number on the Lights page
+# The bars share the 5 V supply with the Pi, servos and feeder, so the app dims them if
+# they'd draw more than this (full white is about 60 mA per LED).
+LIGHTS_MAX_AMPS = 1.0

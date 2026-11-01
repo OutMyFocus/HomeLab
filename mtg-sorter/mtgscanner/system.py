@@ -342,6 +342,21 @@ def machine_checks(machine) -> list[dict]:
     return out
 
 
+def lights_check(scanner) -> dict | None:
+    """The RGB light bars are optional, so a missing SPI is "off", never a warning."""
+    lights = getattr(scanner, "lights", None)
+    if lights is None:
+        return None
+    s = lights.state()
+    if s["ok"]:
+        return check("lights", "Light bars", "ok",
+                     "SPI is on, so the Pi can send colors to the light bars on GPIO10 (pin 19). "
+                     "It can't tell whether they're plugged in.")
+    return check("lights", "Light bars", "off",
+                 "Optional. " + (s["error"] or "Not available."),
+                 "Only needed with RGB light bars: open the Lights page and press Turn SPI on." if ON_PI else None)
+
+
 def database_check(scanner) -> dict:
     n = scanner.matcher.card_count
     if not n:
@@ -383,6 +398,7 @@ def helper_check() -> dict | None:
 
 def checkup(scanner, machine) -> list[dict]:
     checks = [power_check(), temperature_check(), camera_check(scanner), *machine_checks(machine),
+              lights_check(scanner),
               database_check(scanner), network_check(), internet_check(), disk_check(), memory_check(),
               updates_check(), helper_check()]
     return [c for c in checks if c]
