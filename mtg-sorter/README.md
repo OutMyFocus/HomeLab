@@ -72,7 +72,7 @@ Then open **http://localhost:5000** in your browser. You get:
   auto-save on, each card is saved as soon as it's recognized. Spread the cards out so they
   don't overlap. Cards in a pile or cut off at the edge of the picture can't be read.
 - **This session**: every card you've saved, with totals per bin, **Undo last**, and
-  **Download CSV** to import into Commander Vault.
+  **Download CSV** for ManaBox or Moxfield.
 - **Photos** tab: drag in photos from your computer or phone (one card or a whole table per
   photo) and add the recognized cards to your collection.
 - **Camera picker** (top right of the camera view): switch between webcams by name. The app
@@ -99,26 +99,43 @@ Then open **http://localhost:5000** in your browser. You get:
   how much it changed since you scanned the cards, a value-over-time chart, a breakdown by
   color, rarity, bin and set, and your 10 most valuable cards. **Refresh prices** gets today's
   Scryfall price for everything. **Export** downloads (or copies) the collection for Moxfield,
-  Archidekt, Deckbox, ManaBox / Commander Vault, TCGplayer mass entry, a text list, or a
+  Archidekt, Deckbox, ManaBox, TCGplayer mass entry, a text list, or a
   spreadsheet with prices, either all of it or just the cards your filters show.
+  **Sources and imports** (at the bottom) lists where your cards came from. Import a ManaBox
+  CSV as its own source, and remove a bad import with all its cards in one step. **For trade**
+  on a card puts it in your trade binder.
 - **Decks**: paste a decklist from Moxfield, Archidekt, MTG Arena, MTGO or
   any website. It shows how much of the deck you already own (any printing counts), which cards
   are missing, what they'd cost at today's prices, and which bin your copies are in. **Copy the
   missing cards** gives a shopping list for TCGplayer's Mass Entry or any shop. Save decks to
   check them again later. **Add the missing cards to my wishlist** puts them on your wishlist.
+  A Commander deck (one with a `Commander` line, or 90+ cards) also gets the deck builder:
+  deck checks (size, singleton, color identity, lands, ramp, draw, removal), the mana curve,
+  Canadian prices, which cards you own, need to buy or proxy, suggestions that fit, a playtest
+  hand, a game guide when there is one, and **Copy shopping list**.
+- **Card lookup**: search every Commander card (the whole database is on the Pi, so it's
+  instant), by name, text, type, color or set and number. Filter by role (ramp, draw, removal…),
+  see a card's prices at each Canadian store, every printing, how many you own, which of your
+  decks it fits, and add it to a deck or your wishlist.
+- **Play**: a life counter for the table (life, poison, commander damage, dice and a coin),
+  and a games log with win rates by player and by deck.
 - **Wishlist**: cards you want, with the most you'd pay. It shows today's price, marks the ones
   at or under your price, and the ones you've already scanned. When a wishlist card is scanned,
   the scanner page shows a pink banner and chimes. **Copy the ones I still need** gives a
-  shopping list.
+  shopping list. Below it, the **trade binder**: cards you'd trade away, with their value, and
+  **Copy my trade binder** to send to a friend.
 - **History**: every scanning session (cards saved within half an hour of each other), with a
   chart of cards scanned per day for the last 30 days, your biggest session and best find. Open a
-  session to see its cards, download just that session for Commander Vault or Moxfield, or remove
+  session to see its cards, download just that session for ManaBox or Moxfield, or remove
   a session you scanned by mistake.
 - **Settings**: the valuable-card alert (a banner and chime on the scanner page when a card
   worth at least $20, or whatever you choose, is saved), the wishlist alert, the sound, and the
   **PIN lock**. With a PIN set, other phones and laptops have to type it before they can see or
   change anything, and they stay unlocked for 30 days. The Pi itself is never locked out.
   Forgot the PIN? On the Pi, delete `data/pin.json`.
+  **Prices and card data** shows when the weekly Canadian price check and card database update
+  last ran, with buttons to run them now. **Bring in Commander Vault** imports everything from
+  a Commander Vault export file (see below).
 - **Bins**: choose what goes into each of the sorter's 4 bins, by price, color,
   rarity, set and foil, without editing any code. Pick a ready-made setup (by price, by rarity,
   by color, keep the good stuff, pull valuable then by color) or write your own rules. The
@@ -183,13 +200,19 @@ No webcam yet? Scan photos from your phone instead:
 python scan.py --image card1.jpg card2.jpg --save
 ```
 
-## Importing into Commander Vault
+## Commander Vault is part of the app now
 
-`data/collection.csv` uses ManaBox's column names (`Name`, `Quantity`, `Set code`,
-`Collector number`, `Foil`). Go to Commander Vault, open **Collection**, choose
-**Import a ManaBox CSV**, pick the file, and give the batch a name like "Scanner, Oct 21". Each
-import becomes its own source, so you can remove a bad session in one step. After
-importing, rename or delete `collection.csv` so the next session starts fresh.
+Everything Commander Vault did lives here: collection sources, decks with the deck builder,
+card lookup, the wishlist, the trade binder, games and the weekly Canadian prices. To move
+your Vault data over once, export it from the Vault, then on the **Settings** page under
+**Bring in Commander Vault** pick the file and press **Import**. Each Vault collection batch
+becomes its own source on the Collection page, decks keep their guides, and the latest
+prices come along so you don't wait for the first weekly check. Anything already brought in is
+skipped, so importing twice is safe.
+
+Cards come in through `data/collection.csv`, which uses ManaBox's column names (`Name`,
+`Quantity`, `Set code`, `Collector number`, `Foil`, plus `Source`). ManaBox and Moxfield can
+read it directly.
 
 ## Price bins (CAD)
 
@@ -203,14 +226,15 @@ in `mtgscanner/config.py`. Defaults:
 | 1 | Bulk, under $1 |
 | 0 | No price known (most tokens) |
 
-### Prices from Commander Vault
+### Canadian prices
 
-The scanner can use the same weekly Canadian Near Mint prices that Commander Vault
-collects (Face to Face Games, then 401 Games, The Mythic Store and Hobbiesville). In the
-Vault, open **Collection** and press **Save prices for scanner**. Put the saved
-`vault_prices.json` in this folder's `data/` folder, and the scanner picks it up automatically.
-Prices update weekly, so save a fresh copy now and then. It
-uses the exact printing's price when the Vault has one. Cards the Vault hasn't priced fall
+Once a week the app checks the Near Mint price of every card in your collection, decks,
+wishlist and trade binder at Face to Face Games (the main price), then 401 Games, The Mythic
+Store and Hobbiesville, and saves them in `data/vault_prices.json`. Valuable cards (foils,
+special numbers, $1.50 and up) also get their exact printing's price. The same week it
+updates the Commander card database (`data/carddb.json`, from Scryfall's bulk data) that Card
+lookup and the deck builder use. **Settings, Prices and card data** runs either one now. Cards
+the stores haven't priced fall
 back to Scryfall's USD price, converted with the Bank of Canada's exchange rate for the
 day. While the app runs it also checks Scryfall for today's price of each card it
 recognizes (start it with `--offline` to skip that and use the database's prices). The rate is fetched once a day and saved in `data/usd_cad.json`. Offline, it uses the

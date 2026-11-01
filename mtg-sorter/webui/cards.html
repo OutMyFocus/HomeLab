@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MTG Sorter · Card lookup</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/decks.css">
+  <link rel="stylesheet" href="/static/extras.css">
+  <link rel="stylesheet" href="/static/vault.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Sorter</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+
+  <main class="coll vault">
+    <section class="panel">
+      <div class="toolbar">
+        <label class="search"><svg><use href="#i-search" /></svg><input id="kQ" type="search" placeholder="Card name, a number like FRA 419, or try: t:vampire o:lifelink mv<=3" autocomplete="off" spellcheck="false" aria-label="Search cards"></label>
+        <button class="btn ghost" id="kRandom" title="A random card that matches your filters">Random</button>
+        <button class="btn ghost" id="kHelpBtn" aria-expanded="false">Search tips</button>
+      </div>
+      <div class="tips" id="kHelp" hidden>
+        <p class="sub">Type a card name, or combine these (spaces between them):</p>
+        <dl>
+          <dt>t:dragon</dt><dd>type line has "dragon"</dd><dt>o:"draw a card"</dt><dd>rules text has that phrase</dd>
+          <dt>c:br</dt><dd>fits a black-red deck (color identity)</dd><dt>mv&lt;=3</dt><dd>mana value 3 or less (also mv=, mv&gt;=)</dd>
+          <dt>pow&gt;=4</dt><dd>power 4 or more (also tou)</dd><dt>r:mythic</dt><dd>rarity: common, uncommon, rare, mythic</dd>
+          <dt>price&lt;5</dt><dd>under $5 CAD (also price&gt;)</dd><dt>is:commander</dt><dd>can be your commander</dd>
+          <dt>is:gc</dt><dd>Game Changers (-is:gc hides them)</dd><dt>is:ramp</dt><dd>a card job: ramp, draw, removal, wipe, counter, tutor…</dd>
+          <dt>own:yes</dt><dd>cards you own (own:no for the rest)</dd><dt>-t:land</dt><dd>a minus sign leaves them out</dd>
+          <dt>FRA 419</dt><dd>set code and collector number (or #419, cn:419, s:fra)</dd>
+        </dl>
+      </div>
+      <div class="chips roles" id="kRoles" aria-label="Find cards by job"></div>
+      <div class="toolbar second">
+        <div class="chips" id="kColors" aria-label="Fits these colors"></div>
+        <select id="kFor" aria-label="Fits deck"><option value="">Fits any deck</option></select>
+        <select id="kKind" aria-label="Card type"><option value="">Any type</option><option>Creature</option><option>Instant</option><option>Sorcery</option><option>Artifact</option><option>Enchantment</option><option>Planeswalker</option><option>Land</option><option>Battle</option><option value="Legendary">Legendary</option></select>
+        <select id="kOwn" aria-label="Owned"><option value="">Owned or not</option><option value="y">Only cards I own</option><option value="n">Only cards I don't own</option></select>
+        <select id="kSort" aria-label="Sort"><option value="pop">Most played</option><option value="name">Name</option><option value="price">Price, low to high</option><option value="priced">Price, high to low</option><option value="mv">Mana value</option></select>
+      </div>
+      <details class="more-filters" id="kMore"><summary>More filters <span class="sub" id="kMoreCount"></span></summary>
+        <div class="toolbar">
+          <input class="field grow" id="kText" type="search" placeholder="Rules text contains, e.g. whenever you gain life" aria-label="Rules text contains">
+          <input class="field" id="kType" type="text" placeholder="Type line, e.g. Vampire" aria-label="Type line contains">
+          <select id="kRar" aria-label="Rarity"><option value="">Any rarity</option><option value="c">Common</option><option value="u">Uncommon</option><option value="r">Rare</option><option value="m">Mythic</option></select>
+          <label class="price-range">Mana value <input id="kMvMin" type="number" min="0" max="16" placeholder="0"> to <input id="kMv" type="number" min="0" max="16" placeholder="any"></label>
+          <label class="price-range">Up to $<input id="kPmax" type="number" min="0" step="0.5" placeholder="any"></label>
+          <label class="price-range">Power at least <input id="kPow" type="number" min="0" max="20" placeholder="any"></label>
+          <select id="kStock" aria-label="Canadian stock"><option value="">In stock or not</option><option value="y">In stock at a store</option></select>
+        </div>
+        <div class="chips">
+          <button class="chip" id="kCmd" aria-pressed="false">Can be a commander</button>
+          <button class="chip" id="kGc" aria-pressed="false">Game Changers only</button>
+          <button class="chip" id="kNoGc" aria-pressed="false">No Game Changers</button>
+          <button class="chip" id="kNoBan" aria-pressed="true">Hide banned</button>
+        </div>
+      </details>
+      <div class="recent" id="kRecent"></div>
+    </section>
+
+    <section class="lookup">
+      <div class="panel results-panel">
+        <div class="panel-head"><span class="sub" id="kSummary">Loading the card database…</span><button class="link-btn" id="kReset">Clear filters</button></div>
+        <div class="results" id="kResults"></div>
+        <button class="btn ghost wide" id="kMoreRes" hidden>Show 80 more</button>
+      </div>
+      <div class="panel detail" id="kDetail"><p class="results-empty">Pick a card to see its rules text, Canadian prices, which of your decks it fits, and similar cards.</p></div>
+    </section>
+    <p class="hint center" id="kStatus"></p>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
+  <script src="/static/vault.js"></script>
+  <script src="/static/cards.js"></script>
+</body>
+</html>

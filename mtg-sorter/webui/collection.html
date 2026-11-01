@@ -7,6 +7,7 @@
   <title>MTG Sorter · Collection</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/vault.css">
   <script src="/static/look.js"></script>
 </head>
 <body>
@@ -113,7 +114,17 @@
       <div id="results"></div>
       <div class="more"><button class="btn ghost" id="moreBtn" hidden>Show more</button></div>
     </section>
-    <p class="hint center">Everything here is <code>data/collection.csv</code>, the file Commander Vault imports. Shortcuts: <kbd>/</kbd> search, <kbd>G</kbd>/<kbd>L</kbd> pictures or list, <kbd>N</kbd> add a card, <kbd>E</kbd> export.</p>
+    <section class="panel vault sources-panel" style="padding: var(--pad)">
+      <div class="panel-head"><h3>Sources and imports</h3><span class="sub">Where your cards came from. Removing a source deletes its cards.</span></div>
+      <div class="toolbar">
+        <input type="file" id="mbFile" accept=".csv,text/csv" aria-label="ManaBox CSV file">
+        <input class="field grow" id="mbName" placeholder="Name this source, like New pulls" aria-label="Source name">
+        <button class="btn primary" id="mbImport" disabled>Import a ManaBox CSV</button>
+      </div>
+      <p class="sub" id="mbPreview">In ManaBox: Collection, Export, CSV. Each import becomes its own source here. Everything from Commander Vault comes in from Settings.</p>
+      <div id="sourceList"></div>
+    </section>
+    <p class="hint center">Everything here is <code>data/collection.csv</code>, the file ManaBox and Moxfield also read. Shortcuts: <kbd>/</kbd> search, <kbd>G</kbd>/<kbd>L</kbd> pictures or list, <kbd>N</kbd> add a card, <kbd>E</kbd> export.</p>
   </main>
 
   <!-- one card -->
@@ -139,6 +150,8 @@
           <div class="detail-acts">
             <button class="toggle" id="dFoil" aria-pressed="false"><svg><use href="#i-sparkle" /></svg>Foil</button>
             <button class="btn ghost" id="dPrintings">Different printing?</button>
+            <button class="toggle" id="dTrade" aria-pressed="false" title="Put it in your trade binder (on the Wishlist page)">For trade</button>
+            <a class="btn ghost" id="dLookup" href="/cards">Card lookup</a>
             <a class="btn ghost" id="dScryfall" target="_blank" rel="noopener">Open on Scryfall</a>
             <button class="btn ghost danger" id="dDelete"><svg><use href="#i-trash" /></svg>Delete</button>
           </div>
@@ -184,6 +197,8 @@
   </div>
 
   <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
   <script src="/static/collection.js"></script>
+  <script src="/static/sources.js"></script>
 </body>
 </html>
