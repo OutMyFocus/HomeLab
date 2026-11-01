@@ -27,8 +27,6 @@
     { key: "collection", href: "/collection", label: "Collection", desc: "Every card you've saved, stats and exports", main: true },
     { key: "machine", href: "/machine", label: "Machine", desc: "Test the servos and feeder", main: true },
     { key: "sets", href: "/sets", label: "Sets", desc: "How complete each set is, and spare copies to trade" },
-    { key: "decks", href: "/decks", label: "Decks", desc: "Check a decklist against your cards" },
-    { key: "wishlist", href: "/wishlist", label: "Wishlist", desc: "Cards you want, and the price you'd pay" },
     { key: "decks", href: "/decks", label: "Decks", desc: "Build Commander decks and check them against your cards" },
     { key: "cards", href: "/cards", label: "Card lookup", desc: "Every Commander card, with Canadian prices" },
     { key: "play", href: "/play", label: "Play", desc: "Life counter and the games log" },
