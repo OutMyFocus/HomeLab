@@ -6,6 +6,9 @@
   // Bin names come from the Bins page (state.bin_names); these are the defaults until it answers.
   let BIN_NAMES = { 0: "Unknown", 1: "Bulk", 2: "$1–10", 3: "$10+" };
   let state = null, shownId = null, toastT;
+  // Set an element's HTML only when it changed. The state arrives several times a second,
+  // and rebuilding unchanged rows restarts their animations and reloads their pictures.
+  const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
 
   function toast(msg) {
     const t = $("toast"); $("toastText").textContent = msg;
@@ -15,7 +18,7 @@
 
   async function api(path, body) {
     const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (r.status === 401) { location.href = "/lock?next=/"; throw new Error("Locked"); }   // the PIN lock (Settings page)
+    if (r.status === 401) { location.href = "/lock?next=/scan"; throw new Error("Locked"); }   // the PIN lock (Settings page)
     if (!r.ok) throw new Error(r.status);
     return r.json();
   }
@@ -107,7 +110,7 @@
   $("closeLook").onclick = $("scrim").onclick = () => setDrawer(false);
 
   // ---------- live ----------
-  const STATUS = { starting: "Starting camera…", waiting: "No camera found. Check the cable, then restart the Pi", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
+  const STATUS = { starting: "Starting camera…", waiting: "No camera connected", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
   let selected = null;     // the card shown big: its track id
   let editing = false, drag = null;   // Slots mode: drawing boxes on the picture, and the box being dragged
 
@@ -149,7 +152,7 @@
       const [ax, ay] = drag.from, [bx, by] = drag.to;
       drawing = `<rect class="drawing" x="${f(Math.min(ax, bx) * w)}" y="${f(Math.min(ay, by) * h)}" width="${f(Math.abs(bx - ax) * w)}" height="${f(Math.abs(by - ay) * h)}" vector-effect="non-scaling-stroke" ${dashes}/>`;
     }
-    svg.innerHTML = slots + cards + drawing;
+    setHTML(svg, slots + cards + drawing);
   }
 
   function render(s) {
@@ -158,6 +161,7 @@
     $("meta").classList.remove("down");
     $("metaText").textContent = `${s.db_count.toLocaleString()} cards` + (s.learned ? ` + ${s.learned.toLocaleString()} learned` : "") + ` · ${s.prices}`;
     const st = $("camStatus"); st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status;
+    showCamera(s.status !== "waiting");
     document.querySelector(".camera").classList.toggle("locked", s.status === "locked");
     const slotsOn = s.mode === "slots";
     if (!slotsOn) editing = false;
@@ -194,7 +198,7 @@
     $("tableCount").textContent = s.cards.length ? s.cards.length : "";
     $("tableValue").textContent = s.cards.length ? money(value) : "";
     $("cardList").hidden = s.cards.length < 2;
-    $("cardList").innerHTML = s.cards.map(x => {
+    setHTML($("cardList"), s.cards.map(x => {
       const name = x.card ? esc(x.card.name) : x.status === "unknown" ? "Not recognized" : "Recognizing…";
       const sub = x.card ? `${esc(x.card.set)} #${esc(x.card.number)} · ${money(x.card.price)}` : x.status === "unknown" ? "Tell it which card" : "";
       const thumb = x.card ? `<img src="${esc(x.card.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">` : "<i></i>";
@@ -203,7 +207,7 @@
       return `<div class="tcard s-${x.status}${x.saved ? " saved" : ""}${x.track === selected ? " sel" : ""}" data-track="${x.track}">
         <span class="num">${x.number}</span><span class="thumb">${thumb}</span>
         <span class="info"><b>${name}</b><small>${sub}</small></span>${end}</div>`;
-    }).join("");
+    }).join(""));
 
     const save = $("saveBtn");
     const unsaved = s.cards.filter(x => x.card && !x.saved).length, saved = s.cards.filter(x => x.saved).length;
@@ -225,17 +229,19 @@
     $("statCount").textContent = t.count.toLocaleString();
     $("statValue").textContent = money(t.value);
     const bins = [3, 2, 1, 0].map(b => [b, t.bins[b] || 0]);
-    $("binBar").innerHTML = bins.map(([b, n]) => `<span class="bin-${b}" style="flex-grow:${n}"></span>`).join("");
-    $("binLegend").innerHTML = bins.map(([b, n]) => `<span><i class="bin-${b}"></i>${BIN_NAMES[b]} <b>${n}</b></span>`).join("");
+    setHTML($("binBar"), bins.map(([b, n]) => `<span class="bin-${b}" style="flex-grow:${n}"></span>`).join(""));
+    setHTML($("binLegend"), bins.map(([b, n]) => `<span><i class="bin-${b}"></i>${esc(BIN_NAMES[b])} <b>${n}</b></span>`).join(""));
 
     announce(s);
-    $("sessionRows").innerHTML = s.session.length ? s.session.map(r => `<tr${r.wanted ? ' class="wanted"' : ""}>
+    const more = (s.session_count || s.session.length) - s.session.length;
+    setHTML($("sessionRows"), (s.session.length ? s.session.map(r => `<tr${r.wanted ? ' class="wanted"' : ""}>
         <td>${esc(r.name)}${r.foil ? '<span class="foil-tag">foil</span>' : ""}</td>
         <td>${esc(r.set)} #${esc(r.number)}</td>
         <td class="num">${money(r.price)}</td>
         <td><span class="pill bin-${r.bin}">${r.bin} · ${esc(r.bin_label || BIN_NAMES[r.bin])}</span></td>
         <td class="num opt-time">${esc(r.time)}</td></tr>`).join("")
-      : '<tr class="empty-row"><td colspan="5">No cards saved yet</td></tr>';
+      : '<tr class="empty-row"><td colspan="5">No cards saved yet</td></tr>')
+      + (more > 0 ? `<tr class="empty-row"><td colspan="5">and ${more.toLocaleString()} earlier this session, on the <a href="/history">History</a> page</td></tr>` : ""));
     $("undoBtn").disabled = !s.session.length;
   }
 
@@ -261,23 +267,49 @@
   }
   $("alertBanner").onclick = () => $("alertBanner").hidden = true;
 
-  // ---------- pages menu ----------
-  function setMenu(open) {
-    $("menu").hidden = !open; $("menuBtn").setAttribute("aria-expanded", open);
-    if (open) $("menu").querySelector("a").focus();
+  // ---------- no camera: a plain message instead of an empty picture ----------
+  // The picture only streams while there's a camera, so a missing one doesn't keep a
+  // connection to the Pi open for nothing.
+  let camShown = null, streamRetry;
+  function showCamera(on) {
+    if (on === camShown) return;
+    camShown = on;
+    document.querySelector(".camera").classList.toggle("no-cam", !on);
+    $("noCamera").hidden = on;
+    if (on) $("stream").src = "/stream.mjpg?" + Date.now(); else $("stream").removeAttribute("src");
   }
-  $("menuBtn").onclick = e => { e.stopPropagation(); setMenu($("menu").hidden); };
-  document.addEventListener("click", e => { if (!$("menu").hidden && !e.target.closest(".menu-wrap")) setMenu(false); });
+  $("stream").onerror = () => {   // the stream dropped (the app restarted, Wi-Fi blinked): try again
+    if (!camShown) return;
+    $("camStatus").textContent = "Reconnecting to the camera…";
+    clearTimeout(streamRetry);
+    streamRetry = setTimeout(() => { if (camShown) $("stream").src = "/stream.mjpg?" + Date.now(); }, 3000);
+  };
+  $("usePhotosBtn").onclick = () => showTab("photos");
 
+  // Fast while watching the camera, slower on the other tabs or with no camera, and
+  // not at all while the page is in the background (it saves the Pi's time).
+  let pollT = null, failures = 0;
+  function nextPoll() {
+    clearTimeout(pollT);
+    if (document.hidden) { pollT = null; return; }
+    const live = !$("tab-live").hidden && state?.status !== "waiting";
+    pollT = setTimeout(poll, failures ? Math.min(5000, 1000 * failures) : live ? 400 : 1500);
+  }
   async function poll() {
     try {
       render(await api("/api/state"));
+      failures = 0;
       if (!camsLoadedAt) { camsLoadedAt = Date.now(); loadCameras(); }
       else if (state.camera?.index !== camIndex && !$("camPick").classList.contains("busy")) { camsLoadedAt = Date.now(); loadCameras(); }
     }
-    catch (e) { $("meta").classList.add("down"); $("metaText").textContent = "Can't reach the scanner. Is app.py still running?"; }
-    setTimeout(poll, 400);
+    catch (e) {
+      failures++;
+      $("meta").classList.add("down");
+      $("metaText").textContent = "Can't reach the scanner. It may be restarting; trying again…";
+    }
+    nextPoll();
   }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); else nextPoll(); });
 
   async function saveCurrent() {
     const n = state ? state.cards.filter(x => x.card && !x.saved).length : 0;
@@ -346,16 +378,14 @@
   $("printBtn").onclick = otherPrinting;
   $("whichBtn").onclick = () => openPicker({ live: true, track: selected });
   $("undoBtn").onclick = async () => { const name = state.session[0]?.name; render(await api("/api/undo", {})); if (name) toast(`Removed ${name}`); };
-  $("stream").onerror = () => { $("camStatus").textContent = "Camera stream lost. Reload the page"; };
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && !$("pick").hidden) return closePicker();
     if (e.key === "Escape" && drawerOpen()) return setDrawer(false);
-    if (e.key === "Escape" && !$("menu").hidden) return setMenu(false);
     if (e.key === "Escape" && editing) return setEditing(false);
-    if (e.target.matches("input, textarea") || e.metaKey || e.ctrlKey || e.altKey || drawerOpen() || !$("pick").hidden) return;
+    if (e.target.matches("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey || drawerOpen() || !$("pick").hidden || window.MTGMenu?.isOpen()) return;
     if (e.key === "c" || e.key === "C") return setDrawer(true);
-    if (e.key === "m" || e.key === "M") return setMenu($("menu").hidden);
+    if (e.key === "m" || e.key === "M") return window.MTGMenu?.toggle();
     if ($("tab-live").hidden) return;
     if (e.code === "Space") { e.preventDefault(); saveCurrent(); }
     else if (e.key === "f" || e.key === "F") setting("foil");
@@ -486,7 +516,7 @@
     try { cams = await api("/api/cameras"); } catch (e) {}
     const sel = $("camSelect"), cur = state?.camera;
     const opts = cams.map(c => `<option value="${c.index}">${esc(c.name)}</option>`);
-    if (!cur) opts.unshift('<option value="" disabled>Demo photos</option>');
+    if (!cur) opts.unshift(`<option value="" disabled>${state?.status === "waiting" ? "No camera" : "Demo photos"}</option>`);
     if (!cams.length) opts.push('<option value="" disabled>No cameras found</option>');
     sel.innerHTML = opts.join("");
     sel.value = cur ? String(cur.index) : "";
@@ -515,12 +545,16 @@
     ind.style.width = b.offsetWidth + "px";
     ind.style.transform = `translateX(${b.offsetLeft}px)`;
   }
-  for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => {
+  function showTab(name) {
+    const b = document.querySelector(`.tabs button[data-tab="${name}"]`); if (!b) return;
     for (const x of document.querySelectorAll(".tabs button")) x.setAttribute("aria-selected", x === b);
-    for (const s of document.querySelectorAll(".tab")) s.hidden = s.id !== "tab-" + b.dataset.tab;
+    for (const s of document.querySelectorAll(".tab")) s.hidden = s.id !== "tab-" + name;
     moveTabIndicator();
-    if (b.dataset.tab === "train") loadTraining();
-  };
+    if (name === "train") loadTraining();
+    history.replaceState(null, "", name === "live" ? location.pathname : "#" + name);
+    nextPoll();
+  }
+  for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => showTab(b.dataset.tab);
   addEventListener("resize", moveTabIndicator);
   document.fonts?.ready.then(moveTabIndicator);
 
@@ -579,17 +613,10 @@
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
   drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); scanPhotos(e.dataTransfer.files); });
 
-  // The Maintenance button shows a dot when the Pi's check-up finds a problem.
-  async function checkHealth() {
-    try {
-      const h = await api("/api/health"), b = $("healthBtn");
-      if (h.overall === "ok") { delete b.dataset.state; b.title = "Maintenance"; }
-      else { b.dataset.state = h.overall; b.title = "Maintenance: " + h.problems.map(p => p.label + ": " + p.summary).join(" · "); }
-    } catch (e) {}
-  }
-
   buildControls();
   applyLook();
+  // Other pages link straight to a tab (/scan#photos) or to the look (/scan?customize).
+  if (/^#(photos|train)$/.test(location.hash)) showTab(location.hash.slice(1));
+  if (new URLSearchParams(location.search).has("customize")) setDrawer(true);
   poll();
-  checkHealth(); setInterval(checkHealth, 60000);
 })();

@@ -37,6 +37,7 @@ from mtgscanner.exchange import load_rate
 from mtgscanner import security, sort_rules, wishlist
 from mtgscanner.decks import name_key
 from mtgscanner.history import add_history_routes
+from mtgscanner.home import add_home_routes
 from mtgscanner.bins import add_bins_routes
 from mtgscanner.decks import add_deck_routes
 from mtgscanner.library import add_collection_routes, lookup
@@ -118,6 +119,8 @@ class WaitingForCamera:
 
 
 # --- The scanner, running in the background ----------------------------------------
+
+SESSION_SHOWN = 100  # cards of this session listed on the scanner page
 
 
 def _smooth(old: float | None, new: float, weight: float = 0.2) -> float:
@@ -456,7 +459,10 @@ class Scanner:
                 "learn": self.learn,
                 "captures": self.captures.counts
                 | {"open": sum(1 for t in self.tracks if t.capture)},
-                "session": self.session[::-1],
+                # The newest cards only: the page asks several times a second, and a
+                # long session would make every answer big. History has the rest.
+                "session": self.session[: -SESSION_SHOWN - 1 : -1],
+                "session_count": len(self.session),
                 "totals": totals,
                 "perf": {
                     k: (None if v is None else round(v, 1))
@@ -532,6 +538,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
     add_bins_routes(app, scanner, WEB)  # the /bins page
     add_history_routes(app, scanner, WEB)  # the /history page
     add_wishlist_routes(app, scanner, WEB)  # the /wishlist page and alerts
+    add_home_routes(app, scanner, machine, WEB)  # the Home page's summary
 
     @app.get("/settings")
     def settings_page():
@@ -542,7 +549,11 @@ def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
         return jsonify({"error": "Unknown card"}), 404
 
     @app.get("/")
-    def index():
+    def home():
+        return send_from_directory(WEB, "home.html")
+
+    @app.get("/scan")
+    def scan_page():
         return send_from_directory(WEB, "index.html")
 
     @app.get("/static/<path:name>")

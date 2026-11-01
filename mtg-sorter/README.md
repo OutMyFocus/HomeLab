@@ -11,8 +11,9 @@ It has three parts, built in this order:
 | 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Stand designed ([`hardware/`](hardware/)) |
 | 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
 
-**Looking after it:** the wrench button in the app opens the Maintenance page (health
-check-up, updates, restart, backups, logs). What to do when something goes wrong:
+**Looking after it:** Maintenance, in the menu at the top of every page (under More on a
+phone), has the health check-up, updates, restart, backups and logs. It gets a yellow or red dot
+when something needs a look. What to do when something goes wrong:
 [MAINTENANCE.md](MAINTENANCE.md).
 
 ## How recognition works (plain English)
@@ -84,8 +85,13 @@ Then open **http://localhost:5000** in your browser. You get:
 - **Wrong card?** (W): pick the right card by name. It's saved instead, and remembered for training.
 - **Other printing?** (P): right card, wrong set. Lists every printing of it (Scryfall's full
   list when online) so you can pick the one you really have.
-- **Pages menu** (the ☰ button, or M): every other page, listed with what it's for. Each page
-  also has the same row of links at the top.
+- **Home** (`/`, the logo on every page): the whole machine at a glance. Whether the camera,
+  servo board, feeder and Pi are OK, the collection's value and a value chart, cards scanned in
+  the last 14 days, the newest cards, the most valuable ones, the biggest price changes and how
+  full each bin is. The scanner itself is at `/scan`.
+- **Page menu**: the same on every page. Links across the top on a computer (the rest under
+  **More** when the window is narrow, or press M on the scanner), and a bar along the bottom on
+  a phone. With no camera connected, the scanner says so and offers **Scan photos instead**.
 - **Collection** (in the menu, or **Whole collection**): everything you've ever saved.
   Search and filter by color, rarity, set, bin, foil and price, sort it, and switch between
   pictures and a list. Tap a card to change how many you have, mark it foil, pick a different
@@ -120,10 +126,11 @@ Then open **http://localhost:5000** in your browser. You get:
   `data/sort_rules.json`; **Back to the original price bins** undoes it.
 - **Train** tab: teach the scanner from your own scans (see below).
 - **Machine**: move each servo and the feeder by hand, and save the angles that work.
-- **Maintenance** (also the wrench button): the Pi's health, updates, restart and shut down, Wi-Fi,
+- **Maintenance**: the Pi's health, updates, restart and shut down, Wi-Fi,
   backups and logs. See [MAINTENANCE.md](MAINTENANCE.md).
 - **Customize** (the sliders button, or C): light/dark/black theme, accent color, bin colors,
-  layout, spacing, font and which details to show. Saved in your browser.
+  layout, spacing, font and which details to show. Saved in your browser, and used by every
+  page. Settings has a button for it too.
 
 No webcam yet? `python app.py --demo path/to/photos` pretends the photos are a camera.
 On the Raspberry Pi, run `python app.py --host 0.0.0.0` and open `http://<the Pi's address>:5000`
