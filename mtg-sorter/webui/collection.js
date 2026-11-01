@@ -67,7 +67,7 @@
     const box = $("lineChart"), pts = data.history || [];
     $("histNote").textContent = pts.length ? `${pts.length} day${pts.length === 1 ? "" : "s"} noted` : "";
     if (pts.length < 2) {
-      box.innerHTML = `<div class="empty">${pts.length ? `Today: <b>&nbsp;${money(pts[0].value)}&nbsp;</b>.` : ""} The chart fills in as the days go by: the total is noted once a day whenever this page is opened.</div>`;
+      box.innerHTML = `<div class="empty"><p>${pts.length ? `Today: <b>${money(pts[0].value)}</b>. ` : ""}The chart fills in as the days go by: the total is noted once a day whenever this page or Home is opened.</p></div>`;
       return;
     }
     const W = box.clientWidth || 600, H = box.clientHeight || 220, L = 56, R = 12, T = 12, B = 26;
@@ -203,7 +203,7 @@
     $("showing").textContent = data.cards.length ? (active ? `Showing ${cards.toLocaleString()} of ${data.summary.cards.toLocaleString()} cards · ${money(value)}` : `${cards.toLocaleString()} cards · ${money(value)}`) : "";
     for (const b of $("viewSeg").children) b.setAttribute("aria-pressed", b.dataset.v === prefs.view);
     const page = shown.slice(0, limit);
-    if (!data.cards.length) $("results").innerHTML = `<p class="results-empty">No cards saved yet. Scan some on the <a href="/">Scanner</a>, or press <b>Add a card</b>.</p>`;
+    if (!data.cards.length) $("results").innerHTML = `<p class="results-empty">No cards saved yet. Scan some on the <a href="/scan">Scanner</a>, or press <b>Add a card</b>.</p>`;
     else if (!shown.length) $("results").innerHTML = '<p class="results-empty">No cards match these filters.</p>';
     else if (prefs.view === "grid") $("results").innerHTML = `<div class="results-grid">${page.map(c => tile(c)).join("")}</div>`;
     else $("results").innerHTML = `<div class="table-wrap"><table class="list"><thead><tr>
@@ -419,5 +419,7 @@
     else if ((e.key === "e" || e.key === "E") && data) openExport();
   });
 
+  // Other pages link here with a search filled in (/collection?q=Sol Ring).
+  { const q = new URLSearchParams(location.search).get("q"); if (q) $("q").value = q; }
   load();
 })();

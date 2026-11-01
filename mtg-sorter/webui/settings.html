@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>MTG Scanner · Settings</title>
+  <title>MTG Sorter · Settings</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/collection.css">
   <link rel="stylesheet" href="/static/decks.css">
@@ -26,6 +26,7 @@
   </svg>
 
   <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Sorter</span></div>
     <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Scanner</span></div>
     <nav class="pages" aria-label="Pages">
       <a href="/">Scanner</a>
@@ -40,6 +41,7 @@
       <a href="/settings" aria-current="page">Settings</a>
     </nav>
   </header>
+  <script src="/static/shell.js"></script>
 
   <main class="coll">
     <section class="panel setting">
@@ -65,6 +67,12 @@
         <button class="btn ghost" id="pinLock">Lock this device now</button>
         <button class="btn ghost danger" id="pinRemove">Turn the PIN off</button>
       </div>
+    </section>
+    <section class="panel setting">
+      <h3>Look</h3>
+      <p class="sub">Theme (dark, light or black), accent and bin colors, font, spacing and what the scanner shows.
+        It's kept in each browser, so your phone and laptop can each have their own.</p>
+      <div class="row"><a class="btn ghost" href="/scan?customize">Customize the look</a></div>
     </section>
   </main>
 

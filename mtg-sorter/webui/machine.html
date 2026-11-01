@@ -1,10 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="system">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MTG Sorter · Machine</title>
   <link rel="stylesheet" href="/static/style.css">
+  <meta name="color-scheme" content="dark light">
+  <script src="/static/look.js"></script>
   <style>
     /* Test page for the servos and feeder. Uses the scanner's colours from style.css. */
     .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 20px; }
@@ -33,6 +35,17 @@
   </style>
 </head>
 <body>
+<svg width="0" height="0" style="position: absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24">
+    <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+    <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+    <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+  </symbol>
+</svg>
+<header class="top">
+  <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Sorter</span></div>
+</header>
+<script src="/static/shell.js"></script>
 <div class="wrap">
   <div class="head">
     <h1>Machine</h1>
