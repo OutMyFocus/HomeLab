@@ -262,3 +262,20 @@ The usual design people build:
 When you get there, the code change is small. Where `scan.py` saves a card, it will also
 call a `send_to_bin(bin_number)` function that moves the servos with the
 [`gpiozero`](https://gpiozero.readthedocs.io) library.
+
+### RGB light bars (optional)
+
+The app can drive 5 V addressable RGB bars (WS2812, sold as "3-pin ARGB" for PC cases)
+from the **Lights** page (`/lights`): on/off, color, brightness, effects (solid, breathe,
+rainbow, sweep), and a short flash when a card is saved, valuable or on your wishlist,
+unsure, or not recognized. The page shows a live preview, so it works on a PC too.
+
+Wiring, in short (the Lights page has the full notes):
+
+- **5V** and **GND** from the bars to the 5 V supply. **Never 12 V.**
+- **Data** to **GPIO10, pin 19** on the Pi (the SPI MOSI pin). The bars and the Pi share a ground.
+- SPI has to be on: press **Turn SPI on** on the Lights page (or run `deploy/setup.sh`), then reboot.
+
+Full white is about 60 mA per LED, so the app dims the bars to stay under 1 A
+(`LIGHTS_MAX_AMPS` in `mtgscanner/config.py`) and starts at 30% brightness. The Pi 5 can't
+use the usual `rpi_ws281x` library, so the colors go out over SPI with no extra package.

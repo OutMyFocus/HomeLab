@@ -31,6 +31,11 @@ case "$job" in
             system)  journalctl --no-pager -o short -n "$lines" -b -p warning ;;
             *)       echo "logs app|updates|system [lines]" >&2; exit 2 ;;
         esac ;;
+    spi-on)
+        # For the RGB light bars, whose data wire is on GPIO10 (SPI MOSI). Needs a reboot after.
+        raspi-config nonint do_spi 0
+        if getent group spi >/dev/null && ! id -nG nic | grep -qw spi; then usermod -aG spi nic; fi
+        echo "SPI is on. Reboot the Pi to finish." ;;
     wifi-add)
         # stdin: the network name on line 1, its password on line 2 (empty for an open network).
         IFS= read -r ssid; IFS= read -r pass || true
@@ -53,6 +58,6 @@ case "$job" in
         nmcli connection delete id "$name" >/dev/null
         echo "Forgot $name" ;;
     *)
-        echo "Usage: mtg-sorter-admin restart|reboot|poweroff|update|update-force|autoupdate on|off|logs app|updates|system [lines]|wifi-add|wifi-forget" >&2
+        echo "Usage: mtg-sorter-admin restart|reboot|poweroff|update|update-force|autoupdate on|off|logs app|updates|system [lines]|spi-on|wifi-add|wifi-forget" >&2
         exit 2 ;;
 esac
