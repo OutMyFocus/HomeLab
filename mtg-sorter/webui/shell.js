@@ -14,6 +14,7 @@
     lights: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
     maintenance: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
     settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    sets: '<rect x="4" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="13" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M13 16.5h7M16.5 13v7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
     more: '<circle cx="6" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18" cy="12" r="1.6" fill="currentColor"/>',
   };
   // main: always in the header and the phone's bottom bar. The rest fold into More
@@ -23,6 +24,7 @@
     { key: "scan", href: "/scan", label: "Scanner", desc: "Scan cards with the camera or photos", main: true },
     { key: "collection", href: "/collection", label: "Collection", desc: "Every card you've saved, stats and exports", main: true },
     { key: "machine", href: "/machine", label: "Machine", desc: "Test the servos and feeder", main: true },
+    { key: "sets", href: "/sets", label: "Sets", desc: "How complete each set is, and spare copies to trade" },
     { key: "decks", href: "/decks", label: "Decks", desc: "Check a decklist against your cards" },
     { key: "wishlist", href: "/wishlist", label: "Wishlist", desc: "Cards you want, and the price you'd pay" },
     { key: "history", href: "/history", label: "History", desc: "Past scanning sessions" },
