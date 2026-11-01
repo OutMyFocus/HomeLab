@@ -38,6 +38,7 @@ from mtgscanner import security, sort_rules, wishlist
 from mtgscanner.decks import name_key
 from mtgscanner.history import add_history_routes
 from mtgscanner.home import add_home_routes
+from mtgscanner.sets import add_sets_routes
 from mtgscanner.bins import add_bins_routes
 from mtgscanner.decks import add_deck_routes
 from mtgscanner.library import add_collection_routes, lookup
@@ -567,6 +568,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     add_play_routes(app, scanner, WEB)  # the /play page (games, life counter) and the trade binder
     add_vault_routes(app, scanner, WEB)  # Commander Vault: /cards, Canadian prices, imports
     add_home_routes(app, scanner, machine, WEB)  # the Home page's summary
+    add_sets_routes(app, scanner, WEB)  # the /sets page
 
     @app.get("/settings")
     def settings_page():
