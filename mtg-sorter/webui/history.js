@@ -73,7 +73,7 @@
         ${x.rows.map(r => `<tr><td class="card-cell">${r.id ? `<img class="thumb" src="https://api.scryfall.com/cards/${esc(r.id)}?format=image&version=small" alt="" loading="lazy">` : '<span class="thumb"></span>'}<span><span class="nm">${esc(r.name)}</span>${r.foil ? '<span class="foil-tag">foil</span>' : ""}${r.qty > 1 ? ` ×${r.qty}` : ""}</span></td>
           <td class="hide-sm">${esc(r.set)} #${esc(r.number)}</td><td class="num">${money(r.price)}</td><td class="hide-sm">${esc(r.bin)}</td><td class="num">${esc(r.time)}</td></tr>`).join("")}
         </tbody></table></div></div>` : ""}
-    </div>`).join("") : '<p class="results-empty">No scans yet. Cards you save on the <a href="/">Scanner</a> show up here.</p>';
+    </div>`).join("") : '<p class="results-empty">No scans yet. Cards you save on the <a href="/scan">Scanner</a> show up here.</p>';
     $("moreBtn").hidden = data.sessions.length <= shown;
   }
 
