@@ -199,6 +199,19 @@ class Matcher:
                                      "ORDER BY set_code", (name, name)).fetchall()
         return [Card(*r) for r in rows]
 
+    def sets(self) -> list[tuple[str, str, int]]:
+        """(set code, set name, cards) for every set in the database."""
+        with self._lock:
+            return self.conn.execute("SELECT upper(set_code), max(set_name), count(*) FROM cards "
+                                     "GROUP BY upper(set_code)").fetchall()
+
+    def set_cards(self, set_code: str) -> list[Card]:
+        """Every card of one set in the database."""
+        with self._lock:
+            rows = self.conn.execute(f"SELECT {_COLUMNS} FROM cards WHERE upper(set_code) = ?",
+                                     (set_code.upper(),)).fetchall()
+        return [Card(*r) for r in rows]
+
     def get_card(self, card_id: str) -> Card:
         card = self.find_card(card_id)
         if card is None:

@@ -101,6 +101,12 @@ Then open **http://localhost:5000** in your browser. You get:
   Scryfall price for everything. **Export** downloads (or copies) the collection for Moxfield,
   Archidekt, Deckbox, ManaBox / Commander Vault, TCGplayer mass entry, a text list, or a
   spreadsheet with prices, either all of it or just the cards your filters show.
+- **Sets**: how complete each set in the card database is, with a ring per set. Open a set to
+  see every card in collector-number order, the missing ones greyed out, what they'd cost today,
+  and a count by rarity. **Add the missing cards to my wishlist** or **Copy the missing list**.
+  **Spare copies** lists what you have beyond a playset (or however many you keep), cheapest
+  printings first, with their value and a list to copy for a trade or a shop. Basic lands are
+  left out unless you ask.
 - **Decks**: paste a decklist from Moxfield, Archidekt, MTG Arena, MTGO or
   any website. It shows how much of the deck you already own (any printing counts), which cards
   are missing, what they'd cost at today's prices, and which bin your copies are in. **Copy the
