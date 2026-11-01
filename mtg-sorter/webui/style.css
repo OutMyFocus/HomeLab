@@ -541,7 +541,7 @@ a.brand { color: inherit; text-decoration: none; }
 .more-list a[data-key="maintenance"][data-state]::after { top: 50%; right: 12px; transform: translateY(-50%); }
 
 /* the window is narrow: the extra pages fold into More */
-@media (max-width: 1240px) {
+@media (max-width: 1420px) {
   .site-nav a.extra { display: none; }
   .site-nav .more-wrap { display: block; }
 }
