@@ -28,7 +28,7 @@
   // ---------- saved decks ----------
   function renderDecks() {
     $("savedDecks").innerHTML = decks.length ? decks.slice().reverse().map(d => `<button class="deck-item" data-id="${esc(d.id)}" aria-current="${d.id === currentId}">
-        <b>${esc(d.name)}</b><small>${d.text.split("\n").filter(l => l.trim()).length} lines · saved ${esc(d.updated)}</small></button>`).join("")
+        <b>${esc(d.name)}</b><small>${d.text.split("\n").filter(l => l.trim()).length} lines · saved ${esc(d.updated)}${d.proxied ? " · proxies" : ""}</small></button>`).join("")
       : '<p class="none">Decks you save show up here.</p>';
     $("deleteDeck").hidden = !currentId;
   }
@@ -37,10 +37,12 @@
     const d = decks.find(x => x.id === b.dataset.id);
     currentId = d.id; $("deckName").value = d.name; $("deckText").value = d.text;
     renderDecks(); countLines(); checkDeck();
+    document.dispatchEvent(new CustomEvent("deck-opened"));
   };
   $("newDeck").onclick = () => {
     currentId = null; $("deckName").value = ""; $("deckText").value = ""; $("result").hidden = true;
     renderDecks(); countLines(); $("deckText").focus();
+    document.dispatchEvent(new CustomEvent("deck-opened"));
   };
   $("saveDeck").onclick = async () => {
     if (!$("deckText").value.trim()) return toast("Paste a decklist first");
@@ -117,6 +119,17 @@
     if (!cards.length) return toast("Nothing missing");
     try { await api("/api/wishlist/add", { cards }); toast(`Added ${cards.length} cards to your wishlist`); }
     catch (e) { toast(e.message); }
+  };
+
+  // For the deck builder (builder.js): the saved deck being edited, and a quiet save.
+  window.DECKS = {
+    current: () => decks.find(x => x.id === currentId) || null,
+    async save(extra = {}) {
+      if (!currentId) return null;
+      const js = await api("/api/decks/save", { id: currentId, name: $("deckName").value, text: $("deckText").value, ...extra });
+      decks = js.decks; renderDecks(); return js.deck;
+    },
+    changed() { countLines(); },
   };
 
   async function start() {

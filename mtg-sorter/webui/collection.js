@@ -271,7 +271,24 @@
     $("dQty").textContent = c.qty;
     $("dFoil").setAttribute("aria-pressed", c.foil);
     $("dScryfall").hidden = !c.scryfall; $("dScryfall").href = c.scryfall || "#";
+    $("dLookup").href = "/cards?card=" + encodeURIComponent(c.name);
+    $("dTrade").setAttribute("aria-pressed", tradeKeys.has(tradeKey(c)));
   }
+  // The trade binder (shown on the Wishlist page).
+  let tradeKeys = new Set(), tradeIds = new Map();
+  const tradeKey = c => `${c.name}|${c.set}|${c.number}|${c.foil ? 1 : 0}`;
+  function setTrades(js) { tradeKeys = new Set(js.cards.map(x => x.key)); tradeIds = new Map(js.cards.map(x => [x.key, x.id])); }
+  api("/api/trades").then(setTrades).catch(() => { });
+  $("dTrade").onclick = async () => {
+    const c = byKey(detailKey); if (!c) return;
+    const k = tradeKey(c), on = tradeKeys.has(k);
+    try {
+      setTrades(on ? await api("/api/trades/remove", { id: tradeIds.get(k) })
+        : await api("/api/trades/add", { name: c.name, set: c.set, number: c.number, foil: c.foil, qty: c.qty, card_id: c.id }));
+      toast(on ? "Taken out of the trade binder" : "In the trade binder (Wishlist page)"); renderDetail();
+    } catch (e) { toast(e.message); }
+  };
+  window.COLLECTION = { reload: () => load() };
   $("dPlus").onclick = () => { const c = byKey(detailKey); edit({ key: c.key, qty: c.qty + 1 }); };
   $("dMinus").onclick = () => {
     const c = byKey(detailKey);
