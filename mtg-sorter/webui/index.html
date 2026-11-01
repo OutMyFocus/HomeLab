@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
-    <title>MTG Scanner</title>
+    <title>MTG Sorter · Scanner</title>
     <link rel="stylesheet" href="/static/style.css" />
     <!-- Apply saved look before first paint, so the page doesn't flash the default theme. -->
     <script>
@@ -238,7 +238,7 @@
 
     <header class="top">
       <div class="brand">
-        <svg class="logo"><use href="#i-logo" /></svg><span>MTG Scanner</span>
+        <svg class="logo"><use href="#i-logo" /></svg><span>MTG Sorter</span>
       </div>
       <nav class="tabs" role="tablist">
         <span class="tab-ind" id="tabInd"></span>
@@ -282,13 +282,49 @@
         <svg><use href="#i-sliders" /></svg>
       </button>
     </header>
+    <script src="/static/shell.js"></script>
 
     <main>
+      <div class="scan-bar">
+        <nav class="tabs" role="tablist">
+          <span class="tab-ind" id="tabInd"></span>
+          <button role="tab" data-tab="live" aria-selected="true">
+            <svg><use href="#i-camera" /></svg>Live
+          </button>
+          <button role="tab" data-tab="photos" aria-selected="false">
+            <svg><use href="#i-photos" /></svg>Photos
+          </button>
+          <button role="tab" data-tab="train" aria-selected="false">
+            <svg><use href="#i-brain" /></svg>Train
+          </button>
+        </nav>
+        <div class="meta" id="meta">
+          <span class="pulse"></span><span id="metaText">Connecting…</span>
+        </div>
+      </div>
       <!-- LIVE -->
       <section id="tab-live" class="tab">
         <div class="live">
           <div class="camera">
-            <img id="stream" src="/stream.mjpg" alt="Live camera" />
+            <img id="stream" alt="Live camera" />
+            <div class="no-camera" id="noCamera" hidden>
+              <svg class="big-ico" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                <circle cx="12" cy="12.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+                <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+              <h3>No camera connected</h3>
+              <p>The scanner can't see a camera, so live scanning is paused. You can still scan
+                photos of your cards, and everything else works as usual.</p>
+              <div class="row">
+                <button class="btn primary" id="usePhotosBtn">
+                  <svg><use href="#i-photos" /></svg>Scan photos instead
+                </button>
+                <a class="btn" href="/maintenance">Run the check-up</a>
+              </div>
+              <p class="sub">On the Pi: power off, reseat the ribbon cable (contacts facing the board at both ends), then power on.
+                It keeps looking, so the picture appears by itself once a camera works.</p>
+            </div>
             <svg
               id="overlay"
               class="overlay"

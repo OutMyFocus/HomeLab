@@ -1,8 +1,8 @@
 # Looking after the sorter
 
-Almost everything is on the **Maintenance page**: the wrench button at the top of the
-scanner, or **http://mtgsorter.local:5000/maintenance**. When the wrench has a yellow or red
-dot, the check-up found something. Open the page and it says what, and what to do.
+Almost everything is on the **Maintenance page**: in the menu at the top of every page
+(under **More** on a phone), or **http://mtgsorter.local:5000/maintenance**. When Maintenance
+has a yellow or red dot, the check-up found something. The Home page shows the same at a glance. Open the page and it says what, and what to do.
 
 You shouldn't need a terminal for normal use. When you do, everything is one word after
 `mtg` (see [From a terminal](#from-a-terminal)).

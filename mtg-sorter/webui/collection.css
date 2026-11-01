@@ -1,11 +1,5 @@
 /* The Collection page. Builds on style.css (colors, panels, buttons, modal, toast). */
 
-/* page links in the header, shared by the newer pages */
-.pages { display: flex; gap: 2px; background: var(--raised); padding: 4px; border-radius: calc(var(--radius) * .75); border: 1px solid var(--line); flex-wrap: wrap; }
-.pages a { padding: 6px 14px; border-radius: calc(var(--radius) * .55); color: var(--muted); text-decoration: none; font-weight: 550; font-size: .92rem;
-  transition: color var(--speed), background var(--speed); }
-.pages a:hover { color: var(--text); }
-.pages a[aria-current="page"] { background: var(--panel-solid); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
 
 /* mana colors: identity for card colors, always shown next to the color's name */
 :root { --mana-W: #e9d8a0; --mana-U: #3b8eea; --mana-B: #7d6b8f; --mana-R: #e5484d; --mana-G: #2fa66a; --mana-M: #d6a93c; --mana-C: #9aa3ad; --mana-: #6b7280; }
@@ -165,9 +159,6 @@ label.inline { display: inline-flex; align-items: center; }
   .results-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
   .list .hide-sm { display: none; }
   .list .show-sm { display: block; }
-  .top { position: static; }
-  .pages { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; }
-  .pages a { padding: 6px 11px; white-space: nowrap; }
   .bar-row { grid-template-columns: 86px minmax(0, 1fr) 64px; }
   .search { flex-basis: 100%; }
   .toolbar select { flex: 1 1 40%; }
