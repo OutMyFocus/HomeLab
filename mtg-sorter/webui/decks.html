@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/collection.css">
   <link rel="stylesheet" href="/static/decks.css">
+  <link rel="stylesheet" href="/static/extras.css">
+  <link rel="stylesheet" href="/static/vault.css">
   <script src="/static/look.js"></script>
 </head>
 <body>
@@ -46,13 +48,48 @@
 Sideboard
 2 Duress
 
-Works with lists copied from Moxfield, Archidekt, MTG Arena, MTGO and most websites."></textarea>
+Works with lists copied from Moxfield, Archidekt, MTG Arena, MTGO and most websites.
+For a Commander deck, put the commander under a Commander line and the deck builder appears below."></textarea>
         <div class="deck-acts">
           <span class="sub" id="lineCount"></span>
           <button class="btn ghost danger" id="deleteDeck" hidden><svg><use href="#i-trash" /></svg>Delete</button>
           <button class="btn ghost" id="saveDeck">Save deck</button>
           <button class="btn primary" id="checkDeck">Check my collection <kbd>Ctrl+Enter</kbd></button>
         </div>
+      </div>
+    </section>
+
+    <section class="builder vault" id="builder" hidden>
+      <div class="builder-head">
+        <div class="panel">
+          <div class="panel-head"><h3 id="bTitle">Commander checks</h3><span class="sub" id="bCmd"></span></div>
+          <div class="checks" id="bChecks"></div>
+          <div class="deck-flags">
+            <label class="switch" title="Counts every card as owned, so nothing shows as missing or to buy"><input type="checkbox" id="bProxy"><span></span>Complete with proxies</label>
+            <a id="bGuide" href="#" hidden>Read the deck guide</a>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Mana curve and cost</h3><span class="sub" id="bBracket"></span></div>
+          <svg class="curve" id="bCurve" viewBox="0 0 420 170" role="img" aria-label="Mana curve of the nonland cards"></svg>
+          <div class="money-line" id="bMoney"></div>
+        </div>
+      </div>
+      <div class="panel" style="padding: var(--pad)">
+        <div class="toolbar">
+          <div class="add-card"><input class="field" id="bAdd" placeholder="Add a card: type a name, press Enter" autocomplete="off" spellcheck="false" aria-label="Add a card"><ul class="suggest" id="bSug" role="listbox" hidden></ul></div>
+          <button class="btn ghost" id="bSetCmd" title="Type the commander's name in the box first">Set commander</button>
+          <button class="btn ghost" id="bCopy">Copy list</button>
+          <button class="btn ghost" id="bShop">Copy shopping list</button>
+        </div>
+        <p class="sub" id="bNote" style="margin: 10px 0 0"></p>
+      </div>
+      <div class="groups" id="bGroups"></div>
+      <div class="panel" style="padding: var(--pad)">
+        <div class="panel-head"><h3>Playtest: draw a test hand</h3><span class="sub" id="ptOdds"></span></div>
+        <div class="toolbar"><button class="btn primary" id="ptNew">New hand</button><button class="btn ghost" id="ptMull">Mulligan</button><button class="btn ghost" id="ptDraw">Draw a card</button><span class="sub" id="ptInfo"></span></div>
+        <div class="hand" id="ptHand"></div>
+        <p class="sub" id="ptBottom"></p>
       </div>
     </section>
 
@@ -86,6 +123,9 @@ Works with lists copied from Moxfield, Archidekt, MTG Arena, MTGO and most websi
   </main>
 
   <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
   <script src="/static/decks.js"></script>
+  <script src="/static/vault.js"></script>
+  <script src="/static/builder.js"></script>
 </body>
 </html>
