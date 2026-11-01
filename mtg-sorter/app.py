@@ -41,6 +41,7 @@ from mtgscanner.home import add_home_routes
 from mtgscanner.bins import add_bins_routes
 from mtgscanner.decks import add_deck_routes
 from mtgscanner.library import add_collection_routes, lookup
+from mtgscanner.lights import Lights, add_lights_routes
 from mtgscanner.wishlist import add_wishlist_routes
 from mtgscanner.live import Live
 from mtgscanner.machine import Machine, add_machine_routes
@@ -133,6 +134,7 @@ class Scanner:
 
     def __init__(self, matcher: Matcher, vault: VaultPrices | None, source, live: Live | None = None):
         self.matcher, self.vault, self.source, self.live = matcher, vault, source, live
+        self.lights = None  # the RGB light bars (lights.py), which flash for saved, unsure and unknown cards
         self.lock = threading.Lock()
         self.jpeg = None  # latest camera picture for the page
         self.frame_size = None  # (width, height) of the camera picture
@@ -298,6 +300,7 @@ class Scanner:
         if shown is None:
             if t.status != "unknown":
                 t.saved = False
+                self._light("unknown")
             t.status, t.card, t.confidence = "unknown", None, None
             return
         if t.card is None or t.card.id != shown.id:
@@ -306,6 +309,8 @@ class Scanner:
         if fixed:
             t.status, t.confidence = "locked", None  # you told it; no doubt about it
         elif t.streak_conf == "unsure":
+            if t.status != "unsure":
+                self._light("unsure")
             t.status, t.confidence = (
                 "unsure",
                 "unsure",
@@ -322,6 +327,7 @@ class Scanner:
         bin_no, bin_label = choose_bin(card, foil, self.vault, self.live)
         price = card_price(card, foil, self.vault, self.live)
         scanned_at = add_card(config.COLLECTION_CSV, card, foil, bin_label, price)
+        self._light("valuable" if self._special(card, price[0]) else "saved")
         self.session.append(
             card_info(card, foil, self.vault, live=self.live)
             | {
@@ -345,6 +351,22 @@ class Scanner:
                 and track.capture["verdict"] != "corrected"
             ):
                 track.capture["verdict"] = "auto-saved" if auto else "saved"
+
+    def _light(self, event: str):
+        if self.lights is not None:
+            self.lights.event(event)
+
+    @staticmethod
+    def _special(card: Card, price: float | None) -> bool:
+        """Worth the alert price on the Settings page, or on the wishlist."""
+        try:
+            alerts = wishlist.load_alerts()
+            big = alerts.get("big_card")
+            if big is not None and price is not None and price >= big:
+                return True
+            return bool(alerts.get("wishlist")) and name_key(card.name) in wishlist.wanted_names()
+        except Exception:
+            return False
 
     # Called with the lock held. Keeps one scan per card put down (and another if the
     # scanner changes its mind while the card is still there).
@@ -527,11 +549,13 @@ def candidate_info(card: Card, distance: int, foil: bool, vault, live=None) -> d
 # --- Web server ----------------------------------------------------------------------
 
 
-def create_app(scanner: Scanner, machine: Machine | None = None) -> Flask:
+def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
     machine = machine or Machine()
+    scanner.lights = lights or scanner.lights or Lights()
     security.install(app, WEB)  # the optional PIN lock, checked before every page
     add_machine_routes(app, machine, WEB)  # the /machine test page
+    add_lights_routes(app, scanner.lights, WEB)  # the /lights page
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
     add_collection_routes(app, scanner, WEB)  # the /collection page
     add_deck_routes(app, scanner, WEB)  # the /decks page
@@ -939,6 +963,8 @@ def main():
     if isinstance(source, WaitingForCamera):
         source.on_found = scanner.use_source
     scanner.restore(load_settings())
+    scanner.lights = Lights()
+    scanner.lights.start()  # shows the saved color (nothing happens without light bars)
     threading.Thread(target=scanner.run, daemon=True).start()
 
     print(
