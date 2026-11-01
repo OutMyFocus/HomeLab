@@ -44,6 +44,8 @@ from mtgscanner.decks import add_deck_routes
 from mtgscanner.library import add_collection_routes, lookup
 from mtgscanner.lights import Lights, add_lights_routes
 from mtgscanner.wishlist import add_wishlist_routes
+from mtgscanner.play import add_play_routes
+from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
 from mtgscanner.machine import Machine, add_machine_routes
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
@@ -563,6 +565,8 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     add_bins_routes(app, scanner, WEB)  # the /bins page
     add_history_routes(app, scanner, WEB)  # the /history page
     add_wishlist_routes(app, scanner, WEB)  # the /wishlist page and alerts
+    add_play_routes(app, scanner, WEB)  # the /play page (games, life counter) and the trade binder
+    add_vault_routes(app, scanner, WEB)  # Commander Vault: /cards, Canadian prices, imports
     add_home_routes(app, scanner, machine, WEB)  # the Home page's summary
     add_sets_routes(app, scanner, WEB)  # the /sets page
 
@@ -826,7 +830,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     @app.post("/api/undo")
     def undo():
         with scanner.lock:
-            if scanner.session and remove_last(config.COLLECTION_CSV):
+            last = scanner.session[-1] if scanner.session else None
+            # The exact card saved last (an import may have added rows after it since).
+            if last and (remove_entry(config.COLLECTION_CSV, last["id"], last.get("scanned_at", ""))
+                         or (not last.get("scanned_at") and remove_last(config.COLLECTION_CSV))):
                 undone = scanner.session.pop()
                 t = scanner.track(undone["track"])
                 if t and t.card and t.card.id == undone["id"]:
@@ -972,8 +979,11 @@ def main():
     print(
         f"Loaded {matcher.card_count} cards ({matcher.learned_count} learned scans). Open http://localhost:{args.port} in your browser."
     )
+    app = create_app(scanner)
+    # The weekly Canadian price check and card database update (see mtgscanner/vault.py).
+    threading.Thread(target=app.config["weekly"].loop, daemon=True).start()
     try:
-        create_app(scanner).run(host=args.host, port=args.port, threaded=True)
+        app.run(host=args.host, port=args.port, threaded=True)
     finally:
         with scanner.lock:
             scanner.forget_tracks()  # log the cards still on the table

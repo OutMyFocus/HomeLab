@@ -1,7 +1,50 @@
-// The Settings page: scanning alerts and the PIN lock.
+// The Settings page: prices and card data, bringing in Commander Vault, scanning alerts and the PIN lock.
 (() => {
   const { $, toast, api } = MTG;
   let saveT;
+
+  // ---------- prices and card data (the weekly jobs) ----------
+  let pollT;
+  const when = iso => { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }); };
+  async function loadVault() {
+    clearTimeout(pollT);
+    let st; try { st = await api("/api/vault"); } catch (e) { $("vPrices").textContent = e.message; return; }
+    const p = st.prices, c = st.carddb;
+    $("vPrices").textContent = p.cards ? `${p.cards.toLocaleString()} cards and ${p.printings} exact printings, ${p.checked ? "checked " + when(p.checked) : "from Commander Vault, " + p.date}` : "Not checked yet";
+    $("vCards").textContent = c.cards ? `${c.cards.toLocaleString()} cards, updated ${when(c.built)}` : "Not downloaded yet";
+    $("vJob").textContent = st.job ? st.message : st.error || (st.offline ? "The app was started with --offline, so it can't reach the stores or Scryfall." : "");
+    $("vRunPrices").disabled = $("vRunCards").disabled = !!st.job || st.offline;
+    if (st.job) pollT = setTimeout(loadVault, 3000);
+  }
+  async function run(job) {
+    try { await api("/api/vault/run", { job }); toast(job === "prices" ? "Checking prices. It takes a while, and you can leave this page" : "Updating the card database"); }
+    catch (e) { toast(e.message); }
+    loadVault();
+  }
+  $("vRunPrices").onclick = () => run("prices");
+  $("vRunCards").onclick = () => run("carddb");
+  let vaultData = null;
+  $("vFile").onchange = async () => {
+    vaultData = null; $("vImport").disabled = true; const f = $("vFile").files[0]; if (!f) return;
+    try {
+      vaultData = JSON.parse(await f.text());
+      const n = (vaultData.collection || []).reduce((s, b) => s + (b.cards || []).reduce((t, c) => t + (c.q || 1), 0), 0);
+      $("vImported").textContent = `${(vaultData.collection || []).length} sources (${n} cards), ${(vaultData.decks || []).length} decks, ready to import.`;
+      $("vImport").disabled = false;
+    } catch (e) { $("vImported").textContent = "That file isn't a Commander Vault export."; }
+  };
+  $("vImport").onclick = async () => {
+    if (!vaultData) return;
+    $("vImport").disabled = true; $("vImported").textContent = "Importing, and looking each card up on Scryfall. This takes a few seconds…";
+    try {
+      const { imported: d } = await api("/api/vault/import", vaultData);
+      const parts = [d.sources && `${d.sources} sources (${d.cards} cards)`, d.decks && `${d.decks} decks`, d.wishlist && `${d.wishlist} wishlist cards`,
+        d.trade && `${d.trade} trade binder cards`, d.games && `${d.games} games`, d.prices && `prices for ${d.prices} cards`].filter(Boolean);
+      $("vImported").innerHTML = parts.length ? `Brought in ${parts.join(", ")}. Have a look at your <a href="/collection">Collection</a> and <a href="/decks">Decks</a>.` : "Nothing new: everything in that file is already here.";
+      loadVault();
+    } catch (e) { $("vImported").textContent = e.message; $("vImport").disabled = false; }
+  };
+  loadVault();
 
   async function loadAlerts() {
     const a = await api("/api/alerts");
