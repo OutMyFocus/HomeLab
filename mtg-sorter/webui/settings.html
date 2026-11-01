@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/collection.css">
   <link rel="stylesheet" href="/static/decks.css">
   <link rel="stylesheet" href="/static/extras.css">
+  <link rel="stylesheet" href="/static/vault.css">
   <script src="/static/look.js"></script>
 </head>
 <body>
@@ -31,6 +32,25 @@
   <script src="/static/shell.js"></script>
 
   <main class="coll">
+    <section class="panel setting vault">
+      <h3>Prices and card data</h3>
+      <p class="sub">Once a week the Pi checks the Near Mint price of every card in your collection, decks, wishlist and
+        trade binder at Face to Face Games (the main price), 401 Games, The Mythic Store and Hobbiesville, and updates
+        its list of every Commander card for Card lookup and the deck builder. You can run either one now.</p>
+      <div class="vault-jobs">
+        <div class="vault-job"><div><b>Canadian prices</b><small class="sub" id="vPrices" style="display:block">Checking…</small></div><button class="btn ghost" id="vRunPrices">Check prices now</button></div>
+        <div class="vault-job"><div><b>Commander card database</b><small class="sub" id="vCards" style="display:block">Checking…</small></div><button class="btn ghost" id="vRunCards">Update now</button></div>
+      </div>
+      <p class="sub" id="vJob"></p>
+    </section>
+    <section class="panel setting vault">
+      <h3>Bring in Commander Vault</h3>
+      <p class="sub">Commander Vault is part of this app now. Pick the export file from Commander Vault and everything comes in:
+        each collection source (as its own source on the Collection page), your decks with their guides, your wishlist,
+        your trade binder, games and the latest Canadian prices. Anything already brought in is skipped, so it's safe to do twice.</p>
+      <div class="row"><input type="file" id="vFile" accept=".json,application/json" aria-label="Commander Vault export file"><button class="btn primary" id="vImport" disabled>Import</button></div>
+      <p class="sub" id="vImported"></p>
+    </section>
     <section class="panel setting">
       <h3>Alerts while scanning</h3>
       <p class="sub">The scanner page chimes and shows a banner for these, on every phone and laptop.</p>
