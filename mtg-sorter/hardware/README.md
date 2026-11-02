@@ -181,12 +181,10 @@ fascia starts 114 mm above the floor. These numbers are the `dr_*` block at the 
   standoffs in the floor. Ports and vents are cut in the back panel, and there are intake
   slots in the floor under the Pi, so air can move. Fit the Pi 5's Active Cooler (or any
   fan heatsink under 25 mm) and it'll stay cool in there.
-- A **light bar** sits behind the three slots in the fascia: a channel that holds one 40 cm
-  airgoo neon ARGB strip (AG-NEON-LS1, 14 × 7 mm, 21 LEDs) with its glowing face right on
-  the slots. It is glued across the fascia seams, so it also ties the three pieces together.
-  The strip can't be cut and is longer than the box is wide, so its ends come out of the
-  channel and bend back along the side panels (about 65 mm each side). Lit, it's the thin
-  line across the front that the Roca has, in three dashes, one per drawer.
+- A **light bar** sits behind the three slots in the fascia: one white strip, glued across
+  the fascia seams (it ties the three pieces together), with a 14-LED piece of 10 mm WS2812B
+  strip (BTF-LIGHTING, 60 LEDs/m, IP30) stuck behind it. Lit, it's the thin line across the front that the Roca has, in three dashes,
+  one per drawer. Unlit, it's a white line.
 
 Plates too big for the 256 mm bed are split into tiles that meet at a seam, and joined on
 the bench with **splice** strips that sit in pockets on the underside (M2 screws or glue).
@@ -198,7 +196,7 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `post_front`, `post_back` | 2 each | black | print standing, pegs up, 204 mm tall |
 | `side` | 4 | black | two per side; flip the second one end for end |
 | `fascia_l`, `fascia_m`, `fascia_r` | 1 each | black (dark grey later, if you like) | the band across the front, left to right |
-| `light_bar` | 1 | black | holds the LED strip behind the three slots, glued across the fascia seams |
+| `light_bar` | 1 | **white** | behind the three slots, glued across the fascia seams |
 | `back_l`, `back_r` | 1 each | black | port and vent cut-outs; l/r as seen from the front |
 | `floor_fl`, `floor_fr`, `floor_bl`, `floor_br` | 1 each | black | the base plate; its edge shows |
 | `deck_fl`, `deck_fr`, `deck_bl`, `deck_br` | 1 each | black | print as they open (upside down) |

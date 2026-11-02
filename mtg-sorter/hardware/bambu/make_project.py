@@ -85,7 +85,7 @@ PLATES = [
     ("back_l", ["enc_back_l"]),
     ("back_r", ["enc_back_r"]),
     ("fascia l, m, r", ["enc_fascia_l", "enc_fascia_m", "enc_fascia_r"]),
-    ("light_bar (LED strip holder)", ["enc_light_bar"]),
+    ("light_bar (white)", ["enc_light_bar"]),
     ("tower_lid, post_sleeve, head_cover (black)", ["enc_tower_lid", "enc_post_sleeve", "enc_head_cover"]),
     ("deck_fl", ["enc_deck_fl"]),
     ("deck_fr", ["enc_deck_fr"]),
