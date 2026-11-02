@@ -444,29 +444,24 @@ print first are in [`PRINTING.md`](PRINTING.md).
 4. **Drawers:** print three Card Catalog drawers and their top bars from the MakerWorld
    3MF. Slide a toploader with a card into each pocket from the top, clip the bar on.
 5. **Fascia and back:** join `fascia_l` + `fascia_m` + `fascia_r` with splices glued in
-   the pockets on the inside face (CA glue, the pockets are too shallow for screws). Lay the
-   joined fascia face down on the bench, lay the 40 cm LED strip on it, glowing face down,
-   over the three slots and centred, then put the `light_bar` over the strip (channel down)
-   and glue its two brims to the fascia, across the seams. The strip's ends stick out about
-   90 mm past each end of the holder; they bend back along the side panels once the fascia
-   is in. Join `back_l` + `back_r` the same way (splices only).
+   the pockets on the inside face (CA glue, the pockets are too shallow for screws), and
+   glue the `light_bar` across the top of the seams, over the three slots. Stick a 14-LED
+   piece of the WS2812B strip on the back of the light bar, LEDs facing the slots, with its
+   input end (the arrows point away from it) on the side the wires will run to. Join
+   `back_l` + `back_r` the same way.
 
 ## 2. Assembly, bottom up
 
 1. Fix the Pi (4 × M2.5) and the PCA9685 to the standoffs on the floor, the motor driver
    with a zip tie. The Pi's ports face the back.
 2. Push the two `post_front`s and two `post_back`s onto their pegs at the corners (the
-   front ones have a shorter fascia groove). Slide the four `side` pieces (two per side, pockets facing in, splice them) and the back panel
+   front ones have a shorter fascia groove). Slide the fascia (light slots at the top),
+   the four `side` pieces (two per side, pockets facing in, splice them) and the back panel
    down the posts' grooves into the groove in the floor. The Pi's ports line up with the
    cut-outs in the back panel.
 3. Stand the two `divider`s in the grooves in the middle curbs, flanges facing out.
 4. Lower the bridge (with the whole mechanism on it) onto the dividers' flanges and the two
    `leg`s at the back; screw it to the flanges (M3, 3 per side). Wire everything up (Stage C).
-   Now slide the fascia down the front posts' grooves (light slots at the top, LED strip
-   inside). It goes in after the bridge because the light bar sticks out behind it: lowered
-   past a fascia that is already in, the bridge would hit it. Bend the strip's two ends back
-   along the side panels, run its lead along the side wall to the Pi bay and zip-tie it
-   (wiring: 5V to the 5 V rail, data to GPIO10 / pin 19, GND to pin 20).
 5. Put `feeder_stand_mid` in the fence on the bridge with the hopper on it, exit shelf facing
    the bed.
 6. Slide the `post_sleeve` over the camera post, lay the front deck on, then the back deck.

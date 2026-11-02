@@ -26,9 +26,9 @@
 //   side          x4    side panel half (two per side, flip one end for end)
 //   fascia_l/m/r        the band above the drawers, three pieces: the seams sit right above the
 //                       gaps between the drawer plates. Print it in a lighter colour
-//   light_bar           holder for the 40 cm neon LED strip, behind the three light slots: a
-//                       channel that keeps the strip's glowing face against the slots, glued
-//                       across the fascia seams so it also ties the three pieces together
+//   light_bar           white strip behind the three light slots (a 10 mm WS2812B strip, 14 LEDs,
+//                       stuck behind it); glued
+//                       across the fascia seams, it also ties the three pieces together
 //   back_l back_r       back panel halves (l/r as seen from the front), port cut-outs
 //   floor_fl floor_fr   floor, front: the drawers slide on it; stop rail at the back
 //   floor_bl floor_br   floor, back: Pi bay, with the board standoffs and vent slots
@@ -82,12 +82,6 @@ lip_h = 8;                // lip under the deck, just inside the panels
 deck_ch = 2;              // chamfer on the deck's top edges
 seam_ch = 1;              // small chamfer along every visible seam, so it reads as a panel line
 light_slot = [54, 2.2];   // status light slot above each drawer (length, height); 0 length for none
-// The light strip: airgoo AG-NEON-LS1, a 400 mm silicone neon ARGB bar (21 LEDs), 14 x 7 mm,
-// that can't be cut. It is longer than the box is wide, so it runs straight across behind the
-// slots and both ends bend back along the side panels.
-strip = [14, 7.1, 400];   // glowing face width, thickness, length
-strip_run = 220;          // straight part, in the holder (the slots span 227; the ends start to bend there)
-strip_bend = 16;          // bend radius at each end (to the strip's centre line)
 bridge_t = 4;
 bridge_top = 111;         // = wall_z0
 bridge_half = 52;         // bridge spans x = +-52
@@ -224,33 +218,10 @@ module fascia_tile(i) {   // 0 left, 1 middle, 2 right, seen from the front
     x1 = i == 2 ? 500 : fascia_seams[i];
     intersection() { fascia_full(); translate([x0, -50, -50]) cube([x1 - x0, 500, 100]); }
 }
-// Holder for the LED strip, glued behind the three slots, across the seams. A hat-shaped channel:
-// the strip lies in it with its glowing face on the fascia, right behind the slots, and the two
-// brims are glued to the fascia above and below. Modelled as it prints, brims down: x along the
-// fascia, y up the fascia (panel coordinates), z away from the fascia into the box.
-lb_ch = [strip[0] + 0.6, strip[1] + 0.4];                // channel: height up the fascia, depth
-lb_wall = 1.6;  lb_brim = 6;  lb_brim_t = 1.2;
-lb_yc = light_y + light_slot[1] / 2;                      // channel centre = slot centre, up the fascia
-light_bar_l = strip_run;
+// White (or translucent) strip glued behind the three slots, across the seams. Two walls thick, so it glows evenly.
+light_bar_l = 2 * pitch + light_slot[0] + 12;
 module light_bar() {
-    h = lb_ch[0] / 2;
-    translate([-light_bar_l / 2, 0, 0]) difference() {
-        union() {
-            translate([0, lb_yc - h - lb_wall - lb_brim, 0]) cube([light_bar_l, lb_ch[0] + 2 * (lb_wall + lb_brim), lb_brim_t]);
-            translate([0, lb_yc - h - lb_wall, 0]) cube([light_bar_l, lb_ch[0] + 2 * lb_wall, lb_ch[1] + lb_wall]);
-        }
-        translate([-1, lb_yc - h, -1]) cube([light_bar_l + 2, lb_ch[0], lb_ch[1] + 1]);
-    }
-}
-// Where the holder and the strip go in the box (preview and fit checks).
-module place_light_bar() { multmatrix([[1, 0, 0, 0], [0, 0, 1, floor_y0], [0, 1, 0, fascia_z0], [0, 0, 0, 1]]) children(); }
-module light_strip() {   // the strip itself, glowing face on the fascia
-    t = strip[1];  zc = fascia_z0 + lb_yc;  side_l = (strip[2] - strip_run - PI * strip_bend) / 2;
-    translate([-strip_run / 2, floor_y0, zc - strip[0] / 2]) cube([strip_run, t, strip[0]]);
-    for (m = [0, 1]) mirror([m, 0, 0]) translate([strip_run / 2, floor_y0 + t / 2 + strip_bend, zc - strip[0] / 2]) {
-        rotate([0, 0, -90]) rotate_extrude(angle = 90, $fn = 64) translate([strip_bend - t / 2, 0]) square([t, strip[0]]);
-        translate([strip_bend - t / 2, 0, 0]) cube([t, side_l, strip[0]]);
-    }
+    translate([-light_bar_l / 2, 0, 0]) cube([light_bar_l, 12, 1.2]);
 }
 
 // The back panel is wider than the bed too: two halves, the seam down the middle between two vent slots.
@@ -532,8 +503,7 @@ module place_post(i) {   // 0 fl, 1 fr, 2 bl, 3 br
 module shell(open = false) {   // open: no deck, tower or right side, to see inside
     color(c_shell) for (i = [0 : 3]) place_post(i);
     color(c_fascia) for (i = [0 : 2]) translate([0, floor_y0 - pt, fascia_z0]) rotate([90, 0, 0]) fascia_tile(i);
-    color(c_inner) place_light_bar() light_bar();
-    color("orange") light_strip();
+    color("white") translate([0, floor_y0 + 1.2, fascia_z0 + light_y - 5]) rotate([90, 0, 0]) light_bar();
     color(c_shell) for (i = [0, 1]) translate([0, back_y - inset, floor_t]) rotate([90, 0, 0]) back_tile(i);
     for (m = open ? [0] : [0, 1]) mirror([m, 0, 0]) color(c_shell) {
         translate([-hw + inset, front_y + post_r - groove_d + 0.3, floor_t]) rotate([90, 0, 90]) side();

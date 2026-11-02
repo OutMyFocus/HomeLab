@@ -114,7 +114,7 @@ FEEDER_SECONDS = 0.6
 LIGHTS_SPI = (0, 0)            # /dev/spidev0.0
 LIGHTS_SPI_HZ = 6_400_000      # 8 SPI bits for each LED bit, at the LEDs' 800 kHz
 LIGHTS_ORDER = "GRB"           # the order WS2812 LEDs take their colors in
-LIGHTS_COUNT = 21              # one airgoo AG-NEON-LS1 bar (42 for two chained); set it on the Lights page
+LIGHTS_COUNT = 14              # a 14-LED piece of 60 LEDs/m strip behind the fascia slots; set it on the Lights page
 # The bars share the 5 V supply with the Pi, servos and feeder, so the app dims them if
 # they'd draw more than this (full white is about 60 mA per LED).
 LIGHTS_MAX_AMPS = 1.0
