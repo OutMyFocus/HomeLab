@@ -117,11 +117,32 @@ class Machine:
         if angle is not None:
             angle = max(0.0, min(180.0, float(angle)))
         with self.lock:
-            kit = self._servos()
+            kit = self._fresh_servos()
             if kit is None:
                 raise RuntimeError(self.servo_error)
-            kit.servo[channel].angle = angle
+            try:
+                kit.servo[channel].angle = angle
+            except OSError:
+                self._kit = None   # board unplugged or lost: find it again next time
+                raise
             self.angles[channel] = angle
+
+    def _fresh_servos(self):
+        """The servo board, set up again if it lost power since we last used it.
+
+        A PCA9685 forgets its 50 Hz setting when its power goes off and on, and wakes
+        up asleep. Moves sent to it then do nothing, so check and start over if so."""
+        kit = self._servos()
+        if kit is None:
+            return None
+        try:
+            asleep = kit._pca.mode1_reg & 0x10
+        except (AttributeError, OSError):
+            asleep = False     # can't tell (fake board in tests, or a read error): carry on
+        if asleep:
+            self._kit = None
+            kit = self._servos()
+        return kit
 
     def move(self, part: str, position: str):
         """Move a part to one of its named positions, e.g. move("pins", "down")."""
