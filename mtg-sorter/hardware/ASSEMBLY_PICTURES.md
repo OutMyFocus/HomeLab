@@ -156,10 +156,10 @@ Build this on the bench and test it before it goes into the box. It's Part 2 of 
 - **(1)** A servo into the front plate of each `door_carrier` (two tab screws each).
 - **(2)** Screw each carrier under the outer edge of the chute floor, servo plate at the front (tall rail), with 3 M2 screws from inside the chute.
 - **(3)** Centre both servos at 90° before fitting horns.
-- **(4)** Fit a single-arm horn on each centred servo first (arm up toward the door's middle), then hang the door: back ear on an M3 screw through the carrier's back lug (the hinge pin), front ear flat behind the horn. Lock it with the horn's centre screw through the ear's small hole into the shaft, plus one tiny screw through the ear into the horn's first hole. Closed, both doors sit flush with the floor.
+- **(4)** With each servo at 90°, push a single-arm horn on with its arm pointing straight down. Lift the door so the fork on its front ear slides up over the horn, then push a printed `hinge_pin` through the carrier's back lug into the door's back ear. No screws: the fork turns the door. Closed, both doors sit flush with the floor.
 
-**Parts:** `chute`, `trapdoor`, `trapdoor_left`, `door_carrier`, `door_carrier_left`  
-**You need:** 6 × M2 × 6, 2 × M3 × 12 (hinge pins), 2 MG90S (channels 2, 3)
+**Parts:** `chute`, `trapdoor`, `trapdoor_left`, `door_carrier`, `door_carrier_left`, `hinge_pin ×2`  
+**You need:** 6 × M2 × 6, 2 MG90S (channels 2, 3)
 
 ### 14. Chute into the bridge
 

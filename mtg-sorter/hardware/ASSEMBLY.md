@@ -395,13 +395,13 @@ app recognizes it. Then drop the pins and check the card slides off cleanly.
    tall rail). Built before 2026-10-30 with `trapdoor_mount` + `hinge_lug` instead? Those still
    fit the old holes; the carriers replace them (`downloads/MTG_Sorter_Chute.3mf`: chute,
    carriers and doors on one plate).
-3. **Trapdoors.** Centre each servo, then push a single-arm horn on, arm pointing up toward
-   the middle of the door (the door's front ear sits right behind the horn, so the horn goes
-   on first). Hang the door: its back ear goes over a hinge pin through the carrier's back
-   lug. Use an M3 screw as the pin (1.75 mm filament is too thin for the 2.9 mm hole and
-   would rattle). Lock the front ear to the horn from behind: the horn's centre screw through
-   the ear's small hole into the shaft, and one tiny screw through the ear into the horn's
-   first hole. Trim the horn arm if it touches the door. Both doors close flush with the floor.
+3. **Trapdoors.** Centre each servo at 90° and push a single-arm horn on with its arm
+   pointing straight down (fit the horn's centre screw). Lift the door into place so the
+   fork on its front ear slides up over the horn: the slot goes right through the ear, so a
+   tall horn can't push the door out of line. Then push a printed `hinge_pin` through the
+   carrier's back lug into the door's back ear. No screws at the doors; the fork turns them.
+   Both doors close flush with the floor. (Doors printed before 2026-11-02 have a plain front
+   ear: reprint them from `bambu/MTG_Sorter_Trapdoor_Parts.3mf`, which also has the pins.)
 4. **Into the machine.** The chute's front axle goes into the upstand on the enclosure's
    bridge (Part 3). The plate on the chute's back end screws to the **tilt servo's** horn:
    push the tilt servo through the tilt bracket from the back, screw it in, centre it, then

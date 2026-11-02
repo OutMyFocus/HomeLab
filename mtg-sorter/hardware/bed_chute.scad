@@ -251,20 +251,45 @@ module chute() {
 }
 
 // Right trapdoor, closed: fills x = 0.5 .. 35.5 of the opening, hinged at x = 36.
+// Front ear: a fork below the hinge axis. The servo's single-arm horn, arm pointing
+// straight down, slides up into the slot between the prongs, so the door turns with the
+// servo without screws. The slot goes right through, so however tall the horn is, it can't
+// push the door out of line. Back ear: turns on a printed hinge_pin through the lug.
+// The panel stops 2 mm short of the front rail so it swings past the servo's top.
+horn_hub = 7.6;           // slot width: the horn's hub, with clearance (the arm is narrower)
+ear_face = -ch_out + 7;   // y of the front ear's servo-side face (clear of the servo's gear boss)
 module trapdoor() {
+    ear_t = -ch_in + 10 - ear_face;
     difference() {
         union() {
-            translate([0.5, -ch_in + 0.5, pivot_z - floor_t]) cube([door_half - 1, 2 * ch_in - 1, floor_t]);
-            // ears down to the hinge axis: front (servo horn) and back (hinge pin)
-            for (y = [-ch_in + 6, ch_in - 10]) hull() {
-                translate([door_half - 10, y, pivot_z - floor_t]) cube([10, 4, 0.1]);
-                translate([door_half, y, hinge_z]) rotate([-90, 0, 0]) cylinder(r = 4, h = 4);
+            translate([0.5, -ch_in + 2.1, pivot_z - floor_t]) cube([door_half - 1, 2 * ch_in - 2.6, floor_t]);
+            // back ear down to the hinge axis
+            hull() {
+                translate([door_half - 10, ch_in - 10, pivot_z - floor_t]) cube([10, 4, 0.1]);
+                translate([door_half, ch_in - 10, hinge_z]) rotate([-90, 0, 0]) cylinder(r = 4, h = 4);
             }
+            // front ear: from the floor down past the axis to a fork 14 mm below it
+            hull() {
+                translate([door_half - 10, ear_face, pivot_z - floor_t]) cube([10, ear_t, 0.1]);
+                translate([door_half - 4, ear_face, hinge_z]) cube([8, ear_t, 4]);
+                translate([door_half - 8, ear_face, hinge_z - 2]) cube([14, ear_t, 0.1]);
+            }
+            // (no further than 6 mm past the axis on the outer side, or it hits the tray floor at 90°)
+            translate([door_half - 8, ear_face, hinge_z - 14]) cube([14, ear_t, 12]);
         }
-        // hinge pin hole (back ear) and horn screw holes (front ear)
+        // hinge pin hole (back ear)
         translate([door_half, ch_in - 11, hinge_z]) rotate([-90, 0, 0]) cylinder(d = 3.2, h = 6);
-        translate([door_half, -ch_in + 5, hinge_z]) rotate([-90, 0, 0]) cylinder(d = 1.5, h = 6);
+        // the slot for the horn, open at the bottom, right through the ear
+        translate([door_half - horn_hub / 2, ear_face - 1, hinge_z - 20]) cube([horn_hub, ear_t + 2, 20]);
+        translate([door_half, ear_face - 1, hinge_z]) rotate([-90, 0, 0]) cylinder(d = horn_hub, h = ear_t + 2);
     }
+}
+
+// Hinge pin: pushes through the hinge lug into the door's back ear. Prints standing on its head.
+module hinge_pin() {
+    cylinder(d = 6, h = 1.2);
+    cylinder(d = 2.75, h = 12.2);
+    translate([0, 0, 12.2]) cylinder(d1 = 2.75, d2 = 2, h = 0.6);
 }
 
 // Servo mount under the front of the tray, right side. The servo's shaft lines up with the hinge.
@@ -394,6 +419,7 @@ else if (part == "hinge_lug") translate([0, 0, -(ch_in - 6)]) rotate([90, 0, 0])
 else if (part == "hinge_lug_left") mirror([1, 0, 0]) translate([0, 0, -(ch_in - 6)]) rotate([90, 0, 0]) hinge_lug();
 else if (part == "door_carrier") mirror([0, 0, 1]) translate([0, 0, -(pivot_z - floor_t)]) door_carrier();
 else if (part == "door_carrier_left") mirror([1, 0, 0]) mirror([0, 0, 1]) translate([0, 0, -(pivot_z - floor_t)]) door_carrier();
+else if (part == "hinge_pin") hinge_pin();
 else if (part == "frame_side") translate([0, 0, -frame_x]) rotate([0, -90, 0]) frame_side();
 else if (part == "front_bar") translate([0, 0, -(front_bar_y - 6)]) rotate([90, 0, 0]) front_bar();
 else if (part == "bin") bin();
