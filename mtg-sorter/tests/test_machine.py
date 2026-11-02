@@ -75,3 +75,33 @@ def test_missing_hardware_says_what_is_wrong(db):  # noqa: F811
     res = client.post("/api/machine/move", json={"part": "pins", "position": "up"})
     assert res.status_code == 503 and "not found" in res.get_json()["error"]
     assert client.get("/machine").status_code == 200
+
+
+class FakePCA:
+    def __init__(self, mode1):
+        self.mode1_reg = mode1
+
+
+def test_board_that_lost_power_is_set_up_again(machine, monkeypatch):
+    # A PCA9685 that was unplugged and plugged back in wakes up asleep (MODE1 bit 4).
+    asleep = FakeKit()
+    asleep._pca = FakePCA(0x11)
+    machine._kit = asleep
+    fresh = FakeKit()
+    fresh._pca = FakePCA(0x20)
+    monkeypatch.setattr(machine, "_servos", lambda: machine._kit or fresh)
+    machine.set_angle(1, 70)
+    assert fresh.servo[1].angle == 70
+    assert asleep.servo[1].angle is None
+
+
+def test_lost_board_is_looked_for_again(machine):
+    class Broken:
+        @property
+        def angle(self): return None
+        @angle.setter
+        def angle(self, v): raise OSError(121, "Remote I/O error")
+    machine._kit.servo[2] = Broken()
+    with pytest.raises(OSError):
+        machine.set_angle(2, 90)
+    assert machine._kit is None
