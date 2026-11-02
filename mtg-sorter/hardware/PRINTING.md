@@ -11,7 +11,7 @@ only then commit the rest of the filament.
 Open **`bambu/MTG_Sorter_Enclosure.3mf`** with **File → Open Project** in Bambu Studio. It has
 all 23 plates of the enclosure laid out, each on its own plate tab, named after what's on it,
 and every setting below already applied (the per-part ones too). Pick a plate, check the
-filament is your black PLA, and press **Slice plate**, then
+filament is your black PLA (white for the light bar), and press **Slice plate**, then
 **Print plate**. The Card Catalog drawers aren't in it; they come from their own file (see the end).
 
 If Bambu Studio asks whether to load the project's settings, say **yes**. The process then reads
@@ -61,9 +61,8 @@ while and the parts string, dry them first.
 
 ## Colours
 
-Black PLA for everything, except **white** for the scan bed plate (the camera looks at the
-bed). The `light_bar` is black too: the LED strip in it is already diffused and glows
-straight through the slots. The drawers can be
+Black PLA for everything, except **white** for `light_bar` and the scan bed plate (the camera
+looks at the bed, and the light bar is the white line across the front). The drawers can be
 black too. If you get a dark grey roll later, the fascia, tower lid, post sleeve and head cover
 look good in it, but black is fine.
 
@@ -89,7 +88,7 @@ Bambu Studio's estimate is the real one.
 | 15 | `back_l` | black | 55 g, 2.5 h | |
 | 16 | `back_r` | black | 55 g, 2.5 h | |
 | 17 | `fascia_l` + `fascia_m` + `fascia_r` | black | 50 g, 2.5 h | |
-| 18 | `light_bar` | black | 20 g, 45 min | holds the 40 cm LED strip; prints brims down, as it opens |
+| 18 | `light_bar` | **white** | 4 g, 10 min | |
 | 19 | `tower_lid` + `post_sleeve` + `head_cover` | black | 80 g, 4 h | brim on the sleeve |
 | 20 | `deck_fl` | black | 70 g, 3.5 h | the deck last: it goes on once the mechanism is in |
 | 21 | `deck_fr` | black | 70 g, 3.5 h | |
