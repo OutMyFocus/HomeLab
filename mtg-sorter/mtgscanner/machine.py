@@ -42,6 +42,7 @@ class Machine:
         self.angles = {}          # last angle sent to each channel (None: relaxed)
         self.feeding = False
         self._stop_timer = None
+        self._relax_timers = {}   # channel -> timer that lets that servo go after a move
 
     # --- connecting ---------------------------------------------------------
 
@@ -126,6 +127,32 @@ class Machine:
                 self._kit = None   # board unplugged or lost: find it again next time
                 raise
             self.angles[channel] = angle
+            old = self._relax_timers.pop(channel, None)
+            if old:
+                old.cancel()
+            hold = getattr(config, "SERVO_HOLD_SECONDS", 0)
+            if angle is not None and hold > 0:
+                # Let go once it has had time to get there. A servo held against
+                # something it can't push past draws full current and gets hot.
+                token = object()
+                t = threading.Timer(hold, self._relax_after_move, (channel, token))
+                t.daemon = True
+                t.token = token
+                self._relax_timers[channel] = t
+                t.start()
+
+    def _relax_after_move(self, channel, token):
+        with self.lock:
+            t = self._relax_timers.get(channel)
+            if t is None or t.token is not token:
+                return            # moved again since: that move has its own timer
+            self._relax_timers.pop(channel, None)
+            try:
+                if self._kit is not None:
+                    self._kit.servo[channel].angle = None
+                    self.angles[channel] = None
+            except OSError:
+                self._kit = None
 
     def _fresh_servos(self):
         """The servo board, set up again if it lost power since we last used it.
