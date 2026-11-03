@@ -75,9 +75,11 @@ def remove_entry(path: Path, card_id: str, scanned_at: str) -> bool:
     return False
 
 
-def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[float | None, str]) -> str:
-    """price is (CAD price, source), as returned by sorting.card_price(). Returns the
-    time it was saved, which remove_entry() uses to find it again."""
+def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[float | None, str],
+             origin: str = "") -> str:
+    """price is (CAD price, source), as returned by sorting.card_price(). `origin` goes in
+    the Source column: who the card came from (a name typed on a phone; blank for the
+    machine). Returns the time it was saved, which remove_entry() uses to find it again."""
     path.parent.mkdir(parents=True, exist_ok=True)
     ensure_columns(path)
     is_new = not path.exists()
@@ -100,6 +102,6 @@ def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[fl
             source,
             bin_label,
             scanned_at,
-            "",
+            origin,
         ])
     return scanned_at

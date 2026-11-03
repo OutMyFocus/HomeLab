@@ -160,9 +160,15 @@ class Scanner:
         self.collect = False  # keep every scan in data/captures (see captures.py)
         self.learn = True  # learn each confirmed scan as soon as its card is taken away
         self.captures = CaptureLog(config.CAPTURES_DIR)
-        # A phone or computer scanning with its own camera (see BrowserSource). When it
-        # goes quiet, the scanner goes back to this machine's own camera (local_camera()).
-        self.local_camera = None
+        # Who is scanning (a name typed on a phone), saved as each card's Source. Blank
+        # for the machine itself.
+        self.owner = ""
+        # A scanner fed by a phone's or computer's own camera (BrowserSource) lives in its
+        # own thread next to the machine's. When its pictures stop it pauses, and after
+        # `expire` seconds without any it stops and on_stop() drops it from the app.
+        self.expire = 10 * 60.0
+        self.stopped = False
+        self.on_stop = None
         self.perf = {
             "fps": None,
             "ms_frame": None,
@@ -205,28 +211,44 @@ class Scanner:
         ]
         return [c for c, _ in found if c], [n for c, n in found if c]
 
+    def stop(self):
+        self.stopped = True
+        source = self.source
+        if hasattr(source, "release"):
+            source.release()   # wakes the thread out of its wait for a picture
+
     def run(self):
-        while True:
-            with self.lock:
-                new, self._next_source = self._next_source, None
-                if new is not None:
-                    self.forget_tracks()
+        while not self.stopped:
+            self.turn()
+        if self.on_stop:
+            self.on_stop(self)
+
+    def turn(self):
+        """One go of the loop: switch cameras if asked, then look at the next picture."""
+        with self.lock:
+            new, self._next_source = self._next_source, None
             if new is not None:
-                old, self.source = self.source, new
-                self.started = False  # "Starting camera…" until the new one's first picture
-                if hasattr(old, "release"):
-                    old.release()
-            if self.source is None:
-                time.sleep(0.2)
-                continue
-            frame = self.source.read()
-            if frame is None:
-                if isinstance(self.source, BrowserSource) and self.source.gone():
-                    print(f"{self.source.name} stopped sending pictures.")
-                    self.use_source(self.local_camera() if self.local_camera else None)
-                time.sleep(0.2)
-                continue
-            self.process(frame)
+                self.forget_tracks()
+        if new is not None:
+            old, self.source = self.source, new
+            self.started = False  # "Starting camera…" until the new one's first picture
+            if hasattr(old, "release"):
+                old.release()
+        if self.source is None:
+            time.sleep(0.2)
+            return
+        frame = self.source.read()
+        if frame is None:
+            if isinstance(self.source, BrowserSource) and self.source.gone():
+                with self.lock:
+                    if self.started:   # the phone went quiet: pause, and clear the table
+                        self.forget_tracks()
+                        self.started = False
+                if self.source.quiet_for() > self.expire:
+                    self.stopped = True
+            time.sleep(0.2)
+            return
+        self.process(frame)
 
     def process(self, frame):
         """Find every card in one camera picture and update what's known about each."""
@@ -342,7 +364,7 @@ class Scanner:
     ):
         bin_no, bin_label = choose_bin(card, foil, self.vault, self.live)
         price = card_price(card, foil, self.vault, self.live)
-        scanned_at = add_card(config.COLLECTION_CSV, card, foil, bin_label, price)
+        scanned_at = add_card(config.COLLECTION_CSV, card, foil, bin_label, price, self.owner)
         self._light("valuable" if self._special(card, price[0]) else "saved")
         self.session.append(
             card_info(card, foil, self.vault, live=self.live)
@@ -442,6 +464,8 @@ class Scanner:
             )
             if isinstance(self.source, WaitingForCamera) or self.source is None:
                 status = "waiting"
+            elif isinstance(self.source, BrowserSource) and self.source.gone():
+                status = "paused"   # the phone's page is in the background
             elif not self.started:
                 status = "starting"
             elif not visible:
@@ -493,6 +517,7 @@ class Scanner:
                 "mode": self.mode,
                 "slots": self.slots,
                 "camera": camera_info(self._next_source or self.source),
+                "owner": self.owner,
                 "collect": self.collect,
                 "learn": self.learn,
                 "captures": self.captures.counts
@@ -603,12 +628,24 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     def static_files(name):
         return send_from_directory(WEB, name)
 
+    # The machine's scanner answers every request, except ones from a page whose device is
+    # the camera: those name their own scanner (see browser_camera below) in the X-Scanner
+    # header (or ?scanner= for the picture stream), so each phone scans on its own table.
+    scanners: dict[str, Scanner] = {}
+    app.config["scanners"] = scanners
+
+    def current() -> Scanner:
+        token = request.headers.get("X-Scanner") or request.args.get("scanner") or ""
+        return scanners.get(token, scanner)
+
     @app.get("/stream.mjpg")
     def stream():
+        sc = current()
+
         def frames():
             last = None
-            while True:
-                jpeg = scanner.jpeg
+            while not sc.stopped:
+                jpeg = sc.jpeg
                 if jpeg is not None and jpeg is not last:
                     last = jpeg
                     yield (
@@ -620,7 +657,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
 
     @app.get("/api/state")
     def state():
-        s = scanner.state()
+        return state_for(current())
+
+    def state_for(sc: Scanner):
+        s = sc.state()
         s["db_count"] = scanner.matcher.card_count
         s["learned"] = scanner.matcher.learned_count
         rate = f"US$1 = CA${config.USD_TO_CAD:.4f}"
@@ -639,20 +679,26 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         s["session"] = [c | {"wanted": name_key(c["name"]) in wanted} for c in s["session"]]
         s["locked"] = security.enabled()
         s["on_pi"] = ON_PI
+        s["scanners"] = [   # who else is scanning right now
+            {"name": other.source.name, "owner": other.owner, "cards": len(other.session)}
+            for other in list(scanners.values()) if other is not sc and not other.stopped
+        ]
         return jsonify(s)
 
     @app.post("/api/settings")
     def settings():
         body = request.get_json(force=True)
-        with scanner.lock:
+        sc = current()
+        remember = sc is scanner   # a phone's choices last as long as its page does
+        with sc.lock:
             for key in ("foil", "auto", "collect", "learn"):
                 if key in body:
-                    setattr(scanner, key, bool(body[key]))
-            if "collect" in body and not scanner.collect:
-                for t in scanner.tracks:
-                    scanner.finish_capture(t)
-            if "collect" in body or "learn" in body:
-                save_settings(collect=scanner.collect, learn=scanner.learn)
+                    setattr(sc, key, bool(body[key]))
+            if "collect" in body and not sc.collect:
+                for t in sc.tracks:
+                    sc.finish_capture(t)
+            if ("collect" in body or "learn" in body) and remember:
+                save_settings(collect=sc.collect, learn=sc.learn)
             if "slots" in body:
                 slots = clean_slots(body["slots"])
                 if slots is None:
@@ -661,20 +707,21 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                             "error": "Slots must be [x0, y0, x1, y1] each, as shares of the picture"
                         }
                     ), 400
-                scanner.slots = slots
+                sc.slots = slots
             if body.get("mode") in ("auto", "slots"):
-                scanner.mode = body["mode"]
+                sc.mode = body["mode"]
             if "slots" in body or "mode" in body:
-                scanner.forget_tracks()  # the cards on the table get their numbers afresh
-                save_settings(mode=scanner.mode, slots=scanner.slots)
+                sc.forget_tracks()  # the cards on the table get their numbers afresh
+                if remember:
+                    save_settings(mode=sc.mode, slots=sc.slots)
             outline = str(body.get("outline", ""))
             if len(outline) == 7 and outline[0] == "#":
                 try:
                     r, g, b = (int(outline[i : i + 2], 16) for i in (1, 3, 5))
-                    scanner.outline = (b, g, r)
+                    sc.outline = (b, g, r)
                 except ValueError:
                     pass
-        return state()
+        return state_for(sc)
 
     @app.get("/api/cameras")
     def cameras():
@@ -698,52 +745,65 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         return state()
 
     # --- Scanning with the camera of the phone or computer that has the page open ---
-    # The page picks "This device's camera", then sends its pictures to /api/frame with the
-    # token it made up. Only one device can be the scanner's camera at a time; picking it
-    # on another device takes over. When the page closes (or goes quiet for a while), the
-    # scanner goes back to this machine's own camera, if it has one.
-
-    def browser_source():
-        source = scanner._next_source or scanner.source
-        return source if isinstance(source, BrowserSource) else None
+    # The page picks "This device's camera" and gets a scanner of its own, fed by the
+    # pictures it sends to /api/frame. Every phone scans on its own table at the same
+    # time, and the machine's camera carries on untouched. The page names its scanner
+    # with the token it made up, in the X-Scanner header of everything it asks for.
+    # When the page closes (or goes quiet for ten minutes) its scanner is dropped.
 
     def browser_camera(body):
         token = str(body.get("token") or "")
         if not token:
             return jsonify({"error": "Missing camera token"}), 400
-        current = browser_source()
-        if current and current.token == token:
-            return state()
-        scanner.use_source(BrowserSource(token, str(body.get("name") or "")[:40] or None))
-        return state()
+        who = str(body.get("who") or "").strip()[:40]
+        sc = scanners.get(token)
+        if sc is None or sc.stopped:
+            source = BrowserSource(token, str(body.get("name") or "")[:40] or None)
+            sc = Scanner(scanner.matcher, scanner.vault, source, scanner.live)
+            sc.captures = scanner.captures    # one log of collected scans for everyone
+            sc.learn = scanner.learn
+            sc.on_stop = lambda gone: scanners.pop(token, None) if scanners.get(token) is gone else None
+            scanners[token] = sc
+            threading.Thread(target=sc.run, name=f"scanner-{token[:8]}", daemon=True).start()
+        if "who" in body:
+            sc.owner = who
+        return state_for(sc)
+
+    def browser_scanner():
+        token = request.headers.get("X-Scanner") or request.headers.get("X-Camera-Token") or ""
+        sc = scanners.get(token)
+        return sc if sc and not sc.stopped and isinstance(sc.source, BrowserSource) else None
 
     @app.post("/api/frame")
     def frame():
         """One picture from the device's camera (a JPEG, sent as the request body)."""
-        source = browser_source()
-        if source is None or source.token != request.headers.get("X-Camera-Token", ""):
-            return jsonify({"error": "This device isn't the scanner's camera anymore"}), 409
+        sc = browser_scanner()
+        if sc is None:
+            return jsonify({"error": "This device isn't scanning anymore: pick its camera again"}), 409
         img = cv2.imdecode(np.frombuffer(request.get_data(), np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             return jsonify({"error": "Couldn't read the picture"}), 400
-        source.push(img)
+        sc.source.push(img)
         return "", 204
 
     @app.post("/api/camera/release")
     def release_camera():
-        """The device stopped scanning: back to this machine's own camera."""
+        """The device stopped scanning: its scanner goes away (its cards are saved already)."""
         body = request.get_json(force=True, silent=True) or {}
-        source = browser_source()
-        if source and source.token == str(body.get("token") or ""):
-            scanner.use_source(scanner.local_camera() if scanner.local_camera else None)
+        sc = scanners.pop(str(body.get("token") or ""), None)
+        if sc is not None:
+            with sc.lock:
+                sc.forget_tracks()
+            sc.stop()
         return "", 204
 
     @app.post("/api/wrong")
     def wrong():
         """The scanner named the wrong card. Kept in the capture log to improve recognition."""
         body = request.get_json(force=True)
-        with scanner.lock:
-            t = scanner.track(body.get("track"))
+        sc = current()
+        with sc.lock:
+            t = sc.track(body.get("track"))
             if t and t.capture:
                 t.capture["verdict"] = "wrong"
         return state()
@@ -773,8 +833,9 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         card = lookup(scanner, body.get("id"))
         if card is None:
             return unknown_card()
-        with scanner.lock:
-            t = scanner.track(body.get("track"))
+        sc = current()
+        with sc.lock:
+            t = sc.track(body.get("track"))
             if t:
                 if t.capture:
                     t.capture.update(verdict="corrected", correct_id=card.id)
@@ -782,7 +843,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 # If the wrong card was already saved for it, take that one back out.
                 wrong = (
                     next(
-                        (e for e in reversed(scanner.session) if e["track"] == t.id),
+                        (e for e in reversed(sc.session) if e["track"] == t.id),
                         None,
                     )
                     if t.saved
@@ -791,10 +852,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 if wrong and remove_entry(
                     config.COLLECTION_CSV, wrong["id"], wrong["scanned_at"]
                 ):
-                    scanner.session.remove(wrong)
+                    sc.session.remove(wrong)
                 t.status, t.card, t.confidence, t.candidates = "locked", card, None, []
-            scanner._save(card, bool(body.get("foil")), t)
-        return state()
+            sc._save(card, bool(body.get("foil")), t)
+        return state_for(sc)
 
     # --- Train tab ---
 
@@ -868,36 +929,37 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         card = lookup(scanner, body.get("id"))
         if card is None:
             return unknown_card()
-        with scanner.lock:
-            scanner._save(
-                card, bool(body.get("foil")), scanner.track(body.get("track"))
-            )
-        return state()
+        sc = current()
+        with sc.lock:
+            sc._save(card, bool(body.get("foil")), sc.track(body.get("track")))
+        return state_for(sc)
 
     @app.post("/api/save_all")
     def save_all():
         """Save every recognized card on the table that isn't saved yet (not the unsure ones)."""
         foil = bool(request.get_json(force=True).get("foil"))
-        with scanner.lock:
-            for t in sorted(scanner.tracks, key=lambda t: t.number):
+        sc = current()
+        with sc.lock:
+            for t in sorted(sc.tracks, key=lambda t: t.number):
                 if t.status == "locked" and not t.saved:
-                    scanner._save(t.card, foil, t)
-        return state()
+                    sc._save(t.card, foil, t)
+        return state_for(sc)
 
     @app.post("/api/undo")
     def undo():
-        with scanner.lock:
-            last = scanner.session[-1] if scanner.session else None
+        sc = current()
+        with sc.lock:
+            last = sc.session[-1] if sc.session else None
             # The exact card saved last (an import may have added rows after it since).
             if last and (remove_entry(config.COLLECTION_CSV, last["id"], last.get("scanned_at", ""))
                          or (not last.get("scanned_at") and remove_last(config.COLLECTION_CSV))):
-                undone = scanner.session.pop()
-                t = scanner.track(undone["track"])
+                undone = sc.session.pop()
+                t = sc.track(undone["track"])
                 if t and t.card and t.card.id == undone["id"]:
                     t.saved = False
                     if t.capture and t.capture["verdict"] in ("saved", "auto-saved"):
                         t.capture["verdict"] = ""
-        return state()
+        return state_for(sc)
 
     @app.post("/api/photos")
     def photos():
@@ -1028,19 +1090,6 @@ def main():
     scanner = Scanner(matcher, vault, source, None if args.offline else Live())
     if isinstance(source, WaitingForCamera):
         source.on_found = scanner.use_source
-
-    def local_camera():
-        """This machine's own camera again, once a phone or computer stops scanning."""
-        if args.demo:
-            return DemoSource(args.demo)
-        try:
-            return startup_camera(args.camera)
-        except RuntimeError:
-            waiting = WaitingForCamera(args.camera)
-            waiting.on_found = scanner.use_source
-            return waiting
-
-    scanner.local_camera = local_camera
     scanner.restore(load_settings())
     scanner.lights = Lights()
     scanner.lights.start()  # shows the saved color (nothing happens without light bars)

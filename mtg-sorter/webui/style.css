@@ -610,6 +610,11 @@ a.brand { color: inherit; text-decoration: none; }
 .device-offer h3 { font-size: 1.35rem; letter-spacing: -.01em; }
 .device-offer .btn.big { padding: 13px 22px; font-size: 1rem; border-radius: 999px; gap: 9px; box-shadow: 0 8px 22px -8px color-mix(in oklab, var(--accent) 70%, transparent); }
 .device-offer .btn.big svg { width: 18px; height: 18px; }
+.device-offer .who { display: flex; align-items: center; gap: 8px; font-size: .9rem; color: var(--muted); }
+.device-offer .who input { width: 13ch; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line, rgba(127, 127, 127, .35)); background: var(--panel-solid); color: var(--text); font: inherit; }
+.device-offer .who input:focus { outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent); outline-offset: 1px; }
+.others-scanning { position: absolute; left: 14px; top: 56px; padding: 4px 10px; border-radius: 999px; font-size: .74rem; color: #fff;
+  background: rgba(10, 12, 15, .5); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, .1); }
 .linkish { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 @media (max-width: 560px) {
   .no-camera { position: static; }
