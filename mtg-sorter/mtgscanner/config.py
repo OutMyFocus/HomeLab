@@ -94,6 +94,10 @@ CAMERA_SIZE = (1920, 1080)
 # fitted. These are first guesses: find better ones on the Machine page (/machine) and
 # press Save there. Saved angles live in data/machine_settings.json and win over these, so
 # there's no need to edit this file on the Pi (which would stop automatic updates).
+# Seconds a servo keeps holding after a move before it lets go (0 = hold until told).
+# Holding against something it can't push past makes a servo hot.
+SERVO_HOLD_SECONDS = 1.5
+
 SERVOS = {
     # part: (PCA9685 channel, {position: angle})
     "pins":   (0, {"up": 90, "down": 62}),                   # stop pins: up stops the card

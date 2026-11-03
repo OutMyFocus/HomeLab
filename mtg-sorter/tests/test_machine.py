@@ -1,5 +1,7 @@
 """The Machine page's API, with fake hardware (no Pi needed)."""
 
+import time
+
 import pytest
 
 from app import Scanner, create_app
@@ -105,3 +107,21 @@ def test_lost_board_is_looked_for_again(machine):
     with pytest.raises(OSError):
         machine.set_angle(2, 90)
     assert machine._kit is None
+
+
+def test_servo_lets_go_after_a_move(machine, monkeypatch):
+    monkeypatch.setattr(config, "SERVO_HOLD_SECONDS", 0.05)
+    machine.set_angle(1, 70)
+    assert machine._kit.servo[1].angle == 70
+    time.sleep(0.2)
+    assert machine._kit.servo[1].angle is None
+    assert machine.angles[1] is None
+
+
+def test_a_new_move_keeps_holding(machine, monkeypatch):
+    monkeypatch.setattr(config, "SERVO_HOLD_SECONDS", 0.15)
+    machine.set_angle(1, 70)
+    time.sleep(0.1)
+    machine.set_angle(1, 80)      # restarts the hold
+    time.sleep(0.1)
+    assert machine._kit.servo[1].angle == 80
