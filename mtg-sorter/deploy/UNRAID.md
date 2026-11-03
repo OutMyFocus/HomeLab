@@ -99,9 +99,9 @@ From then on, scan on the server. The Pi keeps its own copy for the sorter; do t
 backup-and-restore the other way whenever the sorter should know about cards you added on
 the server (merging the two automatically is a later step).
 
-To add more cards to the database without the Pi, from the server's terminal:
-`docker exec mtg-sorter python build_db.py --sets dmu,one` (or `--all` for every set; that
-takes hours and you can stop and resume it).
+To make the server know every card: **Maintenance → Card database → Download every card**
+(30-60 minutes; scanning keeps working). From the server's terminal it's
+`docker exec mtg-sorter python build_db.py --all` (stop and resume it any time).
 
 ## How scanning from a phone works
 

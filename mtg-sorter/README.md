@@ -22,8 +22,10 @@ when something needs a look. What to do when something goes wrong:
    biggest 4-cornered shape shaped like a card.
 2. **Straighten it.** It stretches that shape into a flat, upright rectangle, as if
    the card had been scanned on a flatbed scanner.
-3. **Fingerprint it.** It shrinks the image and turns it into a 256-bit "perceptual
-   hash". Similar-looking images get similar fingerprints, even with blur or different lighting.
+3. **Fingerprint it.** It shrinks the image and turns it into two 256-bit "perceptual
+   hashes", one of the whole card and one of its art. Similar-looking images get similar
+   fingerprints, even with blur, glare or different lighting. The art one is what tells
+   apart two different cards with the same frame among the 108,000 printings there are.
 4. **Look it up.** `build_db.py` already downloaded every card image from
    [Scryfall](https://scryfall.com) and fingerprinted it. The scanner finds the closest
    fingerprint. That gives the card name, set, collector number and price.
@@ -41,21 +43,26 @@ pip install -r requirements.txt
 
 ## Build the card database
 
-Start small to try it out. This fetches two sets and takes under a minute:
+The scanner can only recognize cards that are in its database, so get every card. The
+easiest way is the **Download every card** button on the Maintenance page (it runs in the
+background, scanning keeps working, and new cards are recognized as they arrive). From a
+terminal it's:
+
+```bash
+python build_db.py --all       # every card: an 80 MB list, then 108,000 small pictures, 30-60 minutes
+```
+
+To try it out quickly, fetch a few sets, or just the sets of the cards in your collection:
 
 ```bash
 python build_db.py --sets dmu,one
+python build_db.py --mine
 ```
 
-Set codes are the 3-letter codes on Scryfall (for example `mkm`, `blb`, `fdn`, `cmm`). When
-you're happy, fetch every card. It takes a few hours, and you can stop it and run it again
-to resume:
-
-```bash
-python build_db.py --all
-```
-
-Run the same command again later to **refresh prices** for cards you already have.
+Set codes are the 3-letter codes on Scryfall (for example `mkm`, `blb`, `fdn`, `cmm`). You
+can stop any of these and run it again to resume. Run it again later to add new sets and
+**refresh prices** for cards you already have; cards fingerprinted by an older version get
+the newer fingerprint at the same time.
 
 ## Scan cards with the app (easiest)
 

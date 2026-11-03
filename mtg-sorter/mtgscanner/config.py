@@ -35,18 +35,21 @@ NO_PRICE_BIN = (0, "Unknown price")
 USD_TO_CAD = 1.38
 
 # --- Recognition tuning ---------------------------------------------------
-# Each card image turns into a 256-bit "fingerprint". The distance between two
-# fingerprints counts the bits that differ (0 means identical). Two unrelated
-# cards usually land around 128; a blurry webcam picture of the right card lands
-# around 30-60 from its stock picture.
-MAX_MATCH_DISTANCE = 90
+# Each card image turns into a fingerprint: 256 bits for the whole card plus 256 for its
+# art (vision.py). The distance between two fingerprints is the average number of bits
+# that differ in the two (0 means identical). Measured on every card Scryfall has
+# (108,000 printings) with simulated phone photos: the right card lands around 20-60,
+# while the closest *different* card is rarely under 75 and a thing that isn't a card at
+# all is 84 or more. So anything over this is "not a card I know":
+MAX_MATCH_DISTANCE = 78
 # The scanner also looks at the MARGIN: how many more bits away the closest card
 # with a *different* name is. A small margin means two cards look alike to it, so
 # the answer is shown as "unsure" (never auto-saved) with the other candidates.
-SURE_DISTANCE = 50     # this close, with this much margin, and the card is "sure"...
+SURE_DISTANCE = 60     # this close, with this much margin, and the card is "sure"...
 SURE_MARGIN = 10
-LIKELY_MARGIN = 4      # ...otherwise "likely" with at least this margin, else "unsure"
-CANDIDATE_DISTANCE = 100   # other cards no further than this are offered as alternatives
+LIKELY_DISTANCE = 75   # ...this close with at least LIKELY_MARGIN is "likely", else "unsure"
+LIKELY_MARGIN = 5
+CANDIDATE_DISTANCE = 90    # other cards no further than this are offered as alternatives
 # Scans learned in the Train tab come from your own camera, so they share its light
 # and background with every new scan, which can make unrelated cards look a little
 # alike. A match to a learned scan therefore has to be closer than this.

@@ -1170,7 +1170,7 @@ def main():
     if not matcher.card_count:
         print(
             "The card database is empty, so nothing can be recognized yet: restore a backup on the "
-            "Maintenance page, or run build_db.py (see README.md)."
+            "Maintenance page, or press Download every card there (see README.md)."
         )
     app = create_app(scanner)
     # The weekly Canadian price check and card database update (see mtgscanner/vault.py).
