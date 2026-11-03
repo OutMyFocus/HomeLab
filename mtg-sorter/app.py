@@ -180,8 +180,11 @@ class Scanner:
         """Switch cameras. The background thread makes the swap between frames."""
         with self.lock:
             pending, self._next_source = self._next_source, source
+            current = self.source
         if pending is not None:  # switched twice before the first one took over
             pending.release()
+        if isinstance(current, BrowserSource):
+            current.release()  # stops its wait for a picture, so the swap happens right away
 
     def restore(self, saved: dict):
         """Settings kept from last time (see SETTINGS_FILE)."""

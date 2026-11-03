@@ -161,12 +161,13 @@
     $("meta").classList.remove("down");
     $("metaText").textContent = `${s.db_count.toLocaleString()} cards` + (s.learned ? ` + ${s.learned.toLocaleString()} learned` : "") + ` · ${s.prices}`;
     if (device.on && s.camera && !(s.camera.browser && s.camera.index === "browser")) { stopDeviceCamera(false); toast("The scanner switched to another camera"); }
+    if (device.on && isPhone && s.status === "locked" && state?.status !== "locked") { try { navigator.vibrate?.(25); } catch (e) {} }
     const st = $("camStatus"); st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status;
     showCamera(s.status !== "waiting");
     $("noCamHint").textContent = s.on_pi
       ? "On the Pi: power off, reseat the ribbon cable (contacts facing the board at both ends), then power on. It keeps looking, so the picture appears by itself once a camera works."
-      : canUseDevice ? "Scan with the camera of the phone or computer you're holding: the cards land in the same collection."
-      : "To scan with this device's camera, open the app at an https address (through Tailscale, see deploy/UNRAID.md).";
+      : navigator.mediaDevices ? `To scan with this ${deviceWord}'s camera, open the app at its https address (through Tailscale: see deploy/UNRAID.md).`
+      : "This browser can't share its camera. Try Chrome, Safari or Firefox, at the app's https address.";
     document.querySelector(".camera").classList.toggle("locked", s.status === "locked");
     const slotsOn = s.mode === "slots";
     if (!slotsOn) editing = false;
@@ -299,7 +300,9 @@
   // ---------- this device's camera: the phone or computer scans with its own camera ----------
   // The browser opens the camera, and the page sends a picture to the scanner several
   // times a second. Browsers only allow the camera on https (or localhost).
-  const device = { on: false, stream: null, token: null, name: /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "Phone camera" : "Computer camera" };
+  const isPhone = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
+  const device = { on: false, stream: null, token: null, facing: "environment", torch: false, name: isPhone ? "Phone camera" : "Computer camera" };
+  const deviceWord = isPhone ? "phone" : "computer";
   const canUseDevice = !!navigator.mediaDevices?.getUserMedia && window.isSecureContext;
   const deviceHint = canUseDevice ? "" : !navigator.mediaDevices ? "This browser can't share its camera" : "Needs an https address (see Maintenance)";
   try { device.token = sessionStorage.getItem("mtg-cam-token"); } catch (e) {}
@@ -310,29 +313,71 @@
   const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: false });
   let sendT = null;
 
+  // Open the camera (the back one on a phone, by default) and show it in the picture box.
+  async function openDeviceStream() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+      video: { facingMode: { ideal: device.facing }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    device.stream?.getTracks().forEach(t => t.stop());
+    device.stream = stream;
+    const v = $("localCam"); v.srcObject = stream;
+    try { await v.play(); } catch (e) {}
+    const track = stream.getVideoTracks()[0];
+    track.onended = () => { if (device.on) { stopDeviceCamera(true); toast("The camera was closed"); } };
+    // The picture box takes the camera's shape (a phone held upright gives a tall picture).
+    fitDeviceBox();
+    v.onresize = fitDeviceBox;
+    // Tools that this camera supports: a light, and switching between cameras.
+    const caps = track.getCapabilities?.() || {};
+    $("torchBtn").hidden = !caps.torch;
+    $("torchBtn").setAttribute("aria-pressed", "false"); device.torch = false;
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+      $("flipCamBtn").hidden = cams.length < 2;
+    } catch (e) { $("flipCamBtn").hidden = true; }
+  }
+  function fitDeviceBox() {
+    const v = $("localCam"), box = document.querySelector(".camera");
+    if (device.on && v.videoWidth && v.videoHeight) box.style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`;
+    else box.style.aspectRatio = "";
+    if (state) drawOutlines(state);
+  }
+
   async function startDeviceCamera() {
     if (device.on) return true;
     if (!canUseDevice) { toast(deviceHint); return false; }
-    $("camStatus").textContent = "Opening this device's camera…";
+    $("camStatus").textContent = `Opening this ${deviceWord}'s camera…`;
     try {
-      device.stream = await navigator.mediaDevices.getUserMedia({ audio: false,
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      await openDeviceStream();
     } catch (e) {
-      toast(e.name === "NotAllowedError" ? "Camera permission was refused" : "Couldn't open this device's camera");
+      toast(e.name === "NotAllowedError" ? "Camera permission was refused" : `Couldn't open this ${deviceWord}'s camera`);
       return false;
     }
-    const v = $("localCam"); v.srcObject = device.stream;
-    try { await v.play(); } catch (e) {}
     device.on = true; camIndex = "browser";
+    document.querySelector(".camera").classList.add("device");
+    $("camDevice").hidden = false;
+    fitDeviceBox();
     try {
       render(await api("/api/camera", { index: "browser", name: device.name, token: device.token }));
     } catch (e) { stopDeviceCamera(false); toast("Couldn't hand the camera to the scanner"); return false; }
-    device.stream.getVideoTracks()[0].onended = () => { if (device.on) { stopDeviceCamera(true); toast("The camera was closed"); } };
     camsLoadedAt = Date.now(); loadCameras();   // the menu now shows this device as the camera
     sendFrame();
-    toast(`Scanning with this device's camera`);
+    toast(`Scanning with this ${deviceWord}'s camera`);
     return true;
   }
+
+  $("flipCamBtn").onclick = async () => {
+    device.facing = device.facing === "environment" ? "user" : "environment";
+    try { await openDeviceStream(); } catch (e) { toast("Couldn't switch camera"); }
+  };
+  $("torchBtn").onclick = async () => {
+    const track = device.stream?.getVideoTracks()[0]; if (!track) return;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: !device.torch }] });
+      device.torch = !device.torch;
+      $("torchBtn").setAttribute("aria-pressed", device.torch);
+    } catch (e) { toast("This camera's light can't be turned on from here"); }
+  };
+  $("stopDeviceBtn").onclick = () => { stopDeviceCamera(true); toast("Stopped scanning with this device"); loadCameras(); };
 
   // One picture after another: the next one goes as soon as the scanner took the last,
   // at most about 8 a second, and not while the page is hidden.
@@ -362,6 +407,9 @@
     device.on = false;
     device.stream?.getTracks().forEach(t => t.stop());
     device.stream = null; $("localCam").srcObject = null;
+    document.querySelector(".camera").classList.remove("device");
+    $("camDevice").hidden = true;
+    fitDeviceBox();
     if (was && tellScanner) api("/api/camera/release", { token: device.token }).catch(() => {});
     camShown = null; if (state) showCamera(state.status !== "waiting");
   }
@@ -375,8 +423,12 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && device.on) api("/api/camera", { index: "browser", name: device.name, token: device.token }).then(render).catch(() => {});
   });
-  $("useDeviceCamBtn").hidden = !canUseDevice;
+  $("noCamDevice").hidden = !canUseDevice;
+  $("noCamOther").hidden = canUseDevice;
+  $("deviceTitle").textContent = `Scan with this ${deviceWord}`;
+  $("useDeviceCamText").textContent = `Use this ${deviceWord}'s camera`;
   $("useDeviceCamBtn").onclick = startDeviceCamera;
+  $("usePhotosLink").onclick = () => showTab("photos");
 
   // Fast while watching the camera, slower on the other tabs or with no camera, and
   // not at all while the page is in the background (it saves the Pi's time).
@@ -611,7 +663,7 @@
     if (!cur) opts.unshift(`<option value="" disabled>${state?.status === "waiting" ? "No camera" : "Demo photos"}</option>`);
     if (!cams.length) opts.push('<option value="" disabled>No cameras found</option>');
     if (cur?.browser && !device.on) opts.push(`<option value="taken" disabled>${esc(cur.name)} (another device)</option>`);
-    if (navigator.mediaDevices) opts.push(`<option value="browser" ${canUseDevice ? "" : "disabled"}>This device's camera${deviceHint ? " · " + deviceHint : ""}</option>`);
+    if (navigator.mediaDevices) opts.push(`<option value="browser" ${canUseDevice ? "" : "disabled"}>This ${deviceWord}'s camera${deviceHint ? " · " + deviceHint : ""}</option>`);
     sel.innerHTML = opts.join("");
     sel.value = cur ? (cur.browser ? (device.on ? "browser" : "taken") : String(cur.index)) : "";
     camIndex = cur?.index;
