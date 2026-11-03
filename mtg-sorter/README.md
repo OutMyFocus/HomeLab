@@ -221,6 +221,29 @@ No webcam yet? Scan photos from your phone instead:
 python scan.py --image card1.jpg card2.jpg --save
 ```
 
+## Accounts: everyone has their own cards
+
+Settings, **Accounts**, Turn on accounts. You become the owner: an admin with every
+permission, and every card, deck, wishlist and trade already in the app stays yours
+(nothing is moved; a backup is saved in `data/backups/` first). From then on everyone
+logs in, and the login replaces the PIN lock.
+
+Add people under **People and permissions**. Each person gets their own collection,
+decks, wishlist, alerts, trade binder, games and value history (in `data/users/<username>/`),
+and scans from their phone land in their own collection. Pick a role or tick permissions:
+
+| Permission | Lets them |
+|---|---|
+| Scan | scan into their own collection with their phone's camera or photos |
+| Edit | change their own collection, decks, wishlist, trades and games |
+| Machine | run the sorting machine (Machine, Lights, Bins, the machine's camera, training); the machine saves into the cards of whoever is using it |
+| Admin | everything, plus Maintenance, price checks and the accounts |
+
+Member = Scan + Edit, Viewer = look only. The card database, prices, bins and the machine
+are shared. Requests from the Pi or server itself always count as the owner. Locked out?
+Delete `data/users.json` and the login is gone (everyone's cards stay; turn accounts on
+again to get them back).
+
 ## Commander Vault is part of the app now
 
 Everything Commander Vault did lives here: collection sources, decks with the deck builder,

@@ -114,6 +114,7 @@
 
   // A dot on Maintenance when the check-up finds something wrong.
   async function checkHealth() {
+    if (window.MTGMe && !window.MTGMe.perms.admin) return;   // Maintenance is for admins
     try {
       const r = await fetch("/api/health");
       if (!r.ok) return;
@@ -136,4 +137,30 @@
       if (!document.hidden) { checkHealth(); t = setInterval(checkHealth, 60000); }
     });
   }
+
+  // With accounts on (Settings): who's logged in, at the right of the header, and only the
+  // pages this account may open.
+  const NEEDS = { machine: "machine", lights: "machine", maintenance: "admin" };
+  fetch("/api/me").then(r => r.ok ? r.json() : null).then(s => {
+    if (!s || !s.accounts) return;
+    for (const [key, perm] of Object.entries(NEEDS))
+      if (!s.perms[perm]) document.querySelectorAll(`[data-key="${key}"]`).forEach(a => a.hidden = true);
+    window.MTGMe = s;
+    if (!s.perms.admin) for (const b of moreBtns) delete b.dataset.state;
+    if (!s.me) return;
+    const style = document.createElement("style");
+    style.textContent = `.who-chip{display:inline-flex;align-items:center;gap:7px;padding:4px 10px 4px 4px;border-radius:999px;
+      background:var(--raised);color:var(--text);text-decoration:none;font-size:.85rem;font-weight:600;white-space:nowrap;flex:none}
+      .who-chip:hover{background:var(--hover)}.who-chip i{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;
+      background:var(--accent);color:var(--on-accent);font-style:normal;font-size:.75rem}
+      @media (max-width:700px){.who-chip b{display:none}.who-chip{padding:4px}}
+      .site-nav [hidden],.tab-bar [hidden],.more-list [hidden]{display:none!important}`;
+    document.head.append(style);
+    const chip = document.createElement("a");
+    chip.className = "who-chip"; chip.href = "/settings"; chip.title = `Logged in as ${s.me.name}: your account`;
+    const initial = document.createElement("i"), name = document.createElement("b");
+    initial.textContent = (s.me.name || s.me.username).slice(0, 1).toUpperCase(); name.textContent = s.me.name;
+    chip.append(initial, name);
+    header.append(chip);
+  }).catch(() => {});
 })();
