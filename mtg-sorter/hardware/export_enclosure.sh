@@ -11,5 +11,13 @@ done
 # the bed walls starting on the bridge, and the feeder stand that sits on it
 openscad -q -o stl/bed_chute_bed_side_left_enclosure.stl  -D 'part="bed_side_left"'  -D 'wall_z0=111' bed_chute.scad
 openscad -q -o stl/bed_chute_bed_side_right_enclosure.stl -D 'part="bed_side_right"' -D 'wall_z0=111' bed_chute.scad
-openscad -q -o stl/feeder_stand_mid.stl -D 'part="stand"' -D 'stand_h=96' -D 'bed_cut=true' feeder_test.scad
+# the feeder (v2: spring-loaded roller arm, see feeder.scad) that stands on the bridge
+openscad -q --export-format binstl -o stl/feeder_stand_mid.stl -D 'part="stand"' feeder.scad
+for p in arm roller hopper gate weight; do
+  openscad -q --export-format binstl -o "stl/feeder_$p.stl" -D "part=\"$p\"" feeder.scad
+done
+# scan bed v2 (stop gate) and the door carriers with the servos turned inward
+for p in bed_plate stop_gate gate_bearing door_carrier door_carrier_left; do
+  openscad -q --export-format binstl -o "stl/bed_chute_$p.stl" -D "part=\"$p\"" bed_chute.scad
+done
 # the drawers themselves come from the Card Catalog 3MF (MakerWorld 3016550), not from here

@@ -19,12 +19,19 @@ A roller with rubber O-rings sits under the stack and pokes 0.8 mm up through th
 When it turns, it drags the bottom card forward under the **gate**: a plate whose bottom
 edge sits just over one card's thickness above the floor. One card fits under it, two don't.
 
+**v2 (feeder.scad):** the wheels now ride on a spring-loaded arm, the gate has a rubber pad
+and a thumb screw, and a weight sits on the stack. See [MECHANISM_V2.md](MECHANISM_V2.md);
+everything prints from `bambu/MTG_Sorter_Feeder_And_Bed_v2.3mf`. The STLs below are the v2
+parts. `feeder_test.scad` is the first test rig, kept for reference.
+
 | File | Print | Notes |
 |---|---|---|
-| `stl/feeder_stand_mid.stl` | as it opens, 15% infill | The box underneath, with the motor cradle. 96 mm, with its front cut away under the sloped bed: the height it needs on the enclosure's bridge |
-| `stl/feeder_hopper.stl` | as it opens, 15% infill | Floor and walls. Holds about 190 cards |
-| `stl/feeder_gate.stl` | flat | The adjustable gate |
-| `stl/feeder_roller.stl` | standing on its end, **100% infill** | Goes on the motor shaft. Two 3 mm O-rings (20 or 22 mm inside) poke about 2 mm up through the hopper floor. Also in `bambu/MTG_Sorter_Feeder_Stopper_Fix.3mf` with the pin rocker |
+| `stl/feeder_stand_mid.stl` | as it opens, brim | The box underneath. The arm hinges inside it on two M3 screws, and the motor sticks out through the right wall. 96 mm, with its front cut away under the sloped bed |
+| `stl/feeder_arm.stl` | as it opens | Carries the motor and roller. A rubber band on its tail pushes the wheels up |
+| `stl/feeder_roller.stl` | standing on its end, **100% infill** | Two wheels 30 mm apart, each with a 3 mm O-ring (20x3 or 22x3), 2.5 mm above the floor at the stop |
+| `stl/feeder_hopper.stl` | as it opens, brim | Floor and walls. Holds about 180 cards under the weight |
+| `stl/feeder_gate.stl` | flat | Gate with a groove for a rubber pad (cut 1.9 mm O-ring); an M3 thumb screw sets its height |
+| `stl/feeder_weight.stl` | flat | Sits on the stack; coins or nuts go in its pockets |
 
 ### Parts to buy
 
@@ -90,15 +97,16 @@ the tray tilted both ways, the trapdoors open, and the pins up and down.
 
 | File | How many | Colour | Notes |
 |---|---|---|---|
-| `bed_plate` | 1 | **white** | The surface the camera looks at |
+| `bed_plate` | 1 | **white** | The surface the camera looks at. v2: 2.5 mm guide rails with a funnel at the top, four slots for the stop teeth |
 | `bed_side_left_enclosure`, `bed_side_right_enclosure` | 1 each | black | lie them flat. Right one has the camera socket; both have the foot flange that screws to the enclosure's bridge |
 | `tower_post`, `camera_head` | 1 each | black | |
-| `pin_rocker` | 1 | any | The two stop pins, about 5 mm proud of the bed when up |
+| `stop_gate` | 1 | black | v2: four stop teeth, 8 mm tall, on a bar across the bed. Turned by the pin servo; replaces `pin_rocker` |
+| `gate_bearing` | 1 | black | v2: clips on the right end of the tilt bracket and holds the stop gate's right end |
 | `tilt_bracket` | 1 | black | |
 | `chute` | 1 | any | The tray |
 | `trapdoor`, `trapdoor_left` | 1 each | any | |
 | `hinge_pin` | 2 (+2 spare) | any | prints standing on its head; replaces the M3 hinge screws |
-| `door_carrier`, `door_carrier_left` | 1 each | any | servo mount + hinge lug in one; prints upside down (as exported). Replaces `trapdoor_mount` + `hinge_lug` |
+| `door_carrier`, `door_carrier_left` | 1 each | any | servo mount + hinge lug in one; prints upside down (as exported). v2: the servo body points inwards so it clears the bridge when the tray tilts |
 
 All print flat, as they open, with no supports. 15–20% infill is fine. The open frame and
 the three bins the bed first sat in (`frame_side`, `front_bar`, `bin`) are gone: the
