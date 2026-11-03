@@ -11,6 +11,11 @@ It has three parts, built in this order:
 | 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Stand designed ([`hardware/`](hardware/)) |
 | 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
 
+**Looking after it:** Maintenance, in the menu at the top of every page (under More on a
+phone), has the health check-up, updates, restart, backups and logs. It gets a yellow or red dot
+when something needs a look. What to do when something goes wrong:
+[MAINTENANCE.md](MAINTENANCE.md).
+
 ## How recognition works (plain English)
 
 1. **Find the card.** The code looks for edges in the camera picture and finds the
@@ -67,7 +72,7 @@ Then open **http://localhost:5000** in your browser. You get:
   auto-save on, each card is saved as soon as it's recognized. Spread the cards out so they
   don't overlap. Cards in a pile or cut off at the edge of the picture can't be read.
 - **This session**: every card you've saved, with totals per bin, **Undo last**, and
-  **Download CSV** to import into Commander Vault.
+  **Download CSV** for ManaBox or Moxfield.
 - **Photos** tab: drag in photos from your computer or phone (one card or a whole table per
   photo) and add the recognized cards to your collection.
 - **Camera picker** (top right of the camera view): switch between webcams by name. The app
@@ -78,9 +83,77 @@ Then open **http://localhost:5000** in your browser. You get:
   number, and a card the detector can't outline, like one sitting in a box, is still read from
   the slot. **Edit slots** to draw more or remove one (the red ×); slots are kept for next time.
 - **Wrong card?** (W): pick the right card by name. It's saved instead, and remembered for training.
+- **Other printing?** (P): right card, wrong set. Lists every printing of it (Scryfall's full
+  list when online) so you can pick the one you really have.
+- **Home** (`/`, the logo on every page): the whole machine at a glance. Whether the camera,
+  servo board, feeder and Pi are OK, the collection's value and a value chart, cards scanned in
+  the last 14 days, the newest cards, the most valuable ones, the biggest price changes and how
+  full each bin is. The scanner itself is at `/scan`.
+- **Page menu**: the same on every page. Links across the top on a computer (the rest under
+  **More** when the window is narrow, or press M on the scanner), and a bar along the bottom on
+  a phone. With no camera connected, the scanner says so and offers **Scan photos instead**.
+- **Collection** (in the menu, or **Whole collection**): everything you've ever saved.
+  Search and filter by color, rarity, set, bin, foil and price, sort it, and switch between
+  pictures and a list. Tap a card to change how many you have, mark it foil, pick a different
+  printing or delete it. **Add a card** adds one you didn't scan. It shows the total value,
+  how much it changed since you scanned the cards, a value-over-time chart, a breakdown by
+  color, rarity, bin and set, and your 10 most valuable cards. **Refresh prices** gets today's
+  Scryfall price for everything. **Export** downloads (or copies) the collection for Moxfield,
+  Archidekt, Deckbox, ManaBox, TCGplayer mass entry, a text list, or a
+  spreadsheet with prices, either all of it or just the cards your filters show.
+  **Sources and imports** (at the bottom) lists where your cards came from. Import a ManaBox
+  CSV as its own source, and remove a bad import with all its cards in one step. **For trade**
+  on a card puts it in your trade binder.
+- **Sets**: how complete each set in the card database is, with a ring per set. Open a set to
+  see every card in collector-number order, the missing ones greyed out, what they'd cost today,
+  and a count by rarity. **Add the missing cards to my wishlist** or **Copy the missing list**.
+  **Spare copies** lists what you have beyond a playset (or however many you keep), cheapest
+  printings first, with their value and a list to copy for a trade or a shop. Basic lands are
+  left out unless you ask.
+- **Decks**: paste a decklist from Moxfield, Archidekt, MTG Arena, MTGO or
+  any website. It shows how much of the deck you already own (any printing counts), which cards
+  are missing, what they'd cost at today's prices, and which bin your copies are in. **Copy the
+  missing cards** gives a shopping list for TCGplayer's Mass Entry or any shop. Save decks to
+  check them again later. **Add the missing cards to my wishlist** puts them on your wishlist.
+  A Commander deck (one with a `Commander` line, or 90+ cards) also gets the deck builder:
+  deck checks (size, singleton, color identity, lands, ramp, draw, removal), the mana curve,
+  Canadian prices, which cards you own, need to buy or proxy, suggestions that fit, a playtest
+  hand, a game guide when there is one, and **Copy shopping list**.
+- **Card lookup**: search every Commander card (the whole database is on the Pi, so it's
+  instant), by name, text, type, color or set and number. Filter by role (ramp, draw, removal…),
+  see a card's prices at each Canadian store, every printing, how many you own, which of your
+  decks it fits, and add it to a deck or your wishlist.
+- **Play**: a life counter for the table (life, poison, commander damage, dice and a coin),
+  and a games log with win rates by player and by deck.
+- **Wishlist**: cards you want, with the most you'd pay. It shows today's price, marks the ones
+  at or under your price, and the ones you've already scanned. When a wishlist card is scanned,
+  the scanner page shows a pink banner and chimes. **Copy the ones I still need** gives a
+  shopping list. Below it, the **trade binder**: cards you'd trade away, with their value, and
+  **Copy my trade binder** to send to a friend.
+- **History**: every scanning session (cards saved within half an hour of each other), with a
+  chart of cards scanned per day for the last 30 days, your biggest session and best find. Open a
+  session to see its cards, download just that session for ManaBox or Moxfield, or remove
+  a session you scanned by mistake.
+- **Settings**: the valuable-card alert (a banner and chime on the scanner page when a card
+  worth at least $20, or whatever you choose, is saved), the wishlist alert, the sound, and the
+  **PIN lock**. With a PIN set, other phones and laptops have to type it before they can see or
+  change anything, and they stay unlocked for 30 days. The Pi itself is never locked out.
+  Forgot the PIN? On the Pi, delete `data/pin.json`.
+  **Prices and card data** shows when the weekly Canadian price check and card database update
+  last ran, with buttons to run them now. **Bring in Commander Vault** imports everything from
+  a Commander Vault export file (see below).
+- **Bins**: choose what goes into each of the sorter's 4 bins, by price, color,
+  rarity, set and foil, without editing any code. Pick a ready-made setup (by price, by rarity,
+  by color, keep the good stuff, pull valuable then by color) or write your own rules. The
+  counts show how your collection would be split before you save. Saved in
+  `data/sort_rules.json`; **Back to the original price bins** undoes it.
 - **Train** tab: teach the scanner from your own scans (see below).
+- **Machine**: move each servo and the feeder by hand, and save the angles that work.
+- **Maintenance**: the Pi's health, updates, restart and shut down, Wi-Fi,
+  backups and logs. See [MAINTENANCE.md](MAINTENANCE.md).
 - **Customize** (the sliders button, or C): light/dark/black theme, accent color, bin colors,
-  layout, spacing, font and which details to show. Saved in your browser.
+  layout, spacing, font and which details to show. Saved in your browser, and used by every
+  page. Settings has a button for it too.
 
 No webcam yet? `python app.py --demo path/to/photos` pretends the photos are a camera.
 On the Raspberry Pi, run `python app.py --host 0.0.0.0` and open `http://<the Pi's address>:5000`
@@ -133,17 +206,24 @@ No webcam yet? Scan photos from your phone instead:
 python scan.py --image card1.jpg card2.jpg --save
 ```
 
-## Importing into Commander Vault
+## Commander Vault is part of the app now
 
-`data/collection.csv` uses ManaBox's column names (`Name`, `Quantity`, `Set code`,
-`Collector number`, `Foil`). Go to Commander Vault, open **Collection**, choose
-**Import a ManaBox CSV**, pick the file, and give the batch a name like "Scanner, Oct 21". Each
-import becomes its own source, so you can remove a bad session in one step. After
-importing, rename or delete `collection.csv` so the next session starts fresh.
+Everything Commander Vault did lives here: collection sources, decks with the deck builder,
+card lookup, the wishlist, the trade binder, games and the weekly Canadian prices. To move
+your Vault data over once, export it from the Vault, then on the **Settings** page under
+**Bring in Commander Vault** pick the file and press **Import**. Each Vault collection batch
+becomes its own source on the Collection page, decks keep their guides, and the latest
+prices come along so you don't wait for the first weekly check. Anything already brought in is
+skipped, so importing twice is safe.
+
+Cards come in through `data/collection.csv`, which uses ManaBox's column names (`Name`,
+`Quantity`, `Set code`, `Collector number`, `Foil`, plus `Source`). ManaBox and Moxfield can
+read it directly.
 
 ## Price bins (CAD)
 
-Edit `PRICE_BINS` in `mtgscanner/config.py`. Defaults:
+Set the bins on the **Bins** page. Until you save rules there, the bins are `PRICE_BINS`
+in `mtgscanner/config.py`. Defaults:
 
 | Bin | Cards |
 |---|---|
@@ -152,16 +232,18 @@ Edit `PRICE_BINS` in `mtgscanner/config.py`. Defaults:
 | 1 | Bulk, under $1 |
 | 0 | No price known (most tokens) |
 
-### Prices from Commander Vault
+### Canadian prices
 
-The scanner can use the same weekly Canadian Near Mint prices that Commander Vault
-collects (Face to Face Games, then 401 Games, The Mythic Store and Hobbiesville). In the
-Vault, open **Collection** and press **Save prices for scanner**. Put the saved
-`vault_prices.json` in this folder's `data/` folder, and the scanner picks it up automatically.
-Prices update weekly, so save a fresh copy now and then. It
-uses the exact printing's price when the Vault has one. Cards the Vault hasn't priced fall
+Once a week the app checks the Near Mint price of every card in your collection, decks,
+wishlist and trade binder at Face to Face Games (the main price), then 401 Games, The Mythic
+Store and Hobbiesville, and saves them in `data/vault_prices.json`. Valuable cards (foils,
+special numbers, $1.50 and up) also get their exact printing's price. The same week it
+updates the Commander card database (`data/carddb.json`, from Scryfall's bulk data) that Card
+lookup and the deck builder use. **Settings, Prices and card data** runs either one now. Cards
+the stores haven't priced fall
 back to Scryfall's USD price, converted with the Bank of Canada's exchange rate for the
-day. The rate is fetched once a day and saved in `data/usd_cad.json`. Offline, it uses the
+day. While the app runs it also checks Scryfall for today's price of each card it
+recognizes (start it with `--offline` to skip that and use the database's prices). The rate is fetched once a day and saved in `data/usd_cad.json`. Offline, it uses the
 last saved rate, or `USD_TO_CAD` in `config.py`. The `data/` folder is never committed, so
 your prices stay on your computer.
 
@@ -217,3 +299,20 @@ The usual design people build:
 When you get there, the code change is small. Where `scan.py` saves a card, it will also
 call a `send_to_bin(bin_number)` function that moves the servos with the
 [`gpiozero`](https://gpiozero.readthedocs.io) library.
+
+### RGB light bars (optional)
+
+The app can drive 5 V addressable RGB bars (WS2812, sold as "3-pin ARGB" for PC cases)
+from the **Lights** page (`/lights`): on/off, color, brightness, effects (solid, breathe,
+rainbow, sweep), and a short flash when a card is saved, valuable or on your wishlist,
+unsure, or not recognized. The page shows a live preview, so it works on a PC too.
+
+Wiring, in short (the Lights page has the full notes):
+
+- **5V** and **GND** from the bars to the 5 V supply. **Never 12 V.**
+- **Data** to **GPIO10, pin 19** on the Pi (the SPI MOSI pin). The bars and the Pi share a ground.
+- SPI has to be on: press **Turn SPI on** on the Lights page (or run `deploy/setup.sh`), then reboot.
+
+Full white is about 60 mA per LED, so the app dims the bars to stay under 1 A
+(`LIGHTS_MAX_AMPS` in `mtgscanner/config.py`) and starts at 30% brightness. The Pi 5 can't
+use the usual `rpi_ws281x` library, so the colors go out over SPI with no extra package.

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MTG Sorter · Machine</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <meta name="color-scheme" content="dark light">
+  <script src="/static/look.js"></script>
+  <style>
+    /* Test page for the servos and feeder. Uses the scanner's colours from style.css. */
+    .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 20px; }
+    .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .head h1 { margin: 0; font-size: 1.5rem; letter-spacing: -.01em; }
+    .panel { padding: 18px; display: grid; gap: 14px; }
+    .panel h2 { margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 10px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); flex: none; }
+    .dot.ok { background: var(--good); }
+    .err { color: var(--warn); font-size: .92rem; margin: 0; }
+    .part { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid var(--line); }
+    .part:first-of-type { border-top: 0; padding-top: 0; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .name { font-weight: 650; }
+    .sub { color: var(--muted); font-size: .9rem; }
+    .slider { display: flex; gap: 12px; align-items: center; }
+    .slider input { flex: 1; min-width: 0; accent-color: var(--accent); }
+    .slider output { font: 600 .95rem var(--mono); width: 4ch; text-align: right; }
+    .btn { padding: 9px 14px; cursor: pointer; border-radius: calc(var(--radius) * .6); text-decoration: none; color: inherit; }
+    .btn.small { padding: 5px 10px; font-size: .88rem; }
+    .changed { color: var(--accent); }
+    label.inline { display: flex; gap: 8px; align-items: center; }
+    label.inline input[type=number] { width: 5.5em; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); }
+    #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--panel-solid);
+             border: 1px solid var(--line-strong); padding: 10px 16px; border-radius: 12px; max-width: calc(100% - 32px); }
+  </style>
+</head>
+<body>
+<svg width="0" height="0" style="position: absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24">
+    <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+    <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+    <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+  </symbol>
+</svg>
+<header class="top">
+  <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Sorter</span></div>
+</header>
+<script src="/static/shell.js"></script>
+<div class="wrap">
+  <div class="head">
+    <h1>Machine</h1>
+  </div>
+
+  <section class="panel" id="servoPanel">
+    <h2><span class="dot" id="servoDot"></span>Servos</h2>
+    <p class="err" id="servoErr" hidden></p>
+    <p class="sub">The buttons go to each part's saved angles. To change one, move the slider until the part sits right,
+      then press that position under <b>Save the slider's angle as</b>. It's kept on the Pi, so there's no file to edit.
+      Centre each servo at 90 before pressing its horn on.</p>
+    <div id="parts"></div>
+    <div class="row">
+      <button class="btn" id="centreAll">Centre all at 90</button>
+      <button class="btn ghost" id="relaxAll">Relax all</button>
+      <button class="btn ghost" id="resetAll" hidden>Back to the original angles</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="dot" id="feedDot"></span>Feeder</h2>
+    <p class="err" id="feedErr" hidden></p>
+    <div class="row">
+      <label class="inline">Seconds <input type="number" id="feedSecs" min="0.05" max="5" step="0.05"></label>
+      <label class="inline">Speed <input type="number" id="feedSpeed" min="0.1" max="1" step="0.1"></label>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="feedFwd">Feed one card</button>
+      <button class="btn" id="feedBack">Run backwards</button>
+      <button class="btn ghost" id="feedStop">Stop</button>
+      <button class="btn ghost" id="feedSave">Save as the usual push</button>
+    </div>
+  </section>
+</div>
+<div id="toast" hidden></div>
+
+<script>
+const NAMES = { pins: "Stop pins", chute: "Chute tilt", door_r: "Right trapdoor", door_l: "Left trapdoor" };
+const $ = (id) => document.getElementById(id);
+let toastTimer;
+function toast(text) {
+  const t = $("toast"); t.textContent = text; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3500);
+}
+async function call(path, body) {
+  const res = await fetch(path, { method: body ? "POST" : "GET",
+    headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json();
+  if (data.error) { toast(data.error); return null; }
+  show(data); return data;
+}
+function status(dot, err, part) {
+  $(dot).classList.toggle("ok", part.ok);
+  $(err).hidden = part.ok; $(err).textContent = part.error || "";
+}
+let built = false;
+function show(s) {
+  status("servoDot", "servoErr", s.servos);
+  status("feedDot", "feedErr", s.feeder);
+  if (!built) { build(s); built = true; }
+  for (const [part, p] of Object.entries(s.parts)) {
+    $("pos-" + part).innerHTML = Object.entries(p.positions).map(([pos, a]) =>
+      `<button class="btn" data-part="${part}" data-pos="${pos}">${pos} <span class="sub ${a !== p.factory[pos] ? "changed" : ""}"
+        title="${a !== p.factory[pos] ? "Saved on this Pi (was " + p.factory[pos] + "°)" : ""}">${a}°</span></button>`).join("");
+    if (p.angle == null) continue;
+    if ($("r-" + part) === document.activeElement) continue;   // don't yank a slider you're dragging
+    $("r-" + part).value = p.angle; $("o-" + part).value = Math.round(p.angle);
+  }
+  $("resetAll").hidden = !s.customized;
+}
+function build(s) {
+  const box = $("parts");
+  const parts = Object.entries(s.parts).sort((a, b) => a[1].channel - b[1].channel);
+  for (const [part, p] of parts) {
+    const el = document.createElement("div"); el.className = "part";
+    el.innerHTML = `<div class="row"><span class="name">${NAMES[part] || part}</span><span class="sub">channel ${p.channel}</span></div>
+      <div class="row" id="pos-${part}"></div>
+      <div class="slider"><input type="range" min="0" max="180" step="1" value="90" id="r-${part}" aria-label="${NAMES[part]} angle">
+      <output id="o-${part}">90</output></div>
+      <div class="row"><span class="sub">Save the slider's angle as:</span>${Object.keys(p.positions).map((pos) =>
+        `<button class="btn ghost small" data-save="${part}" data-pos="${pos}">${pos}</button>`).join("")}</div>`;
+    box.append(el);
+    const range = el.querySelector("input");
+    // The servo follows while you drag: at most one move in flight, always ending on where you let go.
+    let busy = false, pending = null;
+    const send = async (angle) => {
+      if (busy) { pending = angle; return; }
+      busy = true;
+      try { await call("/api/machine/move", { channel: p.channel, angle }); } finally { busy = false; }
+      if (pending != null) { const next = pending; pending = null; send(next); }
+    };
+    range.addEventListener("input", () => { $("o-" + part).value = range.value; send(+range.value); });
+    range.addEventListener("change", () => send(+range.value));
+  }
+  box.addEventListener("click", async (e) => {
+    const b = e.target.closest("button[data-part]");
+    if (b) call("/api/machine/move", { part: b.dataset.part, position: b.dataset.pos });
+    const sv = e.target.closest("button[data-save]");
+    if (sv) {
+      const part = sv.dataset.save, angle = +$("r-" + part).value;
+      if (await call("/api/machine/save", { part, position: sv.dataset.pos, angle }))
+        toast(`Saved: ${NAMES[part] || part} "${sv.dataset.pos}" is now ${angle}°`);
+    }
+  });
+  $("centreAll").onclick = async () => {
+    for (const p of Object.values(s.parts)) await call("/api/machine/move", { channel: p.channel, angle: 90 });
+  };
+  $("feedSecs").value = s.feeder_defaults.seconds;
+  $("feedSpeed").value = s.feeder_defaults.speed;
+}
+$("relaxAll").onclick = () => call("/api/machine/relax", {});
+$("resetAll").onclick = async () => {
+  if (confirm("Forget the angles and feeder settings saved here, and go back to the ones in config.py?")
+      && await call("/api/machine/reset", {})) toast("Back to the original angles.");
+};
+$("feedSave").onclick = async () => {
+  if (await call("/api/machine/save", { seconds: +$("feedSecs").value, speed: +$("feedSpeed").value }))
+    toast("Saved. The feeder uses these from now on.");
+};
+const feed = (backward) => call("/api/machine/feed",
+  { seconds: +$("feedSecs").value, speed: +$("feedSpeed").value, backward });
+$("feedFwd").onclick = () => feed(false);
+$("feedBack").onclick = () => feed(true);
+$("feedStop").onclick = () => call("/api/machine/stop", {});
+try {   // same theme and accent as the scanner page (its Customize panel)
+  const look = JSON.parse(localStorage.getItem("mtg-scanner-look") || "{}");
+  if (look.theme) document.documentElement.dataset.theme = look.theme;
+  if (look.accent) document.documentElement.style.setProperty("--accent", look.accent);
+} catch (e) {}
+call("/api/machine");
+</script>
+</body>
+</html>

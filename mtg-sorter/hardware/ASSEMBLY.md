@@ -211,6 +211,11 @@ ssh <your username>@mtgsorter.local
 Type `yes` the first time, then your password. If `mtgsorter.local` isn't found, look up the
 Pi's address in your router's device list and use that instead.
 
+> **Shortcut for steps 3 to 7 and the updates below:** one command does all of it, and can be
+> run again any time to repair things:
+> `curl -fsSL https://raw.githubusercontent.com/OutMyFocus/HomeLab/main/mtg-sorter/deploy/setup.sh | bash`
+> (see [MAINTENANCE.md](../MAINTENANCE.md)). The steps below are what it does, by hand.
+
 **3. Update and install system packages** (on the Pi)
 
 ```bash
@@ -262,7 +267,8 @@ Once the camera is connected, drop `--demo ~/photos` and the app uses it. On you
 **http://mtgsorter.local:5000**. Press Ctrl+C in the terminal to stop it.
 
 **Getting updates later:** to run the app on boot and keep it updated from GitHub by itself,
-follow steps 1 and 1b of [`deploy/REMOTE_ACCESS.md`](../deploy/REMOTE_ACCESS.md). By hand, it's
+run `bash ~/HomeLab/mtg-sorter/deploy/setup.sh`, or follow steps 1 and 1b of
+[`deploy/REMOTE_ACCESS.md`](../deploy/REMOTE_ACCESS.md). By hand, it's
 `cd ~/HomeLab && git pull`, then `pip install -r mtg-sorter/requirements.txt` inside the virtual
 environment.
 
@@ -467,7 +473,9 @@ print first are in [`PRINTING.md`](PRINTING.md). The same steps with a picture e
    3MF. Slide a toploader with a card into each pocket from the top, clip the bar on.
 5. **Fascia and back:** join `fascia_l` + `fascia_m` + `fascia_r` with splices glued in
    the pockets on the inside face (CA glue, the pockets are too shallow for screws), and
-   glue the `light_bar` across the top of the seams, over the three slots. Join
+   glue the `light_bar` across the top of the seams, over the three slots. Stick a 14-LED
+   piece of the WS2812B strip on the back of the light bar, LEDs facing the slots, with its
+   input end (the arrows point away from it) on the side the wires will run to. Join
    `back_l` + `back_r` the same way.
 
 ## 2. Assembly, bottom up

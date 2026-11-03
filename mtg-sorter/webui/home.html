@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>MTG Sorter</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/home.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><circle cx="12" cy="12.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7" /></symbol>
+    <symbol id="i-photos" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7" /><circle cx="9" cy="10" r="1.8" fill="currentColor" /><path d="m4 17 5-4.5 4 3.5 3-2.5 4.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></symbol>
+    <symbol id="i-feed" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M12 7.5v4.5l3 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><path d="M19.5 4.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-deck" viewBox="0 0 24 24"><rect x="9" y="4" width="10" height="14" rx="1.8" transform="rotate(12 14 11)" fill="none" stroke="currentColor" stroke-width="1.6" /><rect x="5" y="5" width="10" height="14" rx="1.8" transform="rotate(-8 10 12)" fill="none" stroke="currentColor" stroke-width="1.6" /></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M12 8v4.5l3 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></symbol>
+    <symbol id="i-bins" viewBox="0 0 24 24"><path d="M3.5 9h17l-1.5 10.5h-14L3.5 9ZM8 9V5.5h8V9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><path d="M12 12v4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></symbol>
+    <symbol id="i-sets" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7" /><rect x="13" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7" /><rect x="4" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M13 16.5h7M16.5 13v7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></symbol>
+    <symbol id="i-stack" viewBox="0 0 24 24"><rect x="7" y="3.5" width="12" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M5 7v11.5A2.5 2.5 0 0 0 7.5 21H15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Sorter</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+
+  <main class="home">
+    <!-- hello, and what to do next -->
+    <section class="hero panel">
+      <div class="hero-copy">
+        <h1 id="hello">Hello</h1>
+        <p id="heroLine">Checking on the sorter…</p>
+      </div>
+      <div class="hero-acts">
+        <a class="btn primary" href="/scan" id="scanBtn"><svg><use href="#i-camera" /></svg>Start scanning</a>
+        <a class="btn" href="/scan#photos"><svg><use href="#i-photos" /></svg>Scan photos</a>
+      </div>
+    </section>
+
+    <!-- the parts of the machine -->
+    <section class="status-row" aria-label="Machine status">
+      <a class="status panel" href="/scan" id="stCamera"><span class="ico"><svg><use href="#i-camera" /></svg></span><span class="txt"><b>Camera</b><small>…</small></span><i class="dot"></i></a>
+      <a class="status panel" href="/machine" id="stServos"><span class="ico"><svg><use href="#i-chip" /></svg></span><span class="txt"><b>Servo board</b><small>…</small></span><i class="dot"></i></a>
+      <a class="status panel" href="/machine" id="stFeeder"><span class="ico"><svg><use href="#i-feed" /></svg></span><span class="txt"><b>Feeder</b><small>…</small></span><i class="dot"></i></a>
+      <a class="status panel" href="/maintenance" id="stHealth"><span class="ico"><svg><use href="#i-pulse" /></svg></span><span class="txt"><b>Pi health</b><small>…</small></span><i class="dot"></i></a>
+    </section>
+
+    <!-- the collection in numbers -->
+    <section class="tiles">
+      <a class="stat panel link" href="/collection"><span class="label">Collection value</span><b id="kValue">$0.00</b><small class="sub" id="kValueSub"></small></a>
+      <a class="stat panel link" href="/collection"><span class="label">Cards</span><b id="kCards">0</b><small class="sub" id="kCardsSub"></small></a>
+      <a class="stat panel link" href="/history"><span class="label">Last 7 days</span><b id="kWeek">0</b><small class="sub" id="kWeekSub"></small></a>
+      <a class="stat panel link" href="/scan"><span class="label">This session</span><b id="kSession">0</b><small class="sub" id="kSessionSub"></small></a>
+    </section>
+
+    <section class="home-grid">
+      <div class="panel chart-panel">
+        <div class="panel-head"><h3>Collection value</h3><a class="more-link" href="/collection">Collection<svg><use href="#i-arrow" /></svg></a></div>
+        <div class="line-chart" id="valueChart"></div>
+      </div>
+      <div class="panel chart-panel">
+        <div class="panel-head"><h3>Cards scanned, last 14 days</h3><a class="more-link" href="/history">History<svg><use href="#i-arrow" /></svg></a></div>
+        <div class="day-bars" id="dayBars"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>Just added</h3><a class="more-link" href="/collection">Everything<svg><use href="#i-arrow" /></svg></a></div>
+      <div class="strip" id="recent"></div>
+    </section>
+
+    <section class="home-grid three">
+      <div class="panel">
+        <div class="panel-head"><h3>Most valuable</h3></div>
+        <div class="rank" id="topList"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Price changes</h3><span class="sub">since you scanned them</span></div>
+        <div class="rank" id="moverList"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Bins</h3><a class="more-link" href="/bins">Rules<svg><use href="#i-arrow" /></svg></a></div>
+        <div class="bin-rows" id="binRows"></div>
+      </div>
+    </section>
+
+    <section class="shortcuts" aria-label="More">
+      <a class="panel shortcut" href="/decks"><svg><use href="#i-deck" /></svg><span><b>Decks</b><small id="scDecks">Check a decklist against your cards</small></span></a>
+      <a class="panel shortcut" href="/wishlist"><svg><use href="#i-heart" /></svg><span><b>Wishlist</b><small id="scWish">Cards you want</small></span></a>
+      <a class="panel shortcut" href="/history"><svg><use href="#i-clock" /></svg><span><b>History</b><small id="scHistory">Past scanning sessions</small></span></a>
+      <a class="panel shortcut" href="/sets"><svg><use href="#i-sets" /></svg><span><b>Sets</b><small>How complete each set is, and spares to trade</small></span></a>
+    </section>
+  </main>
+
+  <script src="/static/common.js"></script>
+  <script src="/static/home.js"></script>
+</body>
+</html>

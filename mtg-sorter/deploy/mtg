@@ -1,0 +1,79 @@
+#!/bin/bash
+# `mtg`: looking after the sorter from an SSH session, in one word each.
+# Installed to /usr/local/bin/mtg by install.sh. Type `mtg` on its own for the list.
+APP=/home/nic/HomeLab/mtg-sorter
+URL=http://127.0.0.1:5000
+ADMIN=/usr/local/sbin/mtg-sorter-admin
+
+bold() { printf '\033[1m%s\033[0m\n' "$*"; }
+say()  { printf '  %-14s %s\n' "$1" "$2"; }
+
+case "${1:-help}" in
+    status|doctor|check)
+        bold "MTG sorter on $(hostname)"
+        if systemctl is-active -q mtg-sorter; then say "App" "running"; else say "App" "NOT running (try: mtg restart)"; fi
+        say "Version" "$(git -C "$APP/.." log -1 --format='%h, %cd' --date=format:'%b %-d %H:%M' 2>/dev/null)"
+        say "Updates" "$(systemctl is-enabled mtg-sorter-update.timer 2>/dev/null | sed 's/enabled/automatic/;s/disabled/off (mtg autoupdate on)/')"
+        say "Address" "http://$(hostname -I | awk '{print $1}'):5000"
+        echo
+        # The app's own check-up, the same list as the Maintenance page.
+        if json=$(curl -fsS -m 15 "$URL/api/system" 2>/dev/null); then
+            python3 - "$json" <<'PY'
+import json, sys
+mark = {"ok": "\033[32m ok \033[0m", "warn": "\033[33mwarn\033[0m", "bad": "\033[31mBAD \033[0m", "off": " -- "}
+for c in json.loads(sys.argv[1])["checks"]:
+    print(f"  [{mark[c['state']]}] {c['label']}: {c['summary']}")
+    if c["fix"] and c["state"] in ("warn", "bad"):
+        print(f"         -> {c['fix']}")
+PY
+        else
+            echo "  The app isn't answering, so here are the basics:"
+            say "Power" "$(vcgencmd get_throttled 2>/dev/null) (0x0 is good; anything else: weak power supply)"
+            say "Temperature" "$(vcgencmd measure_temp 2>/dev/null | cut -d= -f2)"
+            say "Disk free" "$(df -h --output=avail "$APP" | tail -1 | tr -d ' ')"
+            echo "  Last lines from the app:"
+            journalctl -u mtg-sorter -n 15 --no-pager 2>/dev/null | sed 's/^/    /'
+        fi ;;
+    logs)
+        case "${2:-app}" in
+            app)     journalctl -u mtg-sorter -n 100 -f ;;
+            updates) journalctl -u mtg-sorter-update -n 50 --no-pager ;;
+            system)  journalctl -b -p warning -n 100 --no-pager ;;
+            *)       echo "mtg logs [app|updates|system]" ;;
+        esac ;;
+    restart)    sudo "$ADMIN" restart && echo "Restarting the app. Give it 10 seconds." ;;
+    update)
+        sudo "$ADMIN" update
+        echo "Checking GitHub... (mtg logs updates shows what happened)"
+        sleep 3; journalctl -u mtg-sorter-update -n 8 --no-pager -o cat ;;
+    fix-updates) sudo "$ADMIN" update-force && echo "Setting aside edits made on the Pi and updating. See: mtg logs updates" ;;
+    autoupdate) sudo "$ADMIN" autoupdate "${2:-on}" ;;
+    reboot)     sudo "$ADMIN" reboot ;;
+    off|poweroff|shutdown) echo "Shutting down. Unplug once the green light stops flashing."; sudo "$ADMIN" poweroff ;;
+    backup)
+        out=~/mtg-sorter-backup-$(date +%Y-%m-%d-%H%M).zip
+        if curl -fsS -m 300 -o "$out" "$URL/api/system/backup"; then
+            echo "Saved $out ($(du -h "$out" | cut -f1))."
+            echo "Copy it to your PC with:  scp nic@$(hostname).local:$out ."
+        else
+            echo "The app isn't answering. Copying the data folder instead."
+            tar czf "${out%.zip}.tar.gz" -C "$APP" data && echo "Saved ${out%.zip}.tar.gz"
+        fi ;;
+    repair|setup) bash "$APP/deploy/setup.sh" ;;
+    camera)     rpicam-hello --list-cameras ;;
+    i2c)        i2cdetect -y 1 && echo "The servo board shows up as 40 (and 70)." ;;
+    *)
+        bold "mtg: look after the MTG sorter"
+        say "mtg status"     "is everything OK? (same check-up as the Maintenance page)"
+        say "mtg logs"       "the app's messages, live (Ctrl+C to stop). Also: mtg logs updates / system"
+        say "mtg restart"    "restart the app"
+        say "mtg update"     "get the latest version from GitHub now"
+        say "mtg fix-updates" "updates stuck? set aside edits made on the Pi and update"
+        say "mtg autoupdate" "on / off"
+        say "mtg backup"     "save your collection, card database and settings to a zip"
+        say "mtg repair"     "re-run the setup: fixes packages, services and settings"
+        say "mtg camera"     "list the cameras the Pi can see"
+        say "mtg i2c"        "check the Pi can see the servo board"
+        say "mtg reboot"     "restart the Pi"
+        say "mtg off"        "shut down safely before unplugging" ;;
+esac

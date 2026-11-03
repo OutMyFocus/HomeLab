@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MTG Sorter · Lights</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/decks.css">
+  <link rel="stylesheet" href="/static/extras.css">
+  <script src="/static/look.js"></script>
+  <style>
+    /* The light bars page. Builds on style.css and extras.css. */
+    .status-line { display: flex; align-items: center; gap: 10px; margin: 0; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+    .dot.ok { background: var(--good); }
+    .dot.off { background: var(--warn); }
+    .strip { display: flex; gap: 3px; width: 100%; padding: 12px; border-radius: calc(var(--radius) * .6); background: #050506;
+      border: 1px solid var(--line); overflow: hidden; }
+    .strip i { flex: 1; min-width: 2px; height: 14px; border-radius: 3px; background: #000; transition: background .05s; }
+    .strip.lit i { box-shadow: 0 0 10px var(--c, transparent); }
+    .setting { max-width: 860px; width: 100%; box-sizing: border-box; }
+    .setting .seg { width: min(460px, 100%); }
+    .slide { display: flex; align-items: center; gap: 12px; width: min(460px, 100%); }
+    .slide span:first-child { width: 6.5em; flex: none; }
+    .slide input { flex: 1; min-width: 0; accent-color: var(--accent); }
+    .slide output { font: 600 .92rem var(--mono); width: 4.5ch; text-align: right; }
+    .swatches { width: min(460px, 100%); }
+    input[type=color] { width: 44px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer; }
+    .events { display: grid; gap: 8px; width: 100%; }
+    .event { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+    .event .btn { padding: 6px 12px; font-size: .85rem; }
+    .field.count { width: 6em; }
+    .wiring { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 70ch; }
+    .warnbox { border-left: 3px solid var(--warn); padding: 6px 12px; background: color-mix(in oklab, var(--warn) 8%, transparent); border-radius: 6px; }
+    @media (max-width: 560px) { .event { gap: 8px; } .event .btn { padding: 5px 9px; } }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Sorter</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+
+  <main class="coll">
+    <section class="panel setting">
+      <h3>Light bars</h3>
+      <p class="status-line"><span class="dot" id="dot"></span><span id="status">Checking…</span></p>
+      <div class="row" id="spiRow" hidden>
+        <button class="btn primary" id="spiOn">Turn SPI on</button>
+        <button class="btn ghost" id="reboot" hidden>Reboot the Pi now</button>
+      </div>
+      <div class="strip" id="strip" aria-label="Preview of the light bars"></div>
+      <p class="sub" id="power"></p>
+      <label class="switch"><input type="checkbox" id="on"><span></span>Lights on</label>
+    </section>
+
+    <section class="panel setting">
+      <h3>Color and effect</h3>
+      <div class="swatches" id="swatches"></div>
+      <div class="row"><input type="color" id="color" aria-label="Pick any color"><span class="sub">Or pick any color</span></div>
+      <div class="seg" id="effects"></div>
+      <label class="slide"><span>Brightness</span><input type="range" id="brightness" min="0" max="100" step="1"><output id="bOut"></output></label>
+      <label class="slide"><span>Speed</span><input type="range" id="speed" min="1" max="100" step="1"><output id="sOut"></output></label>
+    </section>
+
+    <section class="panel setting">
+      <h3>Flash while scanning</h3>
+      <p class="sub">The bars flash a color for a moment, then go back to the color above. If the bars light the scan bed,
+        colored flashes tint the camera's picture: keep them outside the camera's view, or turn this off.</p>
+      <label class="switch"><input type="checkbox" id="flashes"><span></span>Flash for scanned cards</label>
+      <div class="events" id="events"></div>
+    </section>
+
+    <section class="panel setting">
+      <h3>Setup</h3>
+      <label class="row">Number of LEDs <input class="field count" type="number" id="count" min="1" step="1"></label>
+      <p class="sub">Count the LEDs on both bars together. Not sure? Lower the number until the last LED goes dark, then add one back.
+        Too many does no harm; it only makes the power estimate too high.</p>
+      <details>
+        <summary><b>Wiring</b></summary>
+        <ol class="wiring">
+          <li>The kit's motherboard plug (3-pin ARGB) has <b>5V</b>, <b>D</b> (data) and <b>G</b> (ground), plus one empty spot. 5V is usually the side with the arrow; check the labels on the plug or cable.</li>
+          <li><b>5V</b> and <b>G</b> go to your 5 V supply, on the same screw jack as the servos. <b>Never 12 V</b>: it burns the LEDs out at once.</li>
+          <li><b>D</b> goes to <b>GPIO10, pin 19</b> on the Pi, with a dupont jumper pushed into the plug.</li>
+          <li>The bars and the Pi have to share a ground. On the same 5 V supply they already do; on a separate one, also run a wire from G to the Pi's pin 20.</li>
+          <li>SPI has to be on. Press <b>Turn SPI on</b> above if the page asks, then reboot.</li>
+          <li>Flickering or random colors? Keep the data wire short, and put a 330 Ω resistor in it if you have one.</li>
+        </ol>
+        <p class="sub warnbox">Full white is about 60 mA per LED, so 60 LEDs could pull 3.6 A. Your 5 V 4 A supply also runs the Pi,
+          so the app dims the bars to stay under <span id="maxAmps">1 A</span>. Keep the brightness low unless you get a bigger supply.</p>
+      </details>
+      <div class="row"><button class="btn ghost" id="reset">Back to the starting settings</button></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
+  <script src="/static/lights.js"></script>
+</body>
+</html>
