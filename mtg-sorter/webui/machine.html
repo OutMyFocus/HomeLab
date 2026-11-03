@@ -111,6 +111,7 @@ function show(s) {
       `<button class="btn" data-part="${part}" data-pos="${pos}">${pos} <span class="sub ${a !== p.factory[pos] ? "changed" : ""}"
         title="${a !== p.factory[pos] ? "Saved on this Pi (was " + p.factory[pos] + "°)" : ""}">${a}°</span></button>`).join("");
     if (p.angle == null) continue;
+    if ($("r-" + part) === document.activeElement) continue;   // don't yank a slider you're dragging
     $("r-" + part).value = p.angle; $("o-" + part).value = Math.round(p.angle);
   }
   $("resetAll").hidden = !s.customized;
@@ -128,8 +129,16 @@ function build(s) {
         `<button class="btn ghost small" data-save="${part}" data-pos="${pos}">${pos}</button>`).join("")}</div>`;
     box.append(el);
     const range = el.querySelector("input");
-    range.addEventListener("input", () => ($("o-" + part).value = range.value));
-    range.addEventListener("change", () => call("/api/machine/move", { channel: p.channel, angle: +range.value }));
+    // The servo follows while you drag: at most one move in flight, always ending on where you let go.
+    let busy = false, pending = null;
+    const send = async (angle) => {
+      if (busy) { pending = angle; return; }
+      busy = true;
+      try { await call("/api/machine/move", { channel: p.channel, angle }); } finally { busy = false; }
+      if (pending != null) { const next = pending; pending = null; send(next); }
+    };
+    range.addEventListener("input", () => { $("o-" + part).value = range.value; send(+range.value); });
+    range.addEventListener("change", () => send(+range.value));
   }
   box.addEventListener("click", async (e) => {
     const b = e.target.closest("button[data-part]");
