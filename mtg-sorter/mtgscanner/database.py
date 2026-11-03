@@ -119,8 +119,8 @@ class Matcher:
             learned = self.conn.execute(
                 "SELECT l.card_id, c.name, l.fingerprint FROM learned l JOIN "
                 "(SELECT id, name FROM cards UNION ALL SELECT id, name FROM extra_cards) c ON c.id = l.card_id").fetchall()
-        if not rows:
-            raise RuntimeError("The card database is empty. Run build_db.py first.")
+        # An empty database (a fresh install, before build_db.py or a restored backup) still
+        # starts: every scan simply comes back as not recognized, and the Maintenance page says why.
         rows += learned
         ids = [r[0] for r in rows]
         # Every card name gets a number, so "is this the same card?" is an integer compare.
@@ -128,7 +128,8 @@ class Matcher:
         names = np.fromiter((self._name_numbers.setdefault(_name_key(r[1]), len(self._name_numbers)) for r in rows),
                             dtype=np.int32, count=len(rows))
         # 32-byte fingerprints as 4 x 64-bit numbers: comparing those is much faster.
-        hashes = np.frombuffer(b"".join(r[2] for r in rows), dtype=np.uint64).reshape(len(rows), -1)
+        hashes = np.frombuffer(b"".join(r[2] for r in rows), dtype=np.uint64).reshape(len(rows), -1) if rows \
+            else np.zeros((0, 4), dtype=np.uint64)
         self.card_count, self.learned_count = len(rows) - len(learned), len(learned)
         self._table = ids, hashes, names   # swapped in one step, so a scan never sees half of it
 
@@ -157,6 +158,8 @@ class Matcher:
     def best_match(self, fp: bytes) -> tuple[str, int]:
         """Return (card id, distance) of the closest card. Smaller distance is better."""
         ids, hashes, _ = self._table
+        if not ids:
+            return "", 256
         dists = _distances(hashes, fp)
         i = self._closest(dists)
         return ids[i], int(dists[i])
@@ -165,6 +168,8 @@ class Matcher:
         """The closest card, how far behind the closest *different* card is (the margin),
         and the next few different cards in case the first guess is wrong."""
         ids, hashes, names = self._table
+        if not ids:
+            return Hit("", 256, 0)   # nothing to compare with: as far from a match as it gets
         dists = _distances(hashes, fp)
         i = self._closest(dists)
         others = dists[names != names[i]]
