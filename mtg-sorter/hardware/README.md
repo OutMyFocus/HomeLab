@@ -24,7 +24,7 @@ edge sits just over one card's thickness above the floor. One card fits under it
 | `stl/feeder_stand_mid.stl` | as it opens, 15% infill | The box underneath, with the motor cradle. 96 mm, with its front cut away under the sloped bed: the height it needs on the enclosure's bridge |
 | `stl/feeder_hopper.stl` | as it opens, 15% infill | Floor and walls. Holds about 190 cards |
 | `stl/feeder_gate.stl` | flat | The adjustable gate |
-| `stl/feeder_roller.stl` | standing on its end, **100% infill** | Goes on the motor shaft |
+| `stl/feeder_roller.stl` | standing on its end, **100% infill** | Goes on the motor shaft. Two 3 mm O-rings (20 or 22 mm inside) poke about 2 mm up through the hopper floor. Also in `bambu/MTG_Sorter_Feeder_Stopper_Fix.3mf` with the pin rocker |
 
 ### Parts to buy
 
@@ -93,7 +93,7 @@ the tray tilted both ways, the trapdoors open, and the pins up and down.
 | `bed_plate` | 1 | **white** | The surface the camera looks at |
 | `bed_side_left_enclosure`, `bed_side_right_enclosure` | 1 each | black | lie them flat. Right one has the camera socket; both have the foot flange that screws to the enclosure's bridge |
 | `tower_post`, `camera_head` | 1 each | black | |
-| `pin_rocker` | 1 | any | The two stop pins |
+| `pin_rocker` | 1 | any | The two stop pins, about 5 mm proud of the bed when up |
 | `tilt_bracket` | 1 | black | |
 | `chute` | 1 | any | The tray |
 | `trapdoor`, `trapdoor_left` | 1 each | any | |

@@ -31,7 +31,7 @@ stuck together, not zero).
 | | Part | From |
 |---|---|---|
 | 1 | N20 gear motor, 6 V, 150 RPM, 3 mm D-shaft | Shopping item 6 |
-| 2 | O-rings, **20 mm inside × 3 mm thick** | Shopping item 11 (pick two from the kit) |
+| 2 | O-rings, **3 mm thick, 20 or 22 mm inside** | Shopping item 11 (pick two from the kit) |
 | 2 | M3 × 10 mm self-tapping screws | Shopping item 12 |
 | 2–3 | Small zip ties | Shopping item 14 |
 | 1 | 4×AA battery holder with switch, plus 4 AA batteries | Shopping item 19 |
@@ -64,10 +64,14 @@ and the **bottom edge of the gate**. Cards catch on anything sticking up.
 
 ## 2. Put the tyres on the roller
 
-1. Find two O-rings in the kit that are 20 mm inside and 3 mm thick. With calipers, the
-   outside should measure about 26 mm.
+1. Find two O-rings in the kit that are 3 mm thick and 20 or 22 mm inside (with calipers,
+   the outside measures about 26 or 28 mm). 22 mm ones go on easier; 20 mm ones stretch on
+   and grip a little harder. Either is fine.
 2. Stretch one into each groove on the roller. They should sit snug and not twist. If
    they're loose, the ring is too big; if you can't get one on, it's too small.
+   (The first roller had a smaller hub and only poked up 0.8 mm, so it often missed the cards.
+   If yours measures about 23 mm across the hub, between the grooves, it's the old one:
+   reprint it from `bambu/MTG_Sorter_Feeder_Stopper_Fix.3mf`. The new one measures 25.5 mm.)
 
 ## 3. Fit the roller to the motor
 
@@ -94,11 +98,12 @@ the hopper floor) and the motor body on a block called the cradle.
 
 1. Set the hopper on top of the stand. The four small pegs on the stand's top edge go into
    the holes in the hopper's floor.
-2. Look at the floor from above. The roller's O-rings should **just** poke up through the
-   opening (by design, 0.8 mm, about the thickness of two or three cards). Run a fingertip
-   across: you should feel the rubber, not a bump.
-   - **Doesn't poke through at all:** put a strip of card or tape under the motor on the cradle
-     to raise it a little.
+2. Look at the floor from above. The roller's O-rings should poke up through the opening
+   about 2 mm (about six cards thick). Lay a ruler across the floor over the roller: the ruler
+   should rock on the rubber.
+   - **Doesn't poke through, or barely:** check the motor is pushed right down on the cradle
+     and the O-rings are seated in their grooves. If you still have the old roller (see step 2
+     of "Put the tyres on the roller"), print the new one.
    - **Sticks up a lot** (cards rock on it): the O-rings are too thick, try a different pair.
 
 ## 6. Fit and set the gate
@@ -373,8 +378,14 @@ kit.servo[0].angle = 90   # change the channel and angle to test each servo
    (hub in the plate's round hole, the two tiny horn screws through the horn's innermost holes).
    Centre the servo (see above), push horn and rocker onto the shaft with the pins pointing up,
    and fit the horn's centre screw through the round hole. With the servo at "up", the two pins
-   should poke up through the slots at the front of the bed. Set the servo to "down" (28° the
-   other way): the pins must drop fully below the bed surface.
+   should poke up through the slots at the front of the bed, standing about 5 mm proud on the
+   side the card hits. Set the servo to "down" (28° the other way): the pins must drop fully
+   below the bed surface. Tune both on the Machine page and press Save. Don't go more than
+   about 3° past 28°, or the rocker's cross bar hits the chute's back axle.
+   The pins only go up when the app moves them, so press **Pins → Up** before feeding a card.
+   (The first rocker's pins stood only 2.4 mm proud and fast cards jumped over them. Measure a
+   pin from the rocker's flat underside: about 15.5 mm is the old one, 18.5 mm the new one.
+   Reprint the old one from `bambu/MTG_Sorter_Feeder_Stopper_Fix.3mf`.)
 5. **LED strips.** Cut two pieces about 9 cm long and stick one in the groove along each
    wall, just above the bed. Join them and power them from a Pi USB port.
 6. **Camera tower.** Push `tower_post` into the socket on the right wall, then

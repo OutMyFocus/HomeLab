@@ -66,7 +66,9 @@ fit = 0.3;
 // Stop pins
 pin_x = 20;             // pins at x = +-20
 pin_axis = [75, 165];   // pin servo shaft (y, z), on the left wall
-pin_drop = 28;          // degrees the rocker turns to pull the pins down
+pin_drop = 28;          // degrees the rocker turns to pull the pins down (no more than 31: the bar hits the chute axle)
+pin_above = 7;          // how far the pin tops reach above the bed's front edge (was 4: the card side
+                        // only stood 2.4 mm proud, and fast cards jumped over it)
 
 // --- Chute -------------------------------------------------------------------------
 pivot_z = 145;          // tilt axis height (along y, at x = 0) = top of the tray floor
@@ -181,9 +183,9 @@ module pin_rocker() {
                 [pin_axis[0] + 6, pin_axis[1] + 4], [pin_axis[0] - 2, pin_axis[1] + 6], [bar_y, rocker_bottom + 5]]);
             // cross bar
             translate([hub_x, bar_y, rocker_bottom]) cube([pin_x + 4 - hub_x, 4, 5]);
-            // pins, up through the bed slots to about 4 mm above the bed
+            // pins, up through the bed slots: the card side stands about 5 mm proud of the bed
             for (x = [-pin_x, pin_x]) translate([x - 1.5, bar_y + 0.5, rocker_bottom])
-                cube([3, 3, bed_z + 1 * tan_a + 4 - rocker_bottom]);
+                cube([3, 3, bed_z + 1 * tan_a + pin_above - rocker_bottom]);
         }
         // hole for the horn's hub, and two horn screw holes
         translate([hub_x - 1, pin_axis[0], pin_axis[1]]) rotate([0, 90, 0]) cylinder(d = 7.2, h = 5);

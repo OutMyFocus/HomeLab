@@ -22,16 +22,24 @@ hopper_gap = 2;     // room around the stack (sleeved cards: try 4)
 hopper_h = 60;      // stack height: about 190 unsleeved cards
 
 // --- Roller and motor ----------------------------------------------------------
-// N20 gear motor (12 x 10 mm gearbox, 3 mm D-shaft) and two O-rings,
-// 20 mm inside diameter x 3 mm thick (sold as "20x3 O-ring", nitrile).
-oring_id = 20;
+// N20 gear motor (12 x 10 mm gearbox, 3 mm D-shaft) and two O-rings, 3 mm thick,
+// 20 or 22 mm inside diameter (sold as "20x3" / "22x3 O-ring", nitrile).
+//
+// The motor height is fixed by the stand (roller_z below). The first roller (groove 20.5 mm)
+// only poked 0.8 mm up through the floor, and with slightly thin O-rings it missed the cards
+// altogether. This one has a 23 mm groove: 20x3 rings stretch on snugly (they thin a little),
+// 22x3 rings just fit, and either way the rings stand about 2 mm above the floor.
 oring_cs = 3;
-groove_root = oring_id + 0.5;           // slightly bigger than the O-ring, so it grips
+groove_root = 23;
 hub_d = groove_root + 2.5;
-roller_d = groove_root + 2 * oring_cs;  // across the O-rings: about 26.5
+roller_d = groove_root + 2 * oring_cs;  // across the O-rings: about 29 (28.6 with stretched 20x3)
 roller_w = 14;
 roller_y = 20;      // roller centre, measured back from the hopper's front wall
-roller_poke = 0.8;  // how far the roller sticks up through the floor
+// The stand and hopper were drawn around the first roller (26.5 across, poking 0.8 mm up);
+// they keep those numbers so already-printed stands and hoppers still fit.
+first_roller_d = 26.5;
+first_roller_poke = 0.8;
+roller_hole_l = first_roller_d - 2;     // hole in the hopper floor, front to back
 n20_w = 12.2;       // gearbox, with a little clearance
 n20_h = 10.2;
 n20_len = 26;       // gearbox + motor body
@@ -56,7 +64,8 @@ out_w = in_w + 2 * wall;
 floor_l = exit_shelf + wall + in_l + wall;
 floor_y0 = -exit_shelf - wall;           // y = 0 is the inside of the front wall
 floor_top = stand_h + floor_t;
-roller_z = floor_top + roller_poke - roller_d / 2;  // roller axis height
+roller_z = floor_top + first_roller_poke - first_roller_d / 2;  // roller axis height
+roller_poke = roller_z + roller_d / 2 - floor_top;    // about 2 mm up through the floor
 gate_slot = 4;                           // opening under the front wall that the gate covers
 
 module stand() {
@@ -97,7 +106,7 @@ module hopper() {
             for (x = [-out_w / 2, in_w / 2]) translate([x, floor_y0, 0]) cube([wall, exit_shelf + 1, floor_t + 4]);
         }
         // hole for the roller to poke through
-        translate([-roller_w / 2 - 2, roller_y - roller_d / 2 + 1, -1]) cube([roller_w + 4, roller_d - 2, floor_t + 2]);
+        translate([-roller_w / 2 - 2, roller_y - roller_hole_l / 2, -1]) cube([roller_w + 4, roller_hole_l, floor_t + 2]);
         // holes for the stand's locating pegs
         for (x = [-1, 1], y = [floor_y0 + 8, floor_y0 + floor_l - 8])
             translate([x * (out_w / 2 - wall / 2), y, -1]) cylinder(d = 2.4, h = 3);
