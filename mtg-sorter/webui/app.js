@@ -160,8 +160,13 @@
     if (s.bin_names) BIN_NAMES = s.bin_names;
     $("meta").classList.remove("down");
     $("metaText").textContent = `${s.db_count.toLocaleString()} cards` + (s.learned ? ` + ${s.learned.toLocaleString()} learned` : "") + ` · ${s.prices}`;
+    if (device.on && s.camera && !(s.camera.browser && s.camera.index === "browser")) { stopDeviceCamera(false); toast("The scanner switched to another camera"); }
     const st = $("camStatus"); st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status;
     showCamera(s.status !== "waiting");
+    $("noCamHint").textContent = s.on_pi
+      ? "On the Pi: power off, reseat the ribbon cable (contacts facing the board at both ends), then power on. It keeps looking, so the picture appears by itself once a camera works."
+      : canUseDevice ? "Scan with the camera of the phone or computer you're holding: the cards land in the same collection."
+      : "To scan with this device's camera, open the app at an https address (through Tailscale, see deploy/UNRAID.md).";
     document.querySelector(".camera").classList.toggle("locked", s.status === "locked");
     const slotsOn = s.mode === "slots";
     if (!slotsOn) editing = false;
@@ -270,21 +275,108 @@
   // ---------- no camera: a plain message instead of an empty picture ----------
   // The picture only streams while there's a camera, so a missing one doesn't keep a
   // connection to the Pi open for nothing.
+  // With this device's own camera, the page shows its video straight from the camera
+  // (no round trip) and the scanner's outlines are drawn over it.
   let camShown = null, streamRetry;
   function showCamera(on) {
-    if (on === camShown) return;
-    camShown = on;
+    const want = on ? (device.on ? "local" : "stream") : "off";
+    if (want === camShown) return;
+    camShown = want;
     document.querySelector(".camera").classList.toggle("no-cam", !on);
     $("noCamera").hidden = on;
-    if (on) $("stream").src = "/stream.mjpg?" + Date.now(); else $("stream").removeAttribute("src");
+    $("localCam").hidden = want !== "local";
+    if (want === "stream") $("stream").src = "/stream.mjpg?" + Date.now(); else $("stream").removeAttribute("src");
+    $("stream").hidden = want === "local";
   }
   $("stream").onerror = () => {   // the stream dropped (the app restarted, Wi-Fi blinked): try again
-    if (!camShown) return;
+    if (camShown !== "stream") return;
     $("camStatus").textContent = "Reconnecting to the camera…";
     clearTimeout(streamRetry);
-    streamRetry = setTimeout(() => { if (camShown) $("stream").src = "/stream.mjpg?" + Date.now(); }, 3000);
+    streamRetry = setTimeout(() => { if (camShown === "stream") $("stream").src = "/stream.mjpg?" + Date.now(); }, 3000);
   };
   $("usePhotosBtn").onclick = () => showTab("photos");
+
+  // ---------- this device's camera: the phone or computer scans with its own camera ----------
+  // The browser opens the camera, and the page sends a picture to the scanner several
+  // times a second. Browsers only allow the camera on https (or localhost).
+  const device = { on: false, stream: null, token: null, name: /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "Phone camera" : "Computer camera" };
+  const canUseDevice = !!navigator.mediaDevices?.getUserMedia && window.isSecureContext;
+  const deviceHint = canUseDevice ? "" : !navigator.mediaDevices ? "This browser can't share its camera" : "Needs an https address (see Maintenance)";
+  try { device.token = sessionStorage.getItem("mtg-cam-token"); } catch (e) {}
+  if (!device.token) {
+    device.token = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now());
+    try { sessionStorage.setItem("mtg-cam-token", device.token); } catch (e) {}
+  }
+  const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: false });
+  let sendT = null;
+
+  async function startDeviceCamera() {
+    if (device.on) return true;
+    if (!canUseDevice) { toast(deviceHint); return false; }
+    $("camStatus").textContent = "Opening this device's camera…";
+    try {
+      device.stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    } catch (e) {
+      toast(e.name === "NotAllowedError" ? "Camera permission was refused" : "Couldn't open this device's camera");
+      return false;
+    }
+    const v = $("localCam"); v.srcObject = device.stream;
+    try { await v.play(); } catch (e) {}
+    device.on = true; camIndex = "browser";
+    try {
+      render(await api("/api/camera", { index: "browser", name: device.name, token: device.token }));
+    } catch (e) { stopDeviceCamera(false); toast("Couldn't hand the camera to the scanner"); return false; }
+    device.stream.getVideoTracks()[0].onended = () => { if (device.on) { stopDeviceCamera(true); toast("The camera was closed"); } };
+    camsLoadedAt = Date.now(); loadCameras();   // the menu now shows this device as the camera
+    sendFrame();
+    toast(`Scanning with this device's camera`);
+    return true;
+  }
+
+  // One picture after another: the next one goes as soon as the scanner took the last,
+  // at most about 8 a second, and not while the page is hidden.
+  async function sendFrame() {
+    clearTimeout(sendT);
+    if (!device.on) return;
+    if (document.hidden) { sendT = setTimeout(sendFrame, 500); return; }
+    const v = $("localCam"), started = Date.now();
+    if (v.videoWidth) {
+      const w = Math.min(1280, v.videoWidth), h = Math.round(v.videoHeight * w / v.videoWidth);
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      ctx.drawImage(v, 0, 0, w, h);
+      const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.8));
+      if (!device.on) return;
+      try {
+        const r = await fetch("/api/frame", { method: "POST", headers: { "Content-Type": "image/jpeg", "X-Camera-Token": device.token }, body: blob });
+        if (r.status === 409) { stopDeviceCamera(false); toast("The scanner stopped using this device's camera"); loadCameras(); return; }
+        if (r.status === 401) { location.href = "/lock?next=/scan"; return; }
+      } catch (e) {}   // the scanner is restarting or Wi-Fi blinked: keep trying
+    }
+    sendT = setTimeout(sendFrame, Math.max(40, 125 - (Date.now() - started)));
+  }
+
+  function stopDeviceCamera(tellScanner) {
+    clearTimeout(sendT);
+    const was = device.on;
+    device.on = false;
+    device.stream?.getTracks().forEach(t => t.stop());
+    device.stream = null; $("localCam").srcObject = null;
+    if (was && tellScanner) api("/api/camera/release", { token: device.token }).catch(() => {});
+    camShown = null; if (state) showCamera(state.status !== "waiting");
+  }
+  // Closing the tab: tell the scanner right away, so it goes back to its own camera.
+  addEventListener("pagehide", () => {
+    if (!device.on) return;
+    device.on = false;
+    navigator.sendBeacon?.("/api/camera/release", new Blob([JSON.stringify({ token: device.token })], { type: "application/json" }));
+  });
+  // Back from the background: the scanner may have given up on this camera meanwhile, so ask for it again.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && device.on) api("/api/camera", { index: "browser", name: device.name, token: device.token }).then(render).catch(() => {});
+  });
+  $("useDeviceCamBtn").hidden = !canUseDevice;
+  $("useDeviceCamBtn").onclick = startDeviceCamera;
 
   // Fast while watching the camera, slower on the other tabs or with no camera, and
   // not at all while the page is in the background (it saves the Pi's time).
@@ -518,12 +610,21 @@
     const opts = cams.map(c => `<option value="${c.index}">${esc(c.name)}</option>`);
     if (!cur) opts.unshift(`<option value="" disabled>${state?.status === "waiting" ? "No camera" : "Demo photos"}</option>`);
     if (!cams.length) opts.push('<option value="" disabled>No cameras found</option>');
+    if (cur?.browser && !device.on) opts.push(`<option value="taken" disabled>${esc(cur.name)} (another device)</option>`);
+    if (navigator.mediaDevices) opts.push(`<option value="browser" ${canUseDevice ? "" : "disabled"}>This device's camera${deviceHint ? " · " + deviceHint : ""}</option>`);
     sel.innerHTML = opts.join("");
-    sel.value = cur ? String(cur.index) : "";
+    sel.value = cur ? (cur.browser ? (device.on ? "browser" : "taken") : String(cur.index)) : "";
     camIndex = cur?.index;
   }
   $("camSelect").onchange = async e => {
     const sel = e.target, index = +sel.value, name = sel.selectedOptions[0].textContent;
+    if (sel.value === "browser") {
+      $("camPick").classList.add("busy");
+      if (!await startDeviceCamera()) sel.value = camIndex ?? "";
+      $("camPick").classList.remove("busy");
+      return;
+    }
+    if (device.on) stopDeviceCamera(false);   // the scanner switches straight to the chosen camera
     $("camPick").classList.add("busy");
     $("camStatus").textContent = `Switching to ${name}…`;
     try {

@@ -11,8 +11,13 @@ Neither needs a port opened on your router. Both connect to the app on the Pi at
 `127.0.0.1:5000`. The app also answers on your home Wi-Fi at `http://mtgsorter.local:5000`
 (see the end of 2c to turn that off).
 
-> **The app has no login.** Anyone who can open it can scan, delete, and download your
-> collection. Don't publish it through Cloudflare without step 3c (Access) in front.
+> **The app has no login** unless you set a PIN in Settings. Anyone who can open it can scan,
+> delete, and download your collection. Don't publish it through Cloudflare without step 3c
+> (Access) in front.
+
+Scanning with a phone's own camera (**This device's camera** on the Scan page) only works on
+an **https** address, so use the Tailscale or Cloudflare one for that, not `http://mtgsorter.local:5000`.
+Running the app on a home server instead of the Pi: [UNRAID.md](UNRAID.md).
 
 Replace `example.com` with your domain throughout.
 
