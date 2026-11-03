@@ -211,9 +211,13 @@ class BrowserSource:
             self._given = self._seq
             return self._frame
 
+    def quiet_for(self) -> float:
+        """Seconds since the browser last sent a picture."""
+        return time.monotonic() - self.last_seen
+
     def gone(self) -> bool:
         """True once the browser has been silent long enough to count as closed."""
-        return time.monotonic() - self.last_seen > self.gone_after
+        return self.quiet_for() > self.gone_after
 
     def info(self) -> dict:
         out = {"index": self.index, "name": self.name, "format": self.format,
