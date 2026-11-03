@@ -270,7 +270,7 @@ in `mtgscanner/config.py`. Defaults:
 
 Once a week the app checks the Near Mint price of every card in your collection, decks,
 wishlist and trade binder at Face to Face Games (the main price), then 401 Games, The Mythic
-Store and Hobbiesville, and saves them in `data/vault_prices.json`. Valuable cards (foils,
+Store, Hobbiesville, Card Brawlers and L'Univers de la Carte, and saves them in `data/vault_prices.json`. Valuable cards (foils,
 special numbers, $1.50 and up) also get their exact printing's price. The same week it
 updates the Commander card database (`data/carddb.json`, from Scryfall's bulk data) that Card
 lookup and the deck builder use. **Settings, Prices and card data** runs either one now. Cards
@@ -280,6 +280,19 @@ day. While the app runs it also checks Scryfall for today's price of each card i
 recognizes (start it with `--offline` to skip that and use the database's prices). The rate is fetched once a day and saved in `data/usd_cad.json`. Offline, it uses the
 last saved rate, or `USD_TO_CAD` in `config.py`. The `data/` folder is never committed, so
 your prices stay on your computer.
+
+### Montreal prices
+
+When the scanner recognizes a card, the card panel shows what it costs in Montreal today:
+Face to Face Games first, then Card Brawlers and L'Univers de la Carte. Each store's price
+is for that exact printing when the store has it ("this printing"), otherwise its cheapest
+copy ("cheapest"), and each one links to the store's page. Answers are kept for 12 hours.
+The Collection has a **Montreal** column (Face to Face Games' price, or the next Montreal
+store's) from the weekly price check, and each card's details list every Montreal store.
+
+Carta Magica and L'Expédition run on Crystal Commerce, which refuses automated requests, and
+Le Valet d'Coeur sits behind a bot check, so the app can't read their prices. The card panel
+links to a search for the card on each of those sites instead. See `mtgscanner/montreal.py`.
 
 ## Run the tests
 

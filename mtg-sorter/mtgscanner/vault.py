@@ -27,6 +27,7 @@ from . import accounts, ca_prices, carddb, config, decks, play, wishlist
 from .collection import append_rows, ensure_columns
 from .library import read_rows, write_rows
 from .live import API, card_from_scryfall
+from .montreal import add_montreal_routes
 from .sorting import card_price
 from .vault_prices import VaultPrices
 
@@ -384,6 +385,7 @@ def _recent(iso, hours: float = 12) -> bool:
 def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
     weekly = weekly or Weekly(scanner, offline=getattr(scanner, "live", None) is None)
     app.config["weekly"] = weekly
+    add_montreal_routes(app, scanner)  # /api/montreal: today's Montreal store prices for one card
 
     def body() -> dict:
         js = request.get_json(force=True, silent=True)
