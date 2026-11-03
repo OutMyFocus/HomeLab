@@ -170,6 +170,7 @@
     value: (a, b) => (b.value ?? -1) - (a.value ?? -1),
     price: (a, b) => (b.price ?? -1) - (a.price ?? -1),
     cheap: (a, b) => (a.price ?? 1e9) - (b.price ?? 1e9),
+    mtl: (a, b) => (b.mtl?.price ?? -1) - (a.mtl?.price ?? -1),
     name: (a, b) => a.name.localeCompare(b.name),
     set: (a, b) => a.set.localeCompare(b.set) || a.number.localeCompare(b.number, undefined, { numeric: true }),
     new: (a, b) => b.last.localeCompare(a.last),
@@ -207,13 +208,14 @@
     else if (!shown.length) $("results").innerHTML = '<p class="results-empty">No cards match these filters.</p>';
     else if (prefs.view === "grid") $("results").innerHTML = `<div class="results-grid">${page.map(c => tile(c)).join("")}</div>`;
     else $("results").innerHTML = `<div class="table-wrap"><table class="list"><thead><tr>
-        <th>Card</th><th class="hide-sm">Set</th><th class="hide-sm">Rarity</th><th>Copies</th><th class="num">Price</th><th class="num hide-sm">Value</th><th class="num hide-sm">Since scanned</th><th class="hide-sm">Bin</th></tr></thead><tbody>
+        <th>Card</th><th class="hide-sm">Set</th><th class="hide-sm">Rarity</th><th>Copies</th><th class="num">Price</th><th class="num" title="Face to Face Games, or the next Montreal store">Montreal</th><th class="num hide-sm">Value</th><th class="num hide-sm">Since scanned</th><th class="hide-sm">Bin</th></tr></thead><tbody>
       ${page.map(c => `<tr data-key="${esc(c.key)}">
         <td class="card-cell">${c.image ? `<img class="thumb" src="${esc(small(c.image))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}<span><span class="dotc" style="background:var(--mana-${esc(c.color)})" title="${esc(COLORS[c.color] ?? "")}"></span><span class="nm">${esc(c.name)}</span>${c.foil ? '<span class="foil-tag">foil</span>' : ""}<small class="sub show-sm">${esc(c.set)} #${esc(c.number)}</small></span></td>
         <td class="hide-sm">${esc(c.set)} #${esc(c.number)}</td>
         <td class="rar hide-sm">${esc(c.rarity)}</td>
         <td class="qty-cell"><button data-step="-1" aria-label="One fewer"><svg><use href="#i-minus"/></svg></button><b>${c.qty}</b><button data-step="1" aria-label="One more"><svg><use href="#i-plus"/></svg></button></td>
         <td class="num">${money(c.price)}</td>
+        <td class="num mtl-cell">${window.Montreal ? Montreal.cell(c) : ""}</td>
         <td class="num hide-sm">${c.value == null ? "" : money(c.value)}</td>
         <td class="num chg hide-sm ${c.change > 0 ? "up" : c.change < 0 ? "down" : ""}">${c.change ? signed(c.change) : ""}</td>
         <td class="hide-sm"><span class="pill bin-${c.bin}">${c.bin}</span></td></tr>`).join("")}</tbody></table></div>`;
@@ -259,6 +261,7 @@
     $("dSet").textContent = `${c.set_name || c.set} · ${c.set} #${c.number}${c.rarity ? " · " + c.rarity : ""}`;
     $("dPrice").textContent = money(c.price) + (c.qty > 1 && c.value != null ? `  ×${c.qty} = ${money(c.value)}` : "");
     $("dSource").textContent = c.price_source || "";
+    window.Montreal?.show($("dMontreal"), c);
     const facts = [
       ["Color", COLORS[c.color] ?? "Unknown"],
       ["Bin now", `${c.bin} · ${c.bin_label}`],
