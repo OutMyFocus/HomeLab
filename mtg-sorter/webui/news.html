@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="referrer" content="no-referrer">
+  <title>MTG Sorter · News</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/news.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-sources" viewBox="0 0 24 24"><path d="M5 5a14 14 0 0 1 14 14M5 10.5A8.5 8.5 0 0 1 13.5 19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /><circle cx="6" cy="18" r="1.6" fill="currentColor" /></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8M17 14v4a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 5 18V8.5A1.5 1.5 0 0 1 6.5 7H10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.9" /><path d="m6.5 6.5 11 11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>MTG Sorter</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+
+  <main class="coll news-page">
+    <div class="news-bar">
+      <div><h1>News</h1><p class="sub" id="updated">Loading the latest Magic news…</p></div>
+      <div class="news-acts">
+        <button class="btn ghost" id="sourcesBtn" aria-expanded="false" aria-controls="sourcesPanel"><svg><use href="#i-sources" /></svg>Sources</button>
+        <button class="btn" id="refreshBtn"><svg><use href="#i-refresh" /></svg>Refresh</button>
+      </div>
+    </div>
+
+    <!-- which sites the news comes from -->
+    <section class="panel sources" id="sourcesPanel" hidden>
+      <div class="panel-head"><h3>Where the news comes from</h3><span class="sub">Saved for everyone using this sorter</span></div>
+      <div class="source-list" id="sourceList"></div>
+    </section>
+
+    <!-- a ban list change in the last three weeks -->
+    <div id="banBox"></div>
+
+    <section class="panel news-sets" id="setsBox" hidden>
+      <div class="panel-head"><h3>Coming out</h3><div class="seg small" id="setSeg"><button data-v="upcoming" aria-pressed="true">Coming soon</button><button data-v="recent" aria-pressed="false">Just out</button></div></div>
+      <div class="set-strip" id="setStrip"></div>
+    </section>
+
+    <section class="panel news-previews" id="previewsBox" hidden>
+      <div class="panel-head"><h3>Latest previews</h3><a class="btn ghost" id="previewsAll" target="_blank" rel="noopener noreferrer">See them all on Scryfall<svg><use href="#i-ext" /></svg></a></div>
+      <div class="chip-row" id="previewSets"></div>
+      <div class="preview-strip" id="previewStrip"></div>
+    </section>
+
+    <section class="news-feed">
+      <div class="toolbar news-tools">
+        <div class="seg" id="tagSeg" role="tablist">
+          <button data-v="all" aria-pressed="true">All</button><button data-v="wizards" aria-pressed="false">Official</button><button data-v="bans" aria-pressed="false">Bans</button><button data-v="previews" aria-pressed="false">Previews</button><button data-v="arena" aria-pressed="false">Arena</button>
+        </div>
+        <label class="search"><svg><use href="#i-search" /></svg><input id="newsQ" placeholder="Search the news" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <div class="article-list" id="articles"></div>
+      <div class="more-row"><button class="btn ghost" id="moreBtn" hidden>Show more</button></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
+  <script src="/static/news.js"></script>
+</body>
+</html>

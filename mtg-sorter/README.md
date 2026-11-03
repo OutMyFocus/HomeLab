@@ -110,6 +110,13 @@ Then open **http://localhost:5000** in your browser. You get:
   **Spare copies** lists what you have beyond a playset (or however many you keep), cheapest
   printings first, with their value and a list to copy for a trade or a shop. Basic lands are
   left out unless you ask.
+- **News**: Magic news in one place. Articles from the official site (magic.wizards.com) and
+  community sites (MTGGoldfish, EDHREC, Hipsters of the Coast; MTG Arena Zone and r/magicTCG can
+  be turned on under **Sources**), sets coming out soon or just out (from Scryfall), the newest
+  previewed cards, and a red banner when Wizards posts a ban list announcement. Filter by
+  Official, Bans, Previews or Arena, or search. The news is fetched every 30 minutes and saved in
+  `data/news_cache.json`, so it still shows when the internet is down; `--offline` turns
+  fetching off.
 - **Decks**: paste a decklist from Moxfield, Archidekt, MTG Arena, MTGO or
   any website. It shows how much of the deck you already own (any printing counts), which cards
   are missing, what they'd cost at today's prices, and which bin your copies are in. **Copy the
