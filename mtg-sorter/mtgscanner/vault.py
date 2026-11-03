@@ -23,7 +23,7 @@ from pathlib import Path
 
 from flask import jsonify, request, send_from_directory
 
-from . import ca_prices, carddb, config, decks, play, wishlist
+from . import accounts, ca_prices, carddb, config, decks, play, wishlist
 from .collection import append_rows, ensure_columns
 from .library import read_rows, write_rows
 from .live import API, card_from_scryfall
@@ -224,7 +224,7 @@ def import_vault(scanner, data: dict) -> dict:
             did["prices"] = len(prices["prices"])
 
     with scanner.lock:
-        rows = read_rows(config.COLLECTION_CSV)
+        rows = read_rows(accounts.collection_csv())
     taken = {(r.get("Source") or "").strip() for r in rows}
     new_rows = []
     for batch in data.get("collection") or []:
@@ -238,11 +238,11 @@ def import_vault(scanner, data: dict) -> dict:
         did["cards"] += sum(max(1, int(c.get("q") or 1)) for c in cards)
     if new_rows:
         with scanner.lock:
-            append_rows(config.COLLECTION_CSV, new_rows)
+            append_rows(accounts.collection_csv(), new_rows)
 
     saved = {d["id"] for d in decks.load_decks()}
     guides = data.get("guides") or {}
-    guide_dir = config.DATA_DIR / "guides"
+    guide_dir = accounts.user_file("guides")
     for name, html in guides.items():
         if re.fullmatch(r"[a-z0-9_-]{1,40}\.html", name) and isinstance(html, str):
             guide_dir.mkdir(parents=True, exist_ok=True)
@@ -321,11 +321,14 @@ class Weekly:
             self.job, self.progress = None, None
 
     def _prices(self):
-        with self.scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
-        deck_names = [x["name"] for d in decks.load_decks() for x in decks.parse(d.get("text", ""))]
-        names, keys = ca_prices.wanted(rows, deck_names, [i["name"] for i in wishlist.load_items()],
-                                       [c["name"] for c in play.load_binder()])
+        rows, deck_names, wants, binder = [], [], [], []
+        for _ in accounts.each_user():   # everyone's cards, decks, wishlist and binder
+            with self.scanner.lock:
+                rows += read_rows(accounts.collection_csv())
+            deck_names += [x["name"] for d in decks.load_decks() for x in decks.parse(d.get("text", ""))]
+            wants += [i["name"] for i in wishlist.load_items()]
+            binder += [c["name"] for c in play.load_binder()]
+        names, keys = ca_prices.wanted(rows, deck_names, wants, binder)
 
         def progress(done, total, what):
             self.progress = [done, total]
@@ -413,7 +416,7 @@ def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
 
     @app.get("/guides/<name>")
     def guide(name):
-        return send_from_directory(config.DATA_DIR / "guides", name)
+        return send_from_directory(accounts.user_file("guides"), name)
 
     @app.get("/api/vault")
     def vault_status():
@@ -447,7 +450,7 @@ def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
     @app.get("/api/sources")
     def sources_list():
         with scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
+            rows = read_rows(accounts.collection_csv())
         return jsonify({"sources": sources(rows)})
 
     @app.post("/api/sources/manabox")
@@ -463,12 +466,12 @@ def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
                             "repeats": [f"{c['q']}x {c['n']}" for c in cards
                                         if c["q"] >= 5 and c["n"].lower() not in ca_prices.BASICS][:12]})
         with scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
+            rows = read_rows(accounts.collection_csv())
         name = unique_source(rows, js.get("name"))
         new = to_rows(scanner, cards, name, "")
         with scanner.lock:
-            append_rows(config.COLLECTION_CSV, new)
-            rows = read_rows(config.COLLECTION_CSV)
+            append_rows(accounts.collection_csv(), new)
+            rows = read_rows(accounts.collection_csv())
         return jsonify({"source": name, "cards": sum(c["q"] for c in cards), "sources": sources(rows)})
 
     @app.post("/api/sources/remove")
@@ -477,11 +480,11 @@ def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
         if not name or name == SCANNED:
             return jsonify({"error": "Pick an imported source. Scanned cards are removed on the History page"}), 400
         with scanner.lock:
-            ensure_columns(config.COLLECTION_CSV)
-            rows = read_rows(config.COLLECTION_CSV)
+            ensure_columns(accounts.collection_csv())
+            rows = read_rows(accounts.collection_csv())
             keep = [r for r in rows if (r.get("Source") or "").strip() != name]
             if len(keep) == len(rows):
                 return jsonify({"error": "There's no source called that"}), 404
-            write_rows(config.COLLECTION_CSV, keep)
+            write_rows(accounts.collection_csv(), keep)
         return jsonify({"removed": len(rows) - len(keep), "sources": sources(keep)})
 
