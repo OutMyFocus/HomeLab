@@ -20,10 +20,32 @@
       <input class="nm" data-lcn="${i}" value="${esc(p.name)}" aria-label="Player name">
       <div class="big"><button data-lc="${i}" data-d="-1" aria-label="Lose 1 life">−</button><div class="total" aria-live="polite">${p.life}</div><button data-lc="${i}" data-d="1" aria-label="Gain 1 life">+</button></div>
       <div class="row5"><button class="btn ghost" data-lc="${i}" data-d="-5">−5</button><button class="btn ghost" data-lc="${i}" data-d="-10">−10</button><button class="btn ghost" data-lc="${i}" data-d="5">+5</button><button class="btn ghost" data-lc="${i}" data-d="10">+10</button></div>
+      <details class="cd-more" data-lcm="${i}"${extrasOpen(i) ? " open" : ""}><summary>${extrasLabel(p)}</summary>
       <div class="cd"><span>Poison</span><button class="btn ghost" data-lp="${i}" data-d="-1">−</button><b>${p.poison}</b><button class="btn ghost" data-lp="${i}" data-d="1">+</button></div>
       ${LC.players.map((q, j) => j === i ? "" : `<div class="cd"><span>From ${esc(q.name)}</span><button class="btn ghost" data-lcd="${i}" data-from="${j}" data-d="-1">−</button><b>${p.cmd[j] || 0}</b><button class="btn ghost" data-lcd="${i}" data-from="${j}" data-d="1">+</button></div>`).join("")}
+      </details>
       ${isOut(p) ? '<span class="badge bad">Out</span>' : ""}</div>`).join("");
   }
+  // Poison and commander damage fold away on a phone so four players fit on the screen.
+  // Each one stays open or shut as you left it, and opens by itself once it has damage on it.
+  const shut = new Set(), opened = new Set();
+  const phone = () => matchMedia("(max-width: 700px)").matches;
+  const extrasOpen = i => {
+    const p = LC.players[i];
+    if (opened.has(i)) return true;
+    if (shut.has(i)) return false;
+    return !phone() || p.poison > 0 || p.cmd.some(x => x > 0);
+  };
+  function extrasLabel(p) {
+    const cmd = Math.max(0, ...p.cmd), bits = [];
+    if (p.poison) bits.push(`${p.poison} poison`);
+    if (cmd) bits.push(`${cmd} commander`);
+    return bits.length ? bits.join(" · ") : "Poison · commander";
+  }
+  $("lcGrid").addEventListener("toggle", e => {
+    const d = e.target.closest("[data-lcm]"); if (!d) return; const i = +d.dataset.lcm;
+    if (d.open) { opened.add(i); shut.delete(i); } else { shut.add(i); opened.delete(i); }
+  }, true);
   $("lcGrid").onclick = e => {
     const b = e.target.closest("button"); if (!b) return; const d = +b.dataset.d || 0;
     if (b.dataset.lc != null) LC.players[+b.dataset.lc].life += d;
@@ -33,7 +55,7 @@
     save(); renderLife();
   };
   $("lcGrid").onchange = e => { const t = e.target.closest("[data-lcn]"); if (!t) return; LC.players[+t.dataset.lcn].name = t.value.trim() || "Player"; save(); renderLife(); };
-  $("lcReset").onclick = () => { fresh(+$("lcN").value, +$("lcStart").value); renderLife(); $("lcRoll").textContent = ""; };
+  $("lcReset").onclick = () => { fresh(+$("lcN").value, +$("lcStart").value); shut.clear(); opened.clear(); renderLife(); $("lcRoll").textContent = ""; };
   $("lcN").onchange = $("lcStart").onchange = $("lcReset").onclick;
   $("lcFirst").onclick = () => $("lcRoll").textContent = `${LC.players[rnd(LC.players.length) - 1].name} goes first`;
   $("lcD6").onclick = () => $("lcRoll").textContent = `d6: ${rnd(6)}`;

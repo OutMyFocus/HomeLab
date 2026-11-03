@@ -58,6 +58,13 @@
     + `<div class="more-wrap"><button class="more-btn" type="button" aria-haspopup="true" aria-expanded="false">More${icon("more")}</button></div>`;
   const anchor = header.querySelector(".brand");
   anchor.after(nav);
+  // On a phone the header has no page links, so it names the page you're on.
+  const page = PAGES.find(p => p.key === current);
+  if (page && page.key !== "home") {
+    const name = document.createElement("span");
+    name.className = "here-name"; name.textContent = page.label;
+    nav.after(name);
+  }
 
   // Phone: a bar along the bottom with the main pages and More.
   const bar = document.createElement("nav");
@@ -97,6 +104,13 @@
   addEventListener("resize", () => { if (!sheet.hidden) setMore(false); });
   // Pages can open it from a shortcut (the scanner uses M).
   window.MTGMenu = { toggle: () => setMore(sheet.hidden, moreBtns.find(b => b.offsetParent) || moreBtns[0]), isOpen: () => !sheet.hidden };
+
+  // The phone's status bar and browser bar take the page's background color (light, dark or black theme).
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  function syncTheme() { const bg = getComputedStyle(document.body).backgroundColor; if (themeMeta && bg) themeMeta.content = bg; }
+  syncTheme();
+  new MutationObserver(syncTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", syncTheme);
 
   // A dot on Maintenance when the check-up finds something wrong.
   async function checkHealth() {
