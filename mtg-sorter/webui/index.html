@@ -273,6 +273,7 @@
         <div class="live">
           <div class="camera">
             <img id="stream" alt="Live camera" />
+            <video id="localCam" autoplay playsinline muted hidden></video>
             <div class="no-camera" id="noCamera" hidden>
               <svg class="big-ico" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
@@ -283,12 +284,15 @@
               <p>The scanner can't see a camera, so live scanning is paused. You can still scan
                 photos of your cards, and everything else works as usual.</p>
               <div class="row">
+                <button class="btn primary" id="useDeviceCamBtn" hidden>
+                  <svg><use href="#i-camera" /></svg>Use this device's camera
+                </button>
                 <button class="btn primary" id="usePhotosBtn">
                   <svg><use href="#i-photos" /></svg>Scan photos instead
                 </button>
                 <a class="btn" href="/maintenance">Run the check-up</a>
               </div>
-              <p class="sub">On the Pi: power off, reseat the ribbon cable (contacts facing the board at both ends), then power on.
+              <p class="sub" id="noCamHint">On the Pi: power off, reseat the ribbon cable (contacts facing the board at both ends), then power on.
                 It keeps looking, so the picture appears by itself once a camera works.</p>
             </div>
             <svg

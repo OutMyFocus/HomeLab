@@ -34,6 +34,8 @@ BACKUP_DIR = config.DATA_DIR / "backups"                 # copies made before a 
 SETUP_HINT = ("The maintenance helper isn't installed yet. It installs itself within 5 minutes of an "
               "update, or run: bash ~/HomeLab/mtg-sorter/deploy/setup.sh")
 ON_PI = sys.platform.startswith("linux") and Path("/proc/device-tree/model").exists()
+# The Docker image (see ../Dockerfile and deploy/UNRAID.md): no hardware, and updates come as a new image.
+IN_DOCKER = bool(os.environ.get("MTG_IN_DOCKER")) or Path("/.dockerenv").exists()
 
 
 def run(cmd: list[str], timeout: float = 10, input: str | None = None) -> tuple[bool, str]:
@@ -302,6 +304,12 @@ def camera_check(scanner) -> dict:
     if src == "DemoSource":
         return check("camera", "Camera", "ok", "Using demo photos instead of a camera.")
     if src == "WaitingForCamera" or scanner.source is None:
+        device = ("On the Scan page, pick \"This device's camera\" to scan with your phone's or "
+                  "computer's camera (needs the https address), or scan photos.")
+        if IN_DOCKER:   # the server has no camera of its own; that's expected, not a problem
+            return check("camera", "Camera", "off", "No camera on the server.", device)
+        if not ON_PI:
+            return check("camera", "Camera", "bad", "No camera found.", device)
         return check("camera", "Camera", "bad", "No camera found.",
                      "Power off, then check the ribbon cable: contacts facing the board at both ends, latches "
                      "pressed down. Then turn the Pi back on. See MAINTENANCE.md, \"Camera not found\".")
@@ -361,6 +369,8 @@ def database_check(scanner) -> dict:
     n = scanner.matcher.card_count
     if not n:
         return check("cards", "Card database", "bad", "The card database is empty, so no card can be recognized.",
+                     "Restore a backup from the Pi below (Maintenance > Back up on the Pi, then Restore here), or "
+                     "run: docker exec mtg-sorter python build_db.py --sets dmu,one" if IN_DOCKER else
                      "On the Pi: cd ~/HomeLab/mtg-sorter && .venv/bin/python build_db.py --sets dmu,one")
     learned = scanner.matcher.learned_count
     return check("cards", "Card database", "ok", f"{n:,} cards" + (f", {learned:,} learned scans" if learned else ""))
@@ -368,6 +378,9 @@ def database_check(scanner) -> dict:
 
 def updates_check() -> dict:
     v, st, on = version(), update_status(), auto_updates_on()
+    if IN_DOCKER:
+        return check("updates", "Updates", "off", "Running in Docker: updates arrive as a new image.",
+                     "On Unraid's Docker tab, press Check for updates, then Update next to mtg-sorter.")
     if not v.get("available"):
         return check("updates", "Updates", "off", "Not a git copy, so it can't update itself.")
     if not ON_PI:
@@ -595,8 +608,14 @@ def add_system_routes(app, scanner, machine, web_dir):
             later(*args)
         return answer(go, message)
 
+    def docker_restart():
+        # Docker restarts the container when the app exits (restart: unless-stopped).
+        threading.Timer(1.0, lambda: os._exit(0)).start()
+
     @app.post("/api/system/restart")
     def restart():
+        if IN_DOCKER:
+            return answer(docker_restart, "Restarting the app. The page comes back in about 10 seconds.")
         return soon("restart", message="Restarting the app. The page comes back in about 10 seconds.")
 
     @app.post("/api/system/reboot")
@@ -648,7 +667,10 @@ def add_system_routes(app, scanner, machine, web_dir):
 
         def go():
             done = restore_backup(f.stream)
-            if admin_installed():
+            if IN_DOCKER:
+                docker_restart()
+                done["message"] = "Restored. The app restarts to load it."
+            elif admin_installed():
                 later("restart")
                 done["message"] = "Restored. The app restarts to load it."
             else:

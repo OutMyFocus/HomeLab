@@ -159,6 +159,15 @@ No webcam yet? `python app.py --demo path/to/photos` pretends the photos are a c
 On the Raspberry Pi, run `python app.py --host 0.0.0.0` and open `http://<the Pi's address>:5000`
 from your laptop or phone.
 
+**Scan with your phone's camera.** On the Scan page, the camera menu has **This device's
+camera**: the phone (or laptop) you're holding becomes the scanner's camera, and the cards go
+into the same collection. Browsers only allow that on an https address, such as the Tailscale
+one ([deploy/REMOTE_ACCESS.md](deploy/REMOTE_ACCESS.md)).
+
+**On a home server** (Unraid, or any Docker host): the app comes as a Docker image,
+`ghcr.io/outmyfocus/mtg-sorter`, so every device at home shares one collection without the Pi
+being on. Setup: [deploy/UNRAID.md](deploy/UNRAID.md).
+
 ## Teach the scanner (Train tab)
 
 Out of the box the scanner knows each card from one clean Scryfall picture. Your camera,

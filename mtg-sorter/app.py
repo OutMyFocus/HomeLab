@@ -29,7 +29,7 @@ import cv2
 import numpy as np
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 from mtgscanner import config
-from mtgscanner.camera import CameraSource, list_cameras  # noqa: F401  (tests patch these here)
+from mtgscanner.camera import BrowserSource, CameraSource, list_cameras  # noqa: F401  (tests patch these here)
 from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect
@@ -50,7 +50,7 @@ from mtgscanner.live import Live
 from mtgscanner.machine import Machine, add_machine_routes
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
 from mtgscanner.sorting import card_price, choose_bin
-from mtgscanner.system import add_system_routes
+from mtgscanner.system import ON_PI, add_system_routes
 from mtgscanner.tracking import Track, free_number, pair_up
 from mtgscanner.training import forget_all, ready_to_learn, train
 from mtgscanner.vault_prices import VaultPrices
@@ -160,6 +160,9 @@ class Scanner:
         self.collect = False  # keep every scan in data/captures (see captures.py)
         self.learn = True  # learn each confirmed scan as soon as its card is taken away
         self.captures = CaptureLog(config.CAPTURES_DIR)
+        # A phone or computer scanning with its own camera (see BrowserSource). When it
+        # goes quiet, the scanner goes back to this machine's own camera (local_camera()).
+        self.local_camera = None
         self.perf = {
             "fps": None,
             "ms_frame": None,
@@ -207,10 +210,17 @@ class Scanner:
                     self.forget_tracks()
             if new is not None:
                 old, self.source = self.source, new
+                self.started = False  # "Starting camera…" until the new one's first picture
                 if hasattr(old, "release"):
                     old.release()
+            if self.source is None:
+                time.sleep(0.2)
+                continue
             frame = self.source.read()
             if frame is None:
+                if isinstance(self.source, BrowserSource) and self.source.gone():
+                    print(f"{self.source.name} stopped sending pictures.")
+                    self.use_source(self.local_camera() if self.local_camera else None)
                 time.sleep(0.2)
                 continue
             self.process(frame)
@@ -427,10 +437,10 @@ class Scanner:
                 (t for t in self.tracks if not t.missing or t.status != "recognizing"),
                 key=lambda t: t.number,
             )
-            if not self.started:
-                status = (
-                    "waiting" if isinstance(self.source, WaitingForCamera) else "starting"
-                )
+            if isinstance(self.source, WaitingForCamera) or self.source is None:
+                status = "waiting"
+            elif not self.started:
+                status = "starting"
             elif not visible:
                 status = "looking"
             elif any(t.status == "recognizing" for t in visible):
@@ -512,7 +522,7 @@ def clean_slots(raw) -> list[list[float]] | None:
 
 
 def camera_info(source) -> dict | None:
-    if not isinstance(source, CameraSource):
+    if not isinstance(source, (CameraSource, BrowserSource)):
         return None
     if hasattr(source, "info"):
         return source.info()
@@ -625,6 +635,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 c["card"]["wanted"] = name_key(c["card"]["name"]) in wanted
         s["session"] = [c | {"wanted": name_key(c["name"]) in wanted} for c in s["session"]]
         s["locked"] = security.enabled()
+        s["on_pi"] = ON_PI
         return jsonify(s)
 
     @app.post("/api/settings")
@@ -669,6 +680,8 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     @app.post("/api/camera")
     def camera():
         body = request.get_json(force=True)
+        if body.get("index") == BrowserSource.index:
+            return browser_camera(body)
         index, name = int(body["index"]), body.get("name")
         current = camera_info(scanner._next_source or scanner.source)
         if current and current["index"] == index:
@@ -680,6 +693,47 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         scanner.use_source(source)
         save_settings(camera={"index": source.index, "name": source.name})
         return state()
+
+    # --- Scanning with the camera of the phone or computer that has the page open ---
+    # The page picks "This device's camera", then sends its pictures to /api/frame with the
+    # token it made up. Only one device can be the scanner's camera at a time; picking it
+    # on another device takes over. When the page closes (or goes quiet for a while), the
+    # scanner goes back to this machine's own camera, if it has one.
+
+    def browser_source():
+        source = scanner._next_source or scanner.source
+        return source if isinstance(source, BrowserSource) else None
+
+    def browser_camera(body):
+        token = str(body.get("token") or "")
+        if not token:
+            return jsonify({"error": "Missing camera token"}), 400
+        current = browser_source()
+        if current and current.token == token:
+            return state()
+        scanner.use_source(BrowserSource(token, str(body.get("name") or "")[:40] or None))
+        return state()
+
+    @app.post("/api/frame")
+    def frame():
+        """One picture from the device's camera (a JPEG, sent as the request body)."""
+        source = browser_source()
+        if source is None or source.token != request.headers.get("X-Camera-Token", ""):
+            return jsonify({"error": "This device isn't the scanner's camera anymore"}), 409
+        img = cv2.imdecode(np.frombuffer(request.get_data(), np.uint8), cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({"error": "Couldn't read the picture"}), 400
+        source.push(img)
+        return "", 204
+
+    @app.post("/api/camera/release")
+    def release_camera():
+        """The device stopped scanning: back to this machine's own camera."""
+        body = request.get_json(force=True, silent=True) or {}
+        source = browser_source()
+        if source and source.token == str(body.get("token") or ""):
+            scanner.use_source(scanner.local_camera() if scanner.local_camera else None)
+        return "", 204
 
     @app.post("/api/wrong")
     def wrong():
@@ -971,6 +1025,19 @@ def main():
     scanner = Scanner(matcher, vault, source, None if args.offline else Live())
     if isinstance(source, WaitingForCamera):
         source.on_found = scanner.use_source
+
+    def local_camera():
+        """This machine's own camera again, once a phone or computer stops scanning."""
+        if args.demo:
+            return DemoSource(args.demo)
+        try:
+            return startup_camera(args.camera)
+        except RuntimeError:
+            waiting = WaitingForCamera(args.camera)
+            waiting.on_found = scanner.use_source
+            return waiting
+
+    scanner.local_camera = local_camera
     scanner.restore(load_settings())
     scanner.lights = Lights()
     scanner.lights.start()  # shows the saved color (nothing happens without light bars)
