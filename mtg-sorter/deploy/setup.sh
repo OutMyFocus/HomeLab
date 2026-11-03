@@ -131,7 +131,7 @@ main() {
     else
         note "no card database yet, so fetching two sets to start with (about a minute)"
         as_user .venv/bin/python build_db.py --sets dmu,one
-        note "for every card later: cd $APP && .venv/bin/python build_db.py --all  (a few hours)"
+        note "for every card: Maintenance page > Download every card, or cd $APP && .venv/bin/python build_db.py --all  (30-60 min)"
     fi
 
     step "6/7 Services, updates and maintenance tools"

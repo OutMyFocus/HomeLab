@@ -366,14 +366,31 @@ def lights_check(scanner) -> dict | None:
 
 
 def database_check(scanner) -> dict:
+    from .cardbuild import FULL_DATABASE
+    build = getattr(scanner, "card_build", None)
+    job = build.state() if build else {}
     n = scanner.matcher.card_count
+    learned = scanner.matcher.learned_count
+    have = f"{n:,} cards" + (f", {learned:,} learned scans" if learned else "")
+    if job.get("running"):
+        return check("cards", "Card database", "ok", f"{have}. Downloading every card: {job['message']}")
+    if job.get("error"):
+        return check("cards", "Card database", "warn", job["error"], None, "cards_build")
     if not n:
         return check("cards", "Card database", "bad", "The card database is empty, so no card can be recognized.",
-                     "Restore a backup from the Pi below (Maintenance > Back up on the Pi, then Restore here), or "
-                     "run: docker exec mtg-sorter python build_db.py --sets dmu,one" if IN_DOCKER else
-                     "On the Pi: cd ~/HomeLab/mtg-sorter && .venv/bin/python build_db.py --sets dmu,one")
-    learned = scanner.matcher.learned_count
-    return check("cards", "Card database", "ok", f"{n:,} cards" + (f", {learned:,} learned scans" if learned else ""))
+                     "Press Download every card (30-60 minutes), or restore a backup below.", "cards_build")
+    if n < FULL_DATABASE:
+        return check("cards", "Card database", "warn",
+                     f"Only {n:,} cards, so cards from other sets can't be recognized.",
+                     "Press Download every card: about 108,000 printings, 30-60 minutes. "
+                     "Scanning keeps working while it runs.", "cards_build")
+    old = getattr(scanner.matcher, "old_count", 0)
+    if old:
+        return check("cards", "Card database", "warn",
+                     f"{have}. {old:,} of them still have the older fingerprint, which mixes up look-alike cards.",
+                     "Press Download every card to give them the newer one. Scanning keeps working while it runs.",
+                     "cards_build")
+    return check("cards", "Card database", "ok", have)
 
 
 def updates_check() -> dict:
@@ -441,6 +458,7 @@ def summary(scanner, machine) -> dict:
         "ip": ip_address(),
         "tailscale_ip": tailscale_ip(),
         "throttled": [text for bit, text in THROTTLE_BITS.items() if (throttled() or 0) >> bit & 1],
+        "cards": scanner.card_build.state() if getattr(scanner, "card_build", None) else None,
     }
 
 
@@ -635,6 +653,26 @@ def add_system_routes(app, scanner, machine, web_dir):
         # The update restarts the app when there's something new, so it runs after answering.
         return soon("update-force" if force else "update",
                     message="Checking GitHub. If there's a new version the app restarts with it in a minute.")
+
+    from .cardbuild import CardBuild
+    scanner.card_build = CardBuild(scanner.matcher)
+
+    @app.get("/api/system/cards")
+    def cards_build_state():
+        return jsonify(scanner.card_build.state())
+
+    @app.post("/api/system/cards")
+    def cards_build():
+        """Download every card's picture and fingerprint it (see cardbuild.py)."""
+        if not scanner.card_build.start(everything=True):
+            return jsonify(ok=True, message="It's already downloading.")
+        return jsonify(ok=True, message="Downloading every card. Scanning keeps working, and new cards "
+                       "are recognized as they arrive. This takes 30-60 minutes.")
+
+    @app.post("/api/system/cards/stop")
+    def cards_build_stop():
+        scanner.card_build.stop()
+        return jsonify(ok=True, message="Stopping after the cards in progress. Press Download every card to carry on.")
 
     @app.post("/api/system/autoupdate")
     def autoupdate():
