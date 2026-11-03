@@ -6,6 +6,15 @@
   // Bin names come from the Bins page (state.bin_names); these are the defaults until it answers.
   let BIN_NAMES = { 0: "Unknown", 1: "Bulk", 2: "$1–10", 3: "$10+" };
   let state = null, shownId = null, toastT;
+  // This page's own scanner, once its device becomes a camera: a token the page made up,
+  // which names that scanner in every request (and the name typed as "who's scanning").
+  const device = { on: false, stream: null, token: null, facing: "environment", torch: false, who: "",
+    name: /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "Phone camera" : "Computer camera" };
+  try { device.token = sessionStorage.getItem("mtg-cam-token"); device.who = localStorage.getItem("mtg-scanner-who") || ""; } catch (e) {}
+  if (!device.token) {
+    device.token = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now());
+    try { sessionStorage.setItem("mtg-cam-token", device.token); } catch (e) {}
+  }
   // Set an element's HTML only when it changed. The state arrives several times a second,
   // and rebuilding unchanged rows restarts their animations and reloads their pictures.
   const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
@@ -16,8 +25,12 @@
     clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200);
   }
 
+  // Every request names this page's scanner (see "this device's camera" below). Until the
+  // device scans, that name is unknown to the app and the machine's scanner answers.
+  const scannerHeaders = () => ({ "X-Scanner": device.token });
   async function api(path, body) {
-    const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(path, body === undefined ? { headers: scannerHeaders() }
+      : { method: "POST", headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify(body) });
     if (r.status === 401) { location.href = "/lock?next=/scan"; throw new Error("Locked"); }   // the PIN lock (Settings page)
     if (!r.ok) throw new Error(r.status);
     return r.json();
@@ -110,7 +123,7 @@
   $("closeLook").onclick = $("scrim").onclick = () => setDrawer(false);
 
   // ---------- live ----------
-  const STATUS = { starting: "Starting camera…", waiting: "No camera connected", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
+  const STATUS = { starting: "Starting camera…", waiting: "No camera connected", paused: "Camera paused", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
   let selected = null;     // the card shown big: its track id
   let editing = false, drag = null;   // Slots mode: drawing boxes on the picture, and the box being dragged
 
@@ -160,7 +173,9 @@
     if (s.bin_names) BIN_NAMES = s.bin_names;
     $("meta").classList.remove("down");
     $("metaText").textContent = `${s.db_count.toLocaleString()} cards` + (s.learned ? ` + ${s.learned.toLocaleString()} learned` : "") + ` · ${s.prices}`;
-    if (device.on && s.camera && !(s.camera.browser && s.camera.index === "browser")) { stopDeviceCamera(false); toast("The scanner switched to another camera"); }
+    const others = (s.scanners || []).map(o => o.owner || o.name);
+    $("othersScanning").hidden = !others.length;
+    $("othersScanning").textContent = others.length ? `Also scanning: ${others.join(", ")}` : "";
     if (device.on && isPhone && s.status === "locked" && state?.status !== "locked") { try { navigator.vibrate?.(25); } catch (e) {} }
     const st = $("camStatus"); st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status;
     showCamera(s.status !== "waiting");
@@ -301,15 +316,9 @@
   // The browser opens the camera, and the page sends a picture to the scanner several
   // times a second. Browsers only allow the camera on https (or localhost).
   const isPhone = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
-  const device = { on: false, stream: null, token: null, facing: "environment", torch: false, name: isPhone ? "Phone camera" : "Computer camera" };
   const deviceWord = isPhone ? "phone" : "computer";
   const canUseDevice = !!navigator.mediaDevices?.getUserMedia && window.isSecureContext;
   const deviceHint = canUseDevice ? "" : !navigator.mediaDevices ? "This browser can't share its camera" : "Needs an https address (see Maintenance)";
-  try { device.token = sessionStorage.getItem("mtg-cam-token"); } catch (e) {}
-  if (!device.token) {
-    device.token = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now());
-    try { sessionStorage.setItem("mtg-cam-token", device.token); } catch (e) {}
-  }
   const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: false });
   let sendT = null;
 
@@ -357,11 +366,13 @@
     $("camDevice").hidden = false;
     fitDeviceBox();
     try {
-      render(await api("/api/camera", { index: "browser", name: device.name, token: device.token }));
+      device.who = $("whoInput").value.trim().slice(0, 40);
+      try { localStorage.setItem("mtg-scanner-who", device.who); } catch (e) {}
+      render(await api("/api/camera", { index: "browser", name: device.name, token: device.token, who: device.who }));
     } catch (e) { stopDeviceCamera(false); toast("Couldn't hand the camera to the scanner"); return false; }
     camsLoadedAt = Date.now(); loadCameras();   // the menu now shows this device as the camera
     sendFrame();
-    toast(`Scanning with this ${deviceWord}'s camera`);
+    toast(device.who ? `Scanning as ${device.who}` : `Scanning with this ${deviceWord}'s camera`);
     return true;
   }
 
@@ -393,8 +404,11 @@
       const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.8));
       if (!device.on) return;
       try {
-        const r = await fetch("/api/frame", { method: "POST", headers: { "Content-Type": "image/jpeg", "X-Camera-Token": device.token }, body: blob });
-        if (r.status === 409) { stopDeviceCamera(false); toast("The scanner stopped using this device's camera"); loadCameras(); return; }
+        const r = await fetch("/api/frame", { method: "POST", headers: { "Content-Type": "image/jpeg", ...scannerHeaders() }, body: blob });
+        if (r.status === 409) {   // the app restarted, or dropped this page after a long sleep: ask for a scanner again
+          try { render(await api("/api/camera", { index: "browser", name: device.name, token: device.token, who: device.who })); }
+          catch (e) { stopDeviceCamera(false); toast("Couldn't get the scanner back"); loadCameras(); return; }
+        }
         if (r.status === 401) { location.href = "/lock?next=/scan"; return; }
       } catch (e) {}   // the scanner is restarting or Wi-Fi blinked: keep trying
     }
@@ -410,7 +424,7 @@
     document.querySelector(".camera").classList.remove("device");
     $("camDevice").hidden = true;
     fitDeviceBox();
-    if (was && tellScanner) api("/api/camera/release", { token: device.token }).catch(() => {});
+    if (was && tellScanner) api("/api/camera/release", { token: device.token }).then(() => poll()).catch(() => {});
     camShown = null; if (state) showCamera(state.status !== "waiting");
   }
   // Closing the tab: tell the scanner right away, so it goes back to its own camera.
@@ -421,12 +435,14 @@
   });
   // Back from the background: the scanner may have given up on this camera meanwhile, so ask for it again.
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && device.on) api("/api/camera", { index: "browser", name: device.name, token: device.token }).then(render).catch(() => {});
+    if (!document.hidden && device.on) api("/api/camera", { index: "browser", name: device.name, token: device.token, who: device.who }).then(render).catch(() => {});
   });
   $("noCamDevice").hidden = !canUseDevice;
   $("noCamOther").hidden = canUseDevice;
   $("deviceTitle").textContent = `Scan with this ${deviceWord}`;
   $("useDeviceCamText").textContent = `Use this ${deviceWord}'s camera`;
+  $("whoInput").value = device.who;
+  $("whoInput").onkeydown = e => { if (e.key === "Enter") startDeviceCamera(); };
   $("useDeviceCamBtn").onclick = startDeviceCamera;
   $("usePhotosLink").onclick = () => showTab("photos");
 
@@ -662,10 +678,9 @@
     const opts = cams.map(c => `<option value="${c.index}">${esc(c.name)}</option>`);
     if (!cur) opts.unshift(`<option value="" disabled>${state?.status === "waiting" ? "No camera" : "Demo photos"}</option>`);
     if (!cams.length) opts.push('<option value="" disabled>No cameras found</option>');
-    if (cur?.browser && !device.on) opts.push(`<option value="taken" disabled>${esc(cur.name)} (another device)</option>`);
     if (navigator.mediaDevices) opts.push(`<option value="browser" ${canUseDevice ? "" : "disabled"}>This ${deviceWord}'s camera${deviceHint ? " · " + deviceHint : ""}</option>`);
     sel.innerHTML = opts.join("");
-    sel.value = cur ? (cur.browser ? (device.on ? "browser" : "taken") : String(cur.index)) : "";
+    sel.value = cur ? (cur.browser ? "browser" : String(cur.index)) : "";
     camIndex = cur?.index;
   }
   $("camSelect").onchange = async e => {
