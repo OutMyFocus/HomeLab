@@ -187,10 +187,11 @@ def build(source: Iterator[dict], db_path: Path | None = None, progress: Callabl
     """
     conn = connect(db_path or config.DB_PATH)
     known = {row[0]: len(row[1]) for row in conn.execute("SELECT id, fingerprint FROM cards")}
-    todo, refreshed = [], 0
+    todo, refreshed, seen = [], 0, set()
     for card in source:
-        if card.get("digital") or card.get("layout") == "art_series":
-            continue
+        if card.get("digital") or card.get("layout") == "art_series" or card["id"] in seen:
+            continue   # (a search can list the same printing twice)
+        seen.add(card["id"])
         have = known.get(card["id"])
         if have is not None:
             conn.execute("UPDATE cards SET price_usd = ?, price_usd_foil = ? WHERE id = ?",

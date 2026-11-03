@@ -76,6 +76,7 @@ def test_build_adds_new_cards_upgrades_old_ones_and_refreshes_prices(tmp_path, m
 
     monkeypatch.setattr(build_db, "fetch_fingerprint", fake_fetch)
     source = [_scryfall_card(0, "9.99"), _scryfall_card(1), _scryfall_card(2),
+              _scryfall_card(2),                                 # listed twice: counted once
               {**_scryfall_card(3), "digital": True}]          # digital-only cards are left out
     batches = []
     result = build_db.build(iter(source), path, progress=lambda s: None, on_batch=lambda: batches.append(1))
