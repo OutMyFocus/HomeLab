@@ -302,3 +302,67 @@ def test_starts_without_a_camera_and_picks_one_up(db, monkeypatch):  # noqa: F81
     monkeypatch.setattr(app, "startup_camera", lambda index: found)
     assert waiting.read() is None
     assert scanner._next_source is found
+
+
+def test_phone_camera_scans_through_the_browser(db, tmp_path, monkeypatch):  # noqa: F811
+    """A phone picks "This device's camera" and sends its pictures; the scanner recognizes
+    the card in them and goes back to its own camera once the phone is done."""
+    import app
+    from mtgscanner.camera import BrowserSource
+
+    monkeypatch.setattr(config, "COLLECTION_CSV", tmp_path / "collection.csv")
+    monkeypatch.setattr(config, "CAPTURES_DIR", tmp_path / "captures")
+    local = FakeCamera(0, "Integrated Webcam")
+    scanner = Scanner(db, None, source=local)
+    scanner.local_camera = lambda: FakeCamera(0, "Integrated Webcam")
+    client = create_app(scanner).test_client()
+
+    res = client.post("/api/camera", json={"index": "browser"})
+    assert res.status_code == 400
+
+    state = client.post("/api/camera", json={"index": "browser", "name": "Phone camera", "token": "phone-1"}).get_json()
+    assert state["camera"]["name"] == "Phone camera" and state["camera"]["browser"]
+    source = scanner._next_source
+    assert isinstance(source, BrowserSource) and source.token == "phone-1"
+    scanner.source, scanner._next_source = source, None   # what the scanner thread does between frames
+
+    # The wrong token (another device, or a stale page) is turned away.
+    res = client.post("/api/frame", data=jpeg(photograph(fake_card(2))), headers={"X-Camera-Token": "someone-else"})
+    assert res.status_code == 409
+    res = client.post("/api/frame", data=b"not a picture", headers={"X-Camera-Token": "phone-1"})
+    assert res.status_code == 400
+
+    photo = jpeg(photograph(fake_card(2)))
+    for _ in range(4):
+        assert client.post("/api/frame", data=photo, headers={"X-Camera-Token": "phone-1"}).status_code == 204
+        scanner.process(source.read(timeout=0.1))
+    state = client.get("/api/state").get_json()
+    assert state["camera"]["index"] == "browser" and state["camera"]["size"] == [960, 720]
+    assert state["cards"] and state["cards"][0]["card"]["id"] == "id2"
+
+    # Picking it again on the same phone changes nothing; closing the page hands the camera back.
+    client.post("/api/camera", json={"index": "browser", "token": "phone-1"})
+    assert scanner._next_source is None
+    client.post("/api/camera/release", json={"token": "nobody"})
+    assert scanner._next_source is None
+    client.post("/api/camera/release", json={"token": "phone-1"})
+    assert isinstance(scanner._next_source, FakeCamera)
+
+
+def test_browser_camera_gone_quiet_gives_way(db, monkeypatch):  # noqa: F811
+    """The phone's page closed without saying so: after a while the scanner thread goes
+    back to this machine's camera (or to waiting for one)."""
+    from mtgscanner.camera import BrowserSource
+
+    source = BrowserSource("phone-2")
+    source.gone_after = 0.0
+    scanner = Scanner(db, None, source=source)
+    scanner.local_camera = lambda: FakeCamera(0)
+    import time
+    time.sleep(0.01)
+    assert source.read(timeout=0.01) is None and source.gone()
+    # One turn of Scanner.run, without the loop.
+    frame = scanner.source.read(timeout=0.01)
+    if frame is None and isinstance(scanner.source, BrowserSource) and scanner.source.gone():
+        scanner.use_source(scanner.local_camera())
+    assert isinstance(scanner._next_source, FakeCamera)

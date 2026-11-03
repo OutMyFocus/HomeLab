@@ -1,9 +1,11 @@
 """Settings you can tweak. Start here if you want to change how the scanner behaves."""
 
+import os
 from pathlib import Path
 
-# Where data files live (the card database and your collection CSV).
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# Where data files live (the card database and your collection CSV): the data folder
+# next to app.py, or the folder named by MTG_DATA_DIR (the Docker image uses /data).
+DATA_DIR = Path(os.environ.get("MTG_DATA_DIR") or Path(__file__).resolve().parent.parent / "data").resolve()
 DB_PATH = DATA_DIR / "cards.db"
 COLLECTION_CSV = DATA_DIR / "collection.csv"
 # Canadian prices saved from Commander Vault (optional, see vault_prices.py).

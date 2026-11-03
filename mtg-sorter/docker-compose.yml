@@ -1,0 +1,16 @@
+# The scanner web app on a home server. From this folder: docker compose up -d
+# Unraid users: see deploy/UNRAID.md instead (the Docker tab does the same thing with a form).
+services:
+  mtg-sorter:
+    image: ghcr.io/outmyfocus/mtg-sorter:latest
+    # To build it yourself instead of pulling the image: docker compose up -d --build
+    build: .
+    container_name: mtg-sorter
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Card database, collection, settings and backups. Change the left side to taste.
+      - ./data:/data
+    environment:
+      - TZ=America/Toronto
