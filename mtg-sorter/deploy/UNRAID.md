@@ -107,7 +107,16 @@ takes hours and you can stop and resume it).
 
 The phone's browser opens its camera and sends a picture to the server about eight times a
 second; the server runs the same recognition the Pi does and sends back what it found, which
-the page draws over the live video. Only one device can be the scanner's camera at a time:
-picking **This device's camera** on another device takes over, and closing the page hands
-the camera back. Everything else on the Scan page (Auto-save, foil, slots, training, the
-photo upload) works exactly as before.
+the page draws over the live video. Every phone gets a scanner of its own, so several people
+can scan at the same time, each with their own table and session, and the machine's camera
+(on the Pi) carries on untouched. The name typed under **Scanning as** is saved with each card
+in the collection's Source column, so you can tell whose cards are whose on the Collection
+page. Closing the page drops its scanner (its cards are already saved); a page left in the
+background pauses and picks up again when it comes back. Everything else on the Scan page
+(Auto-save, foil, slots, training, the photo upload) works exactly as before.
+
+**Away from home:** the Tailscale address works anywhere your phone has Tailscale on.
+**Friends:** they need a way in first. Cloudflare Tunnel with Cloudflare Access (an emailed
+code; see [REMOTE_ACCESS.md](REMOTE_ACCESS.md), step 3) is the easy one, since they install
+nothing. Set a PIN in Settings before sharing any link: without one, anyone with the link can
+scan into, delete from and download your collection.
