@@ -182,8 +182,8 @@ fascia starts 114 mm above the floor. These numbers are the `dr_*` block at the 
   slots in the floor under the Pi, so air can move. Fit the Pi 5's Active Cooler (or any
   fan heatsink under 25 mm) and it'll stay cool in there.
 - A **light bar** sits behind the three slots in the fascia: one white strip, glued across
-  the fascia seams (it ties the three pieces together), with a piece of the LED strip stuck
-  behind it. Lit, it's the thin line across the front that the Roca has, in three dashes,
+  the fascia seams (it ties the three pieces together), with a 14-LED piece of 10 mm WS2812B
+  strip (BTF-LIGHTING, 60 LEDs/m, IP30) stuck behind it. Lit, it's the thin line across the front that the Roca has, in three dashes,
   one per drawer. Unlit, it's a white line.
 
 Plates too big for the 256 mm bed are split into tiles that meet at a seam, and joined on

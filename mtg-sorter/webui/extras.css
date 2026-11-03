@@ -1,0 +1,67 @@
+/* History, Wishlist, Settings and the lock screen. Builds on style.css, collection.css, decks.css. */
+
+/* history */
+.day-chart { position: relative; height: 170px; }
+.day-chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.day-chart .bar { fill: var(--accent); }
+.day-chart .hit:hover + .bar, .day-chart .bar:hover { fill: color-mix(in oklab, var(--accent) 80%, white); }
+.day-chart .grid { stroke: var(--line); }
+.day-chart .axis { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+.session-row { border-top: 1px solid var(--line); }
+.session-row:first-child { border-top: 0; }
+.session-sum { display: grid; grid-template-columns: minmax(0, 1.4fr) 90px 120px minmax(0, 2fr); gap: 14px; align-items: center; width: 100%; padding: 12px 6px;
+  border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 10px; }
+.session-sum:hover { background: var(--raised); }
+.session-sum b { font-weight: 650; }
+.session-sum small { display: block; color: var(--muted); font-size: .8rem; }
+.session-sum .nums b { font-variant-numeric: tabular-nums; }
+.session-sum .topcard { color: var(--muted); font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-sum .topcard b { color: var(--text); }
+.session-body { padding: 4px 6px 16px; display: grid; gap: 10px; }
+.session-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.session-acts .grow { flex: 1; }
+.session-acts .btn { padding: 7px 11px; font-size: .85rem; }
+.bin-chip { background: var(--raised); color: var(--muted); }
+
+/* wishlist */
+.wish-add { padding: var(--pad); }
+.wish-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.wish-card { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 10px; border-radius: calc(var(--radius) * .7); background: var(--raised);
+  border: 1px solid var(--line); }
+.wish-card.deal { border-color: var(--good); background: color-mix(in oklab, var(--good) 8%, var(--raised)); }
+.wish-card .art { aspect-ratio: 63 / 88; border-radius: 4.5% / 3.2%; overflow: hidden; background: var(--panel-solid); position: relative; }
+.wish-card .art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wish-card .noimg { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; font-size: .72rem; color: var(--muted); padding: 4px; }
+.wish-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: flex-start; }
+.wish-info b { font-weight: 650; line-height: 1.25; }
+.badge { font-size: .74rem; font-weight: 650; padding: 1px 8px; border-radius: 999px; background: var(--hover); color: var(--muted); }
+.badge.good { background: color-mix(in oklab, var(--good) 20%, transparent); color: var(--good); }
+.target { display: inline-flex; align-items: center; gap: 6px; font-size: .84rem; color: var(--muted); margin-top: auto; }
+.wish-info .link-btn { margin-top: 0; font-size: .8rem; }
+
+/* settings */
+.setting { padding: var(--pad); display: grid; gap: 12px; justify-items: start; max-width: 760px; }
+.setting p { margin: 0; max-width: 70ch; }
+.setting .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.field.pin { width: 13em; }
+
+/* lock screen */
+.lock-body { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.lock-box { width: min(340px, 100%); padding: 28px 24px; display: grid; gap: 12px; justify-items: center; text-align: center; }
+.lock-box h2 { font-size: 1.25rem; }
+.lock-box p { margin: 0; }
+.lock-logo { width: 46px; height: 46px; color: var(--accent); }
+.pin-input { width: 100%; text-align: center; font-size: 1.6rem; letter-spacing: .4em; padding: 10px; border-radius: calc(var(--radius) * .6);
+  border: 1px solid var(--line-strong); background: var(--raised); color: var(--text); }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }
+.keypad button { padding: 14px 0; font-size: 1.15rem; font-weight: 600; border-radius: calc(var(--radius) * .6); border: 1px solid var(--line); background: var(--raised);
+  color: var(--text); cursor: pointer; }
+.keypad button:hover { background: var(--hover); }
+.keypad [data-k="clear"] { font-size: .85rem; color: var(--muted); }
+.keypad .go { background: var(--accent); color: var(--on-accent); border-color: transparent; font-size: .95rem; }
+.lock-box .err { color: var(--bad); font-weight: 600; }
+.lock-box .small { font-size: .78rem; }
+
+@media (max-width: 700px) {
+  .session-sum { grid-template-columns: minmax(0, 1fr) 70px 90px; }
+}

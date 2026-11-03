@@ -18,7 +18,8 @@ Replace `example.com` with your domain throughout.
 
 ## 1. Run the app as a service
 
-So it starts on boot and comes back if it crashes. From an SSH session on the Pi:
+So it starts on boot and comes back if it crashes. `deploy/setup.sh` does steps 1 and 1b for
+you (and more: see [MAINTENANCE.md](../MAINTENANCE.md)). By hand, from an SSH session on the Pi:
 
 ```bash
 cd ~/HomeLab && git pull
@@ -56,7 +57,9 @@ journalctl -u mtg-sorter-update -n 20        # what the last updates did
 ```
 
 It only fast-forwards. If you edit files in `~/HomeLab` on the Pi, updates stop (the log
-says so) until you undo the edits with `git checkout -- .` or commit and push them.
+and the Maintenance page say so) until you press **Fix updates** on the Maintenance page
+(it sets the edits aside with `git stash`) or undo them with `git checkout -- .`. If a new version
+doesn't start, it goes back to the previous one by itself.
 
 If you stop the app from the service to run it by hand, use `sudo systemctl stop mtg-sorter`
 first, or the two will fight over port 5000.

@@ -26,7 +26,8 @@
 //   side          x4    side panel half (two per side, flip one end for end)
 //   fascia_l/m/r        the band above the drawers, three pieces: the seams sit right above the
 //                       gaps between the drawer plates. Print it in a lighter colour
-//   light_bar           white strip behind the three light slots (LED strip behind it); glued
+//   light_bar           white strip behind the three light slots (a 10 mm WS2812B strip, 14 LEDs,
+//                       stuck behind it); glued
 //                       across the fascia seams, it also ties the three pieces together
 //   back_l back_r       back panel halves (l/r as seen from the front), port cut-outs
 //   floor_fl floor_fr   floor, front: the drawers slide on it; stop rail at the back

@@ -1,0 +1,4 @@
+# Lets the web app's Maintenance page (running as nic) restart, update and reboot the Pi
+# without a password. Only this one helper, which only does a fixed list of jobs.
+# Installed to /etc/sudoers.d/mtg-sorter by install.sh.
+nic ALL=(root) NOPASSWD: /usr/local/sbin/mtg-sorter-admin

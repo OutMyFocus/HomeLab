@@ -282,3 +282,23 @@ def test_slot_occupied_tells_a_card_from_plain_table():
     assert slot_occupied(cv2.resize(fake_card(1), (200, 280)))
     assert not slot_occupied(EMPTY[100:380, 100:300])
     assert not slot_occupied(EMPTY[0:0, 0:0])
+
+
+def test_starts_without_a_camera_and_picks_one_up(db, monkeypatch):  # noqa: F811
+    import types
+
+    import app
+
+    waiting = app.WaitingForCamera(None, seconds=0)
+    scanner = Scanner(db, None, source=waiting)
+    waiting.on_found = scanner.use_source
+    state = create_app(scanner).test_client().get("/api/state").get_json()
+    assert state["status"] == "waiting"
+
+    monkeypatch.setattr(app, "startup_camera", lambda index: (_ for _ in ()).throw(RuntimeError("none")))
+    assert waiting.read() is None and scanner._next_source is None
+
+    found = types.SimpleNamespace(name="Pi camera")
+    monkeypatch.setattr(app, "startup_camera", lambda index: found)
+    assert waiting.read() is None
+    assert scanner._next_source is found
