@@ -496,7 +496,9 @@ def forget_wifi(name: str):
 # scanner learned from them is already in cards.db.
 BACKUP_FILES = ["collection.csv", "cards.db", "app_settings.json", "machine_settings.json",
                 "vault_prices.json", "usd_cad.json", "decks.json", "wishlist.json", "alerts.json",
-                "sort_rules.json", "games.json", "trades.json"]
+                "sort_rules.json", "games.json", "trades.json", "price_history.json", "users.json"]
+# Folders a backup holds too: everyone else's cards (accounts.py) and deck guides.
+BACKUP_FOLDERS = ["users", "guides"]
 
 
 def make_backup(with_scans: bool = False) -> io.BytesIO:
@@ -521,10 +523,11 @@ def make_backup(with_scans: bool = False) -> io.BytesIO:
                     tmp.unlink(missing_ok=True)
             else:
                 z.write(path, name)
-        if with_scans and (data / "captures").is_dir():
-            for path in sorted((data / "captures").rglob("*")):
-                if path.is_file():
-                    z.write(path, path.relative_to(data).as_posix())
+        for folder in BACKUP_FOLDERS + (["captures"] if with_scans else []):
+            if (data / folder).is_dir():
+                for path in sorted((data / folder).rglob("*")):
+                    if path.is_file() and path.suffix not in (".tmp", ".restoring"):
+                        z.write(path, path.relative_to(data).as_posix())
     buf.seek(0)
     return buf
 
@@ -533,7 +536,7 @@ def _safe_member(name: str) -> bool:
     if name in BACKUP_FILES:
         return True
     parts = Path(name).parts
-    return (len(parts) >= 2 and parts[0] == "captures" and ".." not in parts
+    return (len(parts) >= 2 and parts[0] in ["captures"] + BACKUP_FOLDERS and ".." not in parts
             and not name.startswith("/") and "\\" not in name)
 
 

@@ -6,7 +6,7 @@ can show everything at a glance without opening every page.
 
 from flask import jsonify, send_from_directory
 
-from . import config, decks, sort_rules, wishlist
+from . import accounts, config, decks, sort_rules, wishlist
 from .history import per_day, sessions
 from .library import holdings, make_key, note_value, read_rows, row_foil, row_id, summarize
 
@@ -69,7 +69,7 @@ def add_home_routes(app, scanner, machine, web_dir):
     @app.get("/api/home")
     def home_state():
         with scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
+            rows = read_rows(accounts.collection_csv())
         items = holdings(rows, scanner.matcher, scanner.vault, getattr(scanner, "live", None))
         summary = summarize(items)
         by_key = {it["key"]: it for it in items}

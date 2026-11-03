@@ -6,7 +6,7 @@ counts how your current collection would be split by rules you haven't saved yet
 
 from flask import jsonify, request, send_from_directory
 
-from . import config, sort_rules
+from . import accounts, config, sort_rules
 from .library import holdings, read_rows
 
 
@@ -35,7 +35,7 @@ def add_bins_routes(app, scanner, web_dir):
 
     def items():
         with scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
+            rows = read_rows(accounts.collection_csv())
         return holdings(rows, scanner.matcher, scanner.vault, getattr(scanner, "live", None))
 
     def answer(rules=None):

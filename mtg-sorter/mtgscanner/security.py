@@ -21,7 +21,7 @@ from pathlib import Path
 
 from flask import jsonify, make_response, request, send_from_directory
 
-from . import config
+from . import accounts, config
 
 COOKIE = "mtg_unlocked"
 DAYS = 30
@@ -121,6 +121,8 @@ def install(app, web_dir):
     @app.before_request
     def guard():
         path = request.path
+        if accounts.enabled():   # logins (logins.py) do the PIN's job then
+            return None
         if path in OPEN_PATHS or path.startswith("/static/") or allowed():
             return None
         if path.startswith("/api/") or path.startswith("/captures/") or path.endswith(".mjpg"):
@@ -135,6 +137,8 @@ def install(app, web_dir):
 
     @app.get("/api/lock")
     def lock_state():
+        if accounts.enabled():
+            return jsonify({"enabled": False, "unlocked": True, "local": is_local(), "accounts": True})
         return jsonify({"enabled": enabled(), "unlocked": allowed(), "local": is_local()})
 
     @app.post("/api/unlock")
