@@ -365,11 +365,11 @@
     document.querySelector(".camera").classList.add("device");
     $("camDevice").hidden = false;
     fitDeviceBox();
-    try {
-      device.who = $("whoInput").value.trim().slice(0, 40);
-      try { localStorage.setItem("mtg-scanner-who", device.who); } catch (e) {}
-      render(await api("/api/camera", { index: "browser", name: device.name, token: device.token, who: device.who }));
-    } catch (e) { stopDeviceCamera(false); toast("Couldn't hand the camera to the scanner"); return false; }
+    device.who = $("whoInput").value.trim().slice(0, 40);
+    try { localStorage.setItem("mtg-scanner-who", device.who); } catch (e) {}
+    $("camStatus").textContent = "Handing the camera to the scanner…";
+    try { render(await claimScanner()); }
+    catch (e) { stopDeviceCamera(false); toast("Couldn't hand the camera to the scanner. Check the connection and try again"); return false; }
     camsLoadedAt = Date.now(); loadCameras();   // the menu now shows this device as the camera
     sendFrame();
     toast(device.who ? `Scanning as ${device.who}` : `Scanning with this ${deviceWord}'s camera`);
@@ -390,26 +390,48 @@
   };
   $("stopDeviceBtn").onclick = () => { stopDeviceCamera(true); toast("Stopped scanning with this device"); loadCameras(); };
 
+  // Asking the scanner for this device's camera. A phone on cellular (or Tailscale waking
+  // up) drops the odd request, so a failed ask is tried again a few times before giving up.
+  async function claimScanner() {
+    const ask = { index: "browser", name: device.name, token: device.token, who: device.who };
+    let wait = 600;
+    for (let tries = 0; ; tries++) {
+      try { return await api("/api/camera", ask); }
+      catch (e) {
+        if (e.message === "Locked" || e.message === "400" || tries >= 3 || !device.on) throw e;
+        await new Promise(res => setTimeout(res, wait)); wait *= 2;
+      }
+    }
+  }
+
   // One picture after another: the next one goes as soon as the scanner took the last,
-  // at most about 8 a second, and not while the page is hidden.
+  // at most about 8 a second, and not while the page is hidden. Pictures shrink while the
+  // link is slow (a phone on cellular) and grow back once it keeps up: a small picture
+  // several times a second beats a sharp one every second.
+  const FRAME_WIDTHS = [1280, 1024, 800, 640];
+  let frameSize = 0, quickFrames = 0;
   async function sendFrame() {
     clearTimeout(sendT);
     if (!device.on) return;
     if (document.hidden) { sendT = setTimeout(sendFrame, 500); return; }
     const v = $("localCam"), started = Date.now();
     if (v.videoWidth) {
-      const w = Math.min(1280, v.videoWidth), h = Math.round(v.videoHeight * w / v.videoWidth);
+      const w = Math.min(FRAME_WIDTHS[frameSize], v.videoWidth), h = Math.round(v.videoHeight * w / v.videoWidth);
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       ctx.drawImage(v, 0, 0, w, h);
-      const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.8));
+      const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", frameSize ? 0.7 : 0.8));
       if (!device.on) return;
+      const sent = Date.now();
       try {
         const r = await fetch("/api/frame", { method: "POST", headers: { "Content-Type": "image/jpeg", ...scannerHeaders() }, body: blob });
         if (r.status === 409) {   // the app restarted, or dropped this page after a long sleep: ask for a scanner again
-          try { render(await api("/api/camera", { index: "browser", name: device.name, token: device.token, who: device.who })); }
+          try { render(await claimScanner()); }
           catch (e) { stopDeviceCamera(false); toast("Couldn't get the scanner back"); loadCameras(); return; }
         }
         if (r.status === 401) { location.href = "/lock?next=/scan"; return; }
+        const took = Date.now() - sent;
+        if (took > 450 && frameSize < FRAME_WIDTHS.length - 1) { frameSize++; quickFrames = 0; }
+        else if (took < 150 && frameSize > 0 && ++quickFrames >= 24) { frameSize--; quickFrames = 0; }
       } catch (e) {}   // the scanner is restarting or Wi-Fi blinked: keep trying
     }
     sendT = setTimeout(sendFrame, Math.max(40, 125 - (Date.now() - started)));
