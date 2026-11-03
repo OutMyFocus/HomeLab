@@ -33,7 +33,10 @@
       const pin = document.getElementById("pin"), err = document.getElementById("err");
       const next = new URLSearchParams(location.search).get("next");
       const go = () => location.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : (location.pathname === "/lock" ? "/" : location.href));
-      fetch("/api/lock").then(r => r.json()).then(s => { if (s.unlocked) go(); }).catch(() => {});
+      fetch("/api/lock").then(r => r.json()).then(s => {
+        if (s.accounts) return location.replace("/login" + location.search);   // accounts are on: log in instead
+        if (s.unlocked) go();
+      }).catch(() => {});
       document.getElementById("keypad").onclick = e => {
         const b = e.target.closest("button"); if (!b || b.type === "submit") return;
         if (b.dataset.k === "clear") pin.value = ""; else if (pin.value.length < 8) pin.value += b.textContent;
