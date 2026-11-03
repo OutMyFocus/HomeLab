@@ -21,6 +21,10 @@ card lands in the chute → chute sends it to bin 1, 2 or 3.**
 
 ---
 
+> **New parts (v2):** the feeder, the scan bed's stop and the door carriers have been
+> redesigned. Build those from [MECHANISM_V2.md](MECHANISM_V2.md); the steps below still
+> cover everything else.
+
 # Part 1: the feeder test
 
 The goal is one number: out of 100 cards, how many come out **on their own** (not two
@@ -71,7 +75,7 @@ and the **bottom edge of the gate**. Cards catch on anything sticking up.
    they're loose, the ring is too big; if you can't get one on, it's too small.
    (The first roller had a smaller hub and only poked up 0.8 mm, so it often missed the cards.
    If yours measures about 23 mm across the hub, between the grooves, it's the old one:
-   reprint it from `bambu/MTG_Sorter_Feeder_Stopper_Fix.3mf`. The new one measures 25.5 mm.)
+   print the v2 feeder instead: see [MECHANISM_V2.md](MECHANISM_V2.md).)
 
 ## 3. Fit the roller to the motor
 
@@ -391,7 +395,7 @@ kit.servo[0].angle = 90   # change the channel and angle to test each servo
    The pins only go up when the app moves them, so press **Pins → Up** before feeding a card.
    (The first rocker's pins stood only 2.4 mm proud and fast cards jumped over them. Measure a
    pin from the rocker's flat underside: about 15.5 mm is the old one, 18.5 mm the new one.
-   Reprint the old one from `bambu/MTG_Sorter_Feeder_Stopper_Fix.3mf`.)
+   The v2 stop gate replaces the rocker altogether: see [MECHANISM_V2.md](MECHANISM_V2.md).)
 5. **LED strips.** Cut two pieces about 9 cm long and stick one in the groove along each
    wall, just above the bed. Join them and power them from a Pi USB port.
 6. **Camera tower.** Push `tower_post` into the socket on the right wall, then

@@ -14,13 +14,17 @@
 //   bed_plate        white, the surface the camera looks at
 //   bed_side_left    side wall with the LED groove and the pin servo
 //   bed_side_right   side wall with the LED groove and the camera tower socket
-//   pin_rocker       the two stop pins, on an arm the pin servo turns
+//   stop_gate        v2: four stop teeth on a bar across the bed, turned by the pin servo
+//   gate_bearing     v2: clips on the tilt bracket and holds the stop gate's right end
+//   pin_rocker       the older two-pin version, replaced by stop_gate
 //   tower_post       camera tower post
 //   camera_head      arm + camera plate
 //   tilt_bracket     holds the tilt servo, between the two bed side walls
 //   chute            the tray
 //   trapdoor         x2 (print one, then one mirrored: part = "trapdoor_left")
-//   door_carrier     x2 (servo mount + back hinge on one bar) ("door_carrier_left" for the other)
+//   door_carrier     x2 (servo mount + back hinge on one bar) ("door_carrier_left" for the other).
+//                    v2: the servo body points in towards the middle, so it stays above the bridge
+//                    when the tray tilts (the first one hung out past the door and hit bridge_front)
 //   trapdoor_mount, hinge_lug: the older separate versions, replaced by door_carrier
 //   frame_side       x2 (identical)
 //   front_bar        holds the front of the tray's pivot
@@ -126,15 +130,94 @@ module servo_screws(depth, flip = false) {
 
 // ============================ BED ============================================
 
+// v2: guide rails 2.5 mm tall, 68 mm apart (a sleeved card is 66), opening out into a funnel
+// at the top where the card lands; four slots at the front for the stop gate's teeth.
+rail_in = 34;           // inside faces of the rails, x = +-34
+rail_h = 2.5;
+funnel_s = 72;          // the rails start opening out here ...
+funnel_in = 42;         // ... to x = +-42 at the top edge
 module bed_plate() {
     difference() {
         union() {
             translate([-side_in - 2 + 0.3, 0, -bed_t]) cube([2 * side_in + 4 - 0.6, bed_len, bed_t]);
-            // low rails that keep the card straight
-            for (m = [0, 1]) mirror([m, 0, 0]) translate([card_w / 2 + 2, 8, 0]) cube([1.5, bed_len - 8, 1.5]);
+            for (m = [0, 1]) mirror([m, 0, 0]) {
+                translate([rail_in, 8, 0]) cube([1.5, funnel_s - 8, rail_h]);
+                hull() {
+                    translate([rail_in, funnel_s, 0]) cube([1.5, 0.01, rail_h]);
+                    translate([funnel_in, bed_len - 0.01, 0]) cube([1.5, 0.01, rail_h]);
+                }
+            }
         }
-        // slots the stop pins come up through (open at the front edge)
-        for (m = [0, 1]) mirror([m, 0, 0]) translate([pin_x - 2.5, -1, -bed_t - 1]) cube([5, 9, bed_t + 2]);
+        // slots the stop teeth come up through (open at the front edge)
+        for (x = tooth_x) translate([x - 2.5, -1, -bed_t - 1]) cube([5, 6, bed_t + 2]);
+    }
+}
+
+// ============================ STOP GATE (v2) ==================================
+// Four teeth across the front of the bed, 8 mm tall and square to it, so a fast card can't jump
+// them or twist past. They stand on a bar that spans the bed: the left end screws to the pin
+// servo's horn (same place as the old rocker), the right end turns on a pin in gate_bearing.
+// The card leans on the teeth; they turn down and forward out of its way. Built in bed
+// coordinates (x, s up the slope, n square to the bed), with the teeth up.
+tooth_x = [-24, -8, 8, 24];
+tooth_w = 3.6;
+tooth_top = 8;          // teeth stand this far above the bed
+gate_drop = 40;         // degrees the servo turns to drop the teeth. Checked in CAD: nothing touches
+                        // from 6° past up (the bar meets the bed: the up stop) to 44° down (the bar
+                        // meets the chute's back axle), with the tray level or tilted 22° either way
+gb_s0 = -1;  gb_s1 = 9;  // the bar, front to back
+gb_n0 = -9;  gb_n1 = -5; // ... and its depth under the bed (2 mm gap: the up stop, about 6° past up)
+gate_axis_s = (pin_axis[0] - bed_y) * cos(bed_angle) + (pin_axis[1] - bed_z) * sin(bed_angle);
+gate_axis_n = -(pin_axis[0] - bed_y) * sin(bed_angle) + (pin_axis[1] - bed_z) * cos(bed_angle);
+gate_left = -side_in + sv_top - 1;   // outer face of the horn plate (as the old rocker)
+gate_right = 49;                     // outer face of the right plate
+module stop_gate_bed() {
+    hub_r = 5.5;
+    difference() {
+        union() {
+            // the bar
+            translate([gate_left, gb_s0, gb_n0]) cube([gate_right - gate_left, gb_s1 - gb_s0, gb_n1 - gb_n0]);
+            // teeth
+            for (x = tooth_x) translate([x - tooth_w / 2, gb_s0, gb_n0]) cube([tooth_w, 3 - gb_s0, tooth_top - gb_n0]);
+            // end plates out to the axis
+            for (x = [gate_left, gate_right - 3]) hull() {
+                translate([x, gb_s0, gb_n0]) cube([3, gb_s1 - gb_s0, gb_n1 - gb_n0]);
+                translate([x, gate_axis_s, gate_axis_n]) rotate([0, 90, 0]) cylinder(r = hub_r, h = 3);
+            }
+        }
+        // left: hole for the horn's hub and two horn screw holes (as the old rocker)
+        translate([gate_left - 1, gate_axis_s, gate_axis_n]) rotate([0, 90, 0]) cylinder(d = 7.2, h = 5);
+        // right: hole for the bearing's pin
+        translate([gate_right - 4, gate_axis_s, gate_axis_n]) rotate([0, 90, 0]) cylinder(d = 5.5, h = 5);
+    }
+}
+// The horn screw holes are given in the machine's own coordinates, like the old rocker's.
+module stop_gate() {
+    difference() {
+        on_bed() stop_gate_bed();
+        for (d = [-1, 1]) translate([gate_left - 1, pin_axis[0] + d * 5.5, pin_axis[1] - 1]) rotate([0, 90, 0]) cylinder(d = 1.5, h = 5);
+    }
+}
+
+module stop_gate_print() {
+    translate([0, 0, -gb_s0]) rotate([90, 0, 0]) rotate([-bed_angle, 0, 0]) translate([0, -bed_y, -bed_z]) stop_gate();
+}
+
+// Clips down over the right end of the tilt bracket (between the bed walls) and carries the
+// pin the stop gate's right end turns on. One M2 x 6 through the back jaw into the bracket.
+module gate_bearing() {
+    x0 = gate_right + 0.5;  x1 = side_in - 0.3;
+    top = pivot_z - 20 + 32;          // tilt bracket top (157)
+    difference() {
+        union() {
+            translate([x0, 70, top - 7]) cube([x1 - x0, tilt_bracket_y + 6 + 2.5 - 70, pin_axis[1] + 5 - top + 7]);
+            translate([gate_right - 4, pin_axis[0], pin_axis[1]]) rotate([0, 90, 0]) cylinder(d = 5, h = x0 - gate_right + 4 + 0.01);
+        }
+        // the slot the bracket goes into
+        translate([x0 - 1, tilt_bracket_y - 0.2, top - 8]) cube([x1 - x0 + 2, 6.4, 8]);
+        // M2 screw through the back jaw
+        translate([(x0 + x1) / 2, tilt_bracket_y + 10, top - 3.5]) rotate([90, 0, 0]) cylinder(d = 1.8, h = 12);
+        translate([(x0 + x1) / 2, tilt_bracket_y + 6.2 + 3, top - 3.5]) rotate([90, 0, 0]) cylinder(d = 2.2, h = 3.2);
     }
 }
 
@@ -329,10 +412,18 @@ module hinge_lug() {
 carrier_x = door_half + 17.5;    // bar x = carrier_x .. carrier_x + 6, screws on its centre line
 module door_carrier() {
     top = pivot_z - floor_t;
+    sv_c = door_half - (sv_len / 2 - sv_shaft_off);   // middle of the servo body (it points inward)
+    plate_x0 = sv_c - sv_tab_len / 2 - 1.5;
+    plate_x1 = door_half + 11;
+    plate_z0 = hinge_z - 7;
     difference() {
         union() {
-            // servo plate (as trapdoor_mount)
-            translate([door_half - 12, -ch_out - 2.5, hinge_z - 10]) cube([sv_len + 12, 2.5, top - hinge_z + 10]);
+            // servo plate, with its outer bottom corner cut away (that corner swings lowest)
+            translate([0, -ch_out, 0]) rotate([90, 0, 0]) linear_extrude(2.5) polygon([
+                [plate_x0, plate_z0], [plate_x1 - 4, plate_z0], [plate_x1, plate_z0 + 5],
+                [plate_x1, top], [plate_x0, top]]);
+            // strip out to the bar
+            translate([plate_x1 - 1, -ch_out - 2.5, top - 3]) cube([carrier_x + 6 - plate_x1 + 1, 2.5, 3]);
             // bar along the outer edge, front to back
             translate([carrier_x, -ch_out - 2.5, top - 3]) cube([6, ch_in + ch_out + 2.5, 3]);
             // stiffening rib under the bar
@@ -344,10 +435,10 @@ module door_carrier() {
             }
             translate([door_half + 2, ch_in - 6, top - 3]) cube([carrier_x + 6 - door_half - 2, 6, 3]);
         }
-        // servo hole and its two tab screws
+        // servo hole, body towards the middle, and its two tab screws
         translate([door_half, -ch_out - 2.5 - 1, hinge_z]) rotate([-90, 0, 0])
-            translate([-sv_shaft_off - 0.3, -sv_w / 2 - 0.3, 0]) cube([sv_len + 0.6, sv_w + 0.6, 6]);
-        for (d = [-1, 1]) translate([door_half + sv_len / 2 - sv_shaft_off + d * sv_screw / 2, -ch_out - 4, hinge_z]) rotate([-90, 0, 0]) cylinder(d = 1.8, h = 5);
+            translate([-(sv_len - sv_shaft_off) - 0.3, -sv_w / 2 - 0.3, 0]) cube([sv_len + 0.6, sv_w + 0.6, 6]);
+        for (d = [-1, 1]) translate([sv_c + d * sv_screw / 2, -ch_out - 4, hinge_z]) rotate([-90, 0, 0]) cylinder(d = 1.8, h = 5);
         // hinge pin
         translate([door_half, ch_in - 7, hinge_z]) rotate([-90, 0, 0]) cylinder(d = 2.9, h = 8);
         // screws up into the tray floor
@@ -409,6 +500,9 @@ if (part == "bed_plate") translate([0, 0, bed_t]) bed_plate();
 else if (part == "bed_side_left") translate([0, 0, -side_in]) rotate([0, 90, 0]) mirror([1, 0, 0]) bed_side(true);
 else if (part == "bed_side_right") translate([0, 0, -side_in]) rotate([0, -90, 0]) bed_side(false);
 else if (part == "pin_rocker") translate([0, 0, -rocker_bottom]) pin_rocker();
+// stop gate: printed standing on the front faces of its bar and teeth (s up), no supports
+else if (part == "stop_gate") stop_gate_print();
+else if (part == "gate_bearing") translate([-160, -78, side_in - 0.3]) rotate([0, 90, 0]) gate_bearing();   // on its outer face, pin up
 else if (part == "tower_post") translate([0, 0, post_s / 2]) rotate([0, 90, 0]) tower_post();
 else if (part == "camera_head") camera_head();
 else if (part == "tilt_bracket") translate([0, 0, -tilt_bracket_y]) rotate([90, 0, 0]) tilt_bracket();
@@ -434,10 +528,11 @@ module assembly() {
     color("#2b2b2b") mirror([1, 0, 0]) bed_side(true);
     // LED strips
     for (m = [0, 1]) mirror([m, 0, 0]) color("#fff2b0") on_bed() translate([side_in - 0.5, 6, led_n - led_w / 2]) cube([0.5, bed_len - 12, led_w]);
-    // card resting against the pins
-    color("#c9a46a") on_bed() translate([-card_w / 2, 1.5 + 3, 0.05]) cube([card_w, card_l, 0.3]);
+    // card resting against the stop teeth
+    color("#c9a46a") on_bed() translate([-card_w / 2, 3, 0.05]) cube([card_w, card_l, 0.3]);
     // pins + rocker (rotates about the pin servo shaft)
-    color("orange") translate([0, pin_axis[0], pin_axis[1]]) rotate([show_pins_down ? pin_drop : 0, 0, 0]) translate([0, -pin_axis[0], -pin_axis[1]]) pin_rocker();
+    color("orange") translate([0, pin_axis[0], pin_axis[1]]) rotate([show_pins_down ? gate_drop : 0, 0, 0]) translate([0, -pin_axis[0], -pin_axis[1]]) stop_gate();
+    color("#2b2b2b") gate_bearing();
     // camera tower
     color("#3a3f47") on_bed() translate([tower_x, card_s, -4]) tower_post();
     color("#3a3f47") on_bed() translate([0, card_s, cam_height]) rotate([0, 0, 0]) camera_head();
@@ -446,8 +541,7 @@ module assembly() {
         color("#e8772e") chute();
         for (m = [0, 1]) mirror([m, 0, 0]) {
             color("#d0d0d0") translate([door_half, 0, hinge_z]) rotate([0, show_doors_open ? -90 : 0, 0]) translate([-door_half, 0, -hinge_z]) trapdoor();
-            color("#2b2b2b") trapdoor_mount();
-            color("#2b2b2b") hinge_lug();
+            color("#2b2b2b") door_carrier();
         }
     }
     color("#2b2b2b") tilt_bracket();
