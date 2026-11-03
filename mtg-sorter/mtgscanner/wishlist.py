@@ -16,7 +16,7 @@ from pathlib import Path
 
 from flask import jsonify, request, send_from_directory
 
-from . import config
+from . import accounts, config
 from .decks import _cheapest_known, name_key
 from .library import holdings, read_rows
 from .live import card_from_scryfall
@@ -28,11 +28,11 @@ _cache: dict = {"mtime": None, "path": None, "names": frozenset()}
 
 
 def wishlist_file() -> Path:
-    return config.DATA_DIR / "wishlist.json"
+    return accounts.user_file("wishlist.json")
 
 
 def alerts_file() -> Path:
-    return config.DATA_DIR / "alerts.json"
+    return accounts.user_file("alerts.json")
 
 
 def _read(path: Path, default):
@@ -43,7 +43,7 @@ def _read(path: Path, default):
 
 
 def _write(path: Path, data):
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=1))
     tmp.replace(path)
@@ -181,7 +181,7 @@ def add_wishlist_routes(app, scanner, web_dir):
 
     def answer():
         with scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
+            rows = read_rows(accounts.collection_csv())
         items = priced(load_items(), rows, scanner.matcher, scanner.vault, getattr(scanner, "live", None))
         return jsonify({"items": items, "deals": sum(1 for i in items if i["deal"]),
                         "owned": sum(1 for i in items if i["owned"])})
