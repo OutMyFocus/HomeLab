@@ -19,7 +19,7 @@ from pathlib import Path
 
 from flask import Response, jsonify, request, send_from_directory
 
-from . import accounts, config
+from . import accounts, config, montreal
 from .collection import COLUMNS, add_card
 from .database import Card
 from . import sort_rules
@@ -139,6 +139,7 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
             "qty": g["qty"],
             "price": price,
             "price_source": source,
+            "mtl": montreal.first(vault, card.name, foil),  # Face to Face Games, else the next Montreal store
             "value": None if price is None else round(price * g["qty"], 2),
             "scanned_price": scanned_price,
             "change": None if price is None or scanned_price is None else round(price - scanned_price, 2),
