@@ -169,3 +169,60 @@ class CameraSource:
             self._cond.notify_all()
         self._thread.join(timeout=2.0)
         self.cap.release()
+
+
+class BrowserSource:
+    """A camera on the phone or computer that has the page open. The browser sends its
+    pictures to /api/frame and this hands each new one to the scanner, so scanning works
+    from any device, not just the one the scanner runs on. The token tells the pictures of
+    one device from another's: only the device that picked this camera can send."""
+
+    index = "browser"       # what /api/camera is sent to pick it (webcams have numbers)
+    format = "JPEG"
+    gone_after = 15.0       # seconds without a picture before the scanner gives up on it
+
+    def __init__(self, token: str, name: str | None = None):
+        self.token, self.name = token, name or "This device's camera"
+        self._cond = threading.Condition()
+        self._frame, self._seq, self._given, self._stop = None, 0, 0, False
+        self.size = None            # (width, height) of the pictures, known from the first one
+        self.taken_at = 0.0         # when the newest picture arrived (time.monotonic)
+        self.last_seen = time.monotonic()
+        self.camera_fps = None
+        self._count, self._since = 0, time.monotonic()
+
+    def push(self, frame):
+        """A new picture from the browser (a decoded OpenCV image)."""
+        now = time.monotonic()
+        self._count += 1
+        if now - self._since >= 2.0:
+            self.camera_fps, self._count, self._since = self._count / (now - self._since), 0, now
+        with self._cond:
+            self._frame, self.taken_at, self.last_seen, self._seq = frame, now, now, self._seq + 1
+            self.size = (frame.shape[1], frame.shape[0])
+            self._cond.notify_all()
+
+    def read(self, timeout: float = 2.0):
+        """The newest picture not handed out yet (None if the browser stops sending)."""
+        with self._cond:
+            seq = self._given
+            if not self._cond.wait_for(lambda: self._seq > seq or self._stop, timeout) or self._stop:
+                return None
+            self._given = self._seq
+            return self._frame
+
+    def gone(self) -> bool:
+        """True once the browser has been silent long enough to count as closed."""
+        return time.monotonic() - self.last_seen > self.gone_after
+
+    def info(self) -> dict:
+        out = {"index": self.index, "name": self.name, "format": self.format,
+               "size": list(self.size) if self.size else None, "browser": True}
+        if self.camera_fps is not None:
+            out["fps"] = round(self.camera_fps, 1)
+        return out
+
+    def release(self):
+        self._stop = True
+        with self._cond:
+            self._cond.notify_all()

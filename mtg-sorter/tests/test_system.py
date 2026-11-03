@@ -139,3 +139,34 @@ def test_moving_parts_test(client, monkeypatch):
     r = client.post("/api/machine/test", json={}).get_json()
     assert [t["part"] for t in r["test"]] == [*config.SERVOS, "feeder"]
     assert all(t["ok"] for t in r["test"])
+
+
+def test_in_docker_the_server_has_no_camera_or_self_updates(client, monkeypatch):
+    from mtgscanner import system
+    monkeypatch.setattr(system, "IN_DOCKER", True)
+    s = client.get("/api/system").get_json()
+    camera = next(c for c in s["checks"] if c["id"] == "camera")
+    assert camera["state"] == "off" and "This device's camera" in camera["fix"]
+    updates = next(c for c in s["checks"] if c["id"] == "updates")
+    assert updates["state"] == "off" and "Docker" in updates["summary"]
+    assert client.get("/api/health").get_json()["overall"] != "bad" or \
+        all(p["label"] != "Camera" for p in client.get("/api/health").get_json()["problems"])
+    # Restart works without the Pi's helper: the app exits and Docker starts it again.
+    exits = []
+    monkeypatch.setattr(system.threading, "Timer", lambda delay, fn: type("T", (), {"start": lambda self: exits.append(delay)})())
+    assert client.post("/api/system/restart").get_json()["ok"]
+    assert exits == [1.0]
+
+
+def test_data_folder_can_be_moved_with_an_environment_variable(tmp_path, monkeypatch):
+    import importlib
+    from mtgscanner import config
+    monkeypatch.setenv("MTG_DATA_DIR", str(tmp_path / "elsewhere"))
+    try:
+        importlib.reload(config)
+        assert config.DATA_DIR == (tmp_path / "elsewhere").resolve()
+        assert config.DB_PATH == config.DATA_DIR / "cards.db"
+    finally:
+        monkeypatch.delenv("MTG_DATA_DIR")
+        importlib.reload(config)
+    assert config.DATA_DIR.name == "data"
