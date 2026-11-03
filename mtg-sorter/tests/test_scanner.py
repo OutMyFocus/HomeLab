@@ -125,3 +125,18 @@ def test_falls_back_to_scryfall_usd_in_cad(db):
 
 def test_bins_use_vault_prices(db):
     assert choose_bin(db.get_card("id0"), False, VAULT)[0] == 3  # $12.99 CAD, though Scryfall says $0.10 USD
+
+
+def test_empty_database_still_runs(tmp_path):
+    """A fresh install (the Docker image before a restore or build_db.py) starts and
+    says "not recognized" instead of crashing."""
+    from mtgscanner.recognize import identify, identify_crop
+
+    matcher = Matcher(connect(tmp_path / "empty.db"))
+    assert matcher.card_count == 0 and matcher.learned_count == 0
+    assert identify(matcher, fake_card(1)) == (None, 256)
+    m = identify_crop(matcher, fake_card(1))
+    assert m.card is None and m.candidates == []
+    hit = matcher.rank(fingerprint(fake_card(1)))
+    assert hit.id == "" and hit.distance == 256
+    assert matcher.search("Card") == []
