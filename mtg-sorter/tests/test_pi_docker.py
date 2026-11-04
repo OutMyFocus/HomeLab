@@ -205,3 +205,18 @@ def test_the_pi_can_switch_to_docker_from_the_maintenance_page(db, data, monkeyp
     monkeypatch.setattr(system, "admin", lambda *a, **k: jobs.append(a) or "")
     r = client.post("/api/system/docker", json={"on": True}).get_json()
     assert jobs == [("docker", "on")] and "Docker image" in r["message"]
+
+
+def test_wider_servo_travel(db, data):  # noqa: F811
+    class Servo:
+        angle, pulse = None, None
+        def set_pulse_width_range(self, lo, hi): self.pulse = (lo, hi)
+    m = pi_machine()
+    m._kit.servo = [Servo() for _ in range(16)]
+    client = create_app(Scanner(db, None, source=None), m).test_client()
+    client.post("/api/machine/move", json={"channel": 2, "angle": 180})
+    assert m._kit.servo[2].pulse == config.SERVO_PULSE
+    s = client.post("/api/machine/save", json={"wide_travel": True}).get_json()
+    assert s["wide_travel"] is True
+    client.post("/api/machine/move", json={"channel": 2, "angle": 180})
+    assert m._kit.servo[2].pulse == config.SERVO_PULSE_WIDE == (500, 2500)
