@@ -81,32 +81,3 @@
   .deck-acts .btn { flex: 1 1 auto; }
   .deck-acts .sub { width: 100%; }
 }
-
-/* ---------- Upgrade this deck (upgrades.js): steps from the fewest swaps to the most ---------- */
-.upgrades { padding: var(--pad); }
-.upgrades .panel-head .sub a { color: var(--accent); }
-.upgrades > .sub { margin: 4px 0 10px; }
-.upgrades .toolbar { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 12px; }
-.upgrades .up-steps { display: grid; gap: 8px; }
-.upgrades .step { border: 1px solid var(--line); border-radius: calc(var(--radius) * .7); background: var(--raised); overflow: hidden; }
-.upgrades .step summary { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 14px; cursor: pointer; list-style: none; }
-.upgrades .step summary::-webkit-details-marker { display: none; }
-.upgrades .step-n { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: .85rem; }
-.upgrades .step-t, .upgrades .step-m { display: flex; flex-direction: column; line-height: 1.25; }
-.upgrades .step-m { text-align: right; }
-.upgrades .step small { color: var(--muted); font-size: .8rem; }
-.upgrades .swaps { list-style: none; margin: 0; padding: 0; background: var(--panel-solid); }
-.upgrades .swaps li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 7em auto; gap: 10px; align-items: center; padding: 7px 14px; border-top: 1px solid var(--line); font-size: .9rem; }
-.upgrades .swaps b { font: 650 .66rem var(--mono); text-transform: uppercase; margin-right: 4px; }
-.upgrades .swap-out b { color: var(--bad); }
-.upgrades .swap-in b { color: var(--good); }
-.upgrades .swaps small { color: var(--muted); font-size: .76rem; white-space: nowrap; }
-.upgrades .swap-cost { text-align: right; font-size: .85rem; }
-.upgrades .step-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel-solid); }
-@media (max-width: 700px) {
-  .upgrades .swaps li { grid-template-columns: minmax(0, 1fr) auto; }
-  .upgrades .swap-out, .upgrades .swap-in { grid-column: 1; }
-  .upgrades .swap-cost { grid-column: 2; grid-row: 1; }
-  .upgrades .swaps li button { grid-column: 2; grid-row: 2; }
-  .upgrades .step-foot { flex-direction: column; align-items: stretch; }
-}

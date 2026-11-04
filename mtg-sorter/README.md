@@ -128,12 +128,6 @@ Then open **http://localhost:5000** in your browser. You get:
   deck checks (size, singleton, color identity, lands, ramp, draw, removal), the mana curve,
   Canadian prices, which cards you own, need to buy or proxy, suggestions that fit, a playtest
   hand, a game guide when there is one, and **Copy shopping list**.
-  **Upgrade this deck** looks up what players run with the commander on EDHREC and lines up
-  swaps in four steps, from the fewest changes to the most: a 3-swap quick fix, a tune-up, a big
-  upgrade and fully optimized (up to 30 swaps). Each swap cuts the card players run least with
-  that commander for one they run a lot more, land for land and spell for spell, with its price
-  in CAD (or "You own it"). Set a most-per-card price or **Only cards I own**, then press **Swap**
-  on one or make a whole step. Answers are saved for three days in `data/edhrec_cache.json`.
 - **Card lookup**: search every Commander card (the whole database is on the Pi, so it's
   instant), by name, text, type, color or set and number. Filter by role (ramp, draw, removal…),
   see a card's prices at each Canadian store, every printing, how many you own, which of your
