@@ -156,7 +156,9 @@ class Machine:
             if old:
                 old.cancel()
             hold = getattr(config, "SERVO_HOLD_SECONDS", 0)
-            if angle is not None and hold > 0:
+            keep = {config.SERVOS[p][0] for p in getattr(config, "SERVO_KEEP_HOLDING", ())
+                    if p in config.SERVOS}
+            if angle is not None and hold > 0 and channel not in keep:
                 # Let go once it has had time to get there. A servo held against
                 # something it can't push past draws full current and gets hot.
                 token = object()
