@@ -226,7 +226,7 @@
     await Promise.all([V.loadPrices(), V.loadOwned().catch(() => []), V.loadDecks().catch(() => [])]);
     $("kFor").innerHTML = '<option value="">Fits any deck</option>' + S.decks.filter(d => d.commander).map(d => `<option value="${esc(d.id)}">Fits ${esc(d.name)}</option>`).join("");
     await V.loadCards((text, pct) => { $("kSummary").textContent = pct != null ? `${text}, ${pct}%` : text; });
-    $("kStatus").textContent = S.cards ? `${S.cards.length.toLocaleString()} Commander cards${S.caDate ? ` · Canadian Near Mint prices from ${S.caDate} (Face to Face Games first, then 401 Games, The Mythic Store and Hobbiesville)` : ""}` : "";
+    $("kStatus").textContent = S.cards ? `${S.cards.length.toLocaleString()} Commander cards${S.caDate ? ` · Canadian Near Mint prices from ${S.caDate} (Face to Face Games first, then 401 Games, The Mythic Store, Hobbiesville, and the Montreal stores Card Brawlers and L'Univers de la Carte)` : ""}` : "";
     render();
     if (params.get("card")) show(params.get("card"));
   })().catch(e => toast(e.message));

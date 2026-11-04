@@ -209,11 +209,12 @@
       $("cardSet").textContent = `${c.set_name} · ${c.set} #${c.number} · ${c.rarity}${c.foil ? " · foil" : ""}`;
       $("cardPrice").textContent = money(c.price);
       $("cardSource").textContent = c.price_source ? c.price_source : "";
+      window.Montreal?.show($("cardMontreal"), c);  // today's prices at Face to Face Games and other Montreal stores
       const b = $("cardBin"); b.textContent = `Bin ${c.bin} · ${c.bin_label}`; b.className = "bin bin-" + c.bin;
       const m = $("cardMatch"); m.className = "match opt-match " + (c.match || "good");
       $("cardWanted").hidden = !c.wanted;
       m.textContent = c.match == null ? "You picked this" : c.match === "good" ? "Good match" : "Fair match: check the set";
-    } else shownId = null;
+    } else { shownId = null; window.Montreal?.show($("cardMontreal"), null); }
 
     const value = s.cards.reduce((v, x) => v + (x.card?.price || 0), 0);
     $("tableCount").textContent = s.cards.length ? s.cards.length : "";

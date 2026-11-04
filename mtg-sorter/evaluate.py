@@ -57,7 +57,7 @@ def main():
     if args.plain:     # learned fingerprints come after the cards
         ids, hashes, names = matcher._table
         n = matcher.card_count
-        matcher._table = ids[:n], hashes[:n], names[:n]
+        matcher._table = ids[:n], tuple(h[:n] for h in hashes), names[:n]
         matcher.learned_count = 0
 
     # What each scan really shows: your own answers first, then what you saved or corrected.

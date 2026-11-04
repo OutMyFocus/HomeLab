@@ -1,5 +1,7 @@
 # Builds the MTG scanner's Docker image and publishes it as ghcr.io/outmyfocus/mtg-sorter
 # whenever mtg-sorter/ changes on main. Pull requests only build it, to catch a broken image.
+# Two platforms in one tag: amd64 for the server (tower) and arm64 for the sorter's Pi, so
+# both run exactly the same version of the app (see mtg-sorter/deploy/PI_DOCKER.md).
 # The package must be set to public once (GitHub > Packages > mtg-sorter > Package settings)
 # so a server can pull it without logging in.
 name: mtg-sorter image
@@ -22,6 +24,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Builds the Pi's arm64 image on GitHub's x86 machines.
+      - uses: docker/setup-qemu-action@v3
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub's registry
@@ -36,6 +41,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: mtg-sorter
+          platforms: linux/amd64,linux/arm64
+          build-args: MTG_VERSION=${{ github.sha }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/outmyfocus/mtg-sorter:latest

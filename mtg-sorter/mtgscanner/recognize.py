@@ -32,7 +32,7 @@ def confidence_of(distance: int, margin: int) -> str | None:
         return None
     if distance <= config.SURE_DISTANCE and margin >= config.SURE_MARGIN:
         return "sure"
-    if margin >= config.LIKELY_MARGIN:
+    if distance <= config.LIKELY_DISTANCE and margin >= config.LIKELY_MARGIN:
         return "likely"
     return "unsure"
 
