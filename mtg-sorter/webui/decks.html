@@ -75,6 +75,18 @@ For a Commander deck, put the commander under a Commander line and the deck buil
           <div class="money-line" id="bMoney"></div>
         </div>
       </div>
+      <div class="panel upgrades" id="upgrades">
+        <div class="panel-head"><h3>Upgrade this deck</h3><span class="sub" id="uSub"></span></div>
+        <p class="sub" id="uNote">Set a commander to see upgrades.</p>
+        <div class="toolbar" id="uTools" hidden>
+          <label class="sub" for="uBudget">Most per card</label>
+          <select class="field" id="uBudget">
+            <option value="">Any price</option><option value="1">$1</option><option value="3">$3</option><option value="5">$5</option><option value="10">$10</option><option value="25">$25</option>
+          </select>
+          <label class="switch"><input type="checkbox" id="uOwned"><span></span>Only cards I own</label>
+        </div>
+        <div class="up-steps" id="uSteps"></div>
+      </div>
       <div class="panel" style="padding: var(--pad)">
         <div class="toolbar">
           <div class="add-card"><input class="field" id="bAdd" placeholder="Add a card: type a name, press Enter" autocomplete="off" spellcheck="false" aria-label="Add a card"><ul class="suggest" id="bSug" role="listbox" hidden></ul></div>
@@ -127,5 +139,6 @@ For a Commander deck, put the commander under a Commander line and the deck buil
   <script src="/static/decks.js"></script>
   <script src="/static/vault.js"></script>
   <script src="/static/builder.js"></script>
+  <script src="/static/upgrades.js"></script>
 </body>
 </html>

@@ -11,8 +11,8 @@ It has three parts, built in this order:
 | 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Stand designed ([`hardware/`](hardware/)) |
 | 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
 
-**Looking after it:** Maintenance, in the menu at the top of every page (under More on a
-phone), has the health check-up, updates, restart, backups and logs. It gets a yellow or red dot
+**Looking after it:** Maintenance, under the gear in the menu at the top of every page (under
+More on a phone), has the health check-up, updates, restart, backups and logs. It gets a yellow or red dot
 when something needs a look. What to do when something goes wrong:
 [MAINTENANCE.md](MAINTENANCE.md).
 
@@ -96,9 +96,11 @@ Then open **http://localhost:5000** in your browser. You get:
   servo board, feeder and Pi are OK, the collection's value and a value chart, cards scanned in
   the last 14 days, the newest cards, the most valuable ones, the biggest price changes and how
   full each bin is. The scanner itself is at `/scan`.
-- **Page menu**: the same on every page. Links across the top on a computer (the rest under
-  **More** when the window is narrow, or press M on the scanner), and a bar along the bottom on
-  a phone. With no camera connected, the scanner says so and offers **Scan photos instead**.
+- **Page menu**: the same on every page, and short: **Home**, **Scanner**, then **Cards**
+  (Collection, Sets, Wishlist, Card lookup, Scan history), **Decks** (Decks, Play), **Machine**
+  (Machine, Bins, Lights) and the gear (Settings, Maintenance), each a small drop-down. Press M
+  on the scanner to see every page at once. On a phone it's a bar along the bottom: Home,
+  Scanner, Cards, Decks and More. With no camera connected, the scanner says so and offers **Scan photos instead**.
 - **Collection** (in the menu, or **Whole collection**): everything you've ever saved.
   Search and filter by color, rarity, set, bin, foil and price, sort it, and switch between
   pictures and a list. Tap a card to change how many you have, mark it foil, pick a different
@@ -126,6 +128,12 @@ Then open **http://localhost:5000** in your browser. You get:
   deck checks (size, singleton, color identity, lands, ramp, draw, removal), the mana curve,
   Canadian prices, which cards you own, need to buy or proxy, suggestions that fit, a playtest
   hand, a game guide when there is one, and **Copy shopping list**.
+  **Upgrade this deck** looks up what players run with the commander on EDHREC and lines up
+  swaps in four steps, from the fewest changes to the most: a 3-swap quick fix, a tune-up, a big
+  upgrade and fully optimized (up to 30 swaps). Each swap cuts the card players run least with
+  that commander for one they run a lot more, land for land and spell for spell, with its price
+  in CAD (or "You own it"). Set a most-per-card price or **Only cards I own**, then press **Swap**
+  on one or make a whole step. Answers are saved for three days in `data/edhrec_cache.json`.
 - **Card lookup**: search every Commander card (the whole database is on the Pi, so it's
   instant), by name, text, type, color or set and number. Filter by role (ramp, draw, removal…),
   see a card's prices at each Canadian store, every printing, how many you own, which of your

@@ -112,3 +112,13 @@ def test_pages_have_one_header_and_no_old_menus(client):
         assert 'class="pages"' not in html and 'id="menuBtn"' not in html, page
         ids = re.findall(r'\sid="([^"]+)"', html)
         assert len(ids) == len(set(ids)), (page, sorted({i for i in ids if ids.count(i) > 1}))
+
+
+def test_menu_is_short_and_has_every_page_once():
+    js = (WEB / "shell.js").read_text()
+    keys = re.findall(r'\{ key: "([a-z]+)", href:', js)
+    links = re.findall(r'const LINKS = \[(.*?)\]', js)[0]
+    groups = re.findall(r'pages: \[(.*?)\]', js)[:4]
+    placed = re.findall(r'"([a-z]+)"', links) + [k for g in groups for k in re.findall(r'"([a-z]+)"', g)]
+    assert sorted(placed) == sorted(keys)               # every page in exactly one spot
+    assert len(re.findall(r'"([a-z]+)"', links)) + len(groups) <= 6   # the header: 2 links and 4 menus

@@ -38,6 +38,7 @@
     $("bGuide").hidden = !deck.guide; if (deck.guide) $("bGuide").href = deck.guide;
     $("bNote").textContent = S.cards ? "" : "Checks, the curve and card types need the card database. It downloads once, then stays in this browser.";
     groups(ch.bad); curve(); renderPt();
+    document.dispatchEvent(new CustomEvent("deck-rendered"));
   }
 
   function groups(bad) {
@@ -146,6 +147,9 @@
     renderPt();
   };
   $("ptHand").onclick = e => { const b = e.target.closest("[data-pti]"); if (!b || !pt || !pt.mulls) return; const i = +b.dataset.pti; if (pt.bottom.has(i)) pt.bottom.delete(i); else if (pt.bottom.size < pt.mulls) pt.bottom.add(i); renderPt(); };
+
+  // The upgrades panel (upgrades.js) reads and changes the deck through these.
+  window.DECKBUILDER = { read, write, isLand };
 
   // ---------- start ----------
   $("deckText").addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { pt = null; render(); }, 300); });
