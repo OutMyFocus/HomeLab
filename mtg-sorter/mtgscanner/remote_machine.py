@@ -148,3 +148,56 @@ def server_allowed() -> bool:
     except OSError:
         return False
     return bool(key) and bool(given) and hmac.compare_digest(given, key)
+
+
+class RemoteLights:
+    """The Pi's light bars, driven from the server's Lights page: the same methods as
+    lights.Lights, each one a request to the Pi's own /api/lights. The Pi's scanner flashes
+    its lights itself, so event() does nothing here."""
+
+    def __init__(self, url: str, key: str | None = None):
+        self.link = RemoteMachine(url, key)
+        self.url = self.link.url
+        from .lights import Lights
+        self._local = Lights()   # never started: only the page's defaults while the Pi is away
+
+    @property
+    def http(self):
+        return self.link.http
+
+    @http.setter
+    def http(self, session):
+        self.link.http = session
+
+    def start(self):
+        pass
+
+    def event(self, name: str):
+        pass
+
+    def state(self) -> dict:
+        try:
+            s = self.link._call("/api/lights")
+        except (RuntimeError, ValueError) as e:
+            s = self._local.state() | {"ok": False, "error": str(e)}
+        s["remote"] = self.url
+        return s
+
+    def preview(self) -> list[str]:
+        try:
+            return list(self.link._call("/api/lights/preview").get("colors") or [])
+        except (RuntimeError, ValueError):
+            return []
+
+    def update(self, raw: dict):
+        self.link._call("/api/lights", dict(raw))
+
+    def flash(self, event: str, force: bool = False):
+        self.link._call("/api/lights/flash", {"event": event})
+
+    def reset(self):
+        self.link._call("/api/lights/reset", {})
+
+    def spi_on(self) -> str:
+        return str(self.link._call("/api/lights/spi-on", {}).get("message") or "")
+

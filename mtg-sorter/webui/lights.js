@@ -67,9 +67,10 @@
     state = s;
     const set = s.settings;
     $("dot").className = "dot " + (s.ok ? "ok" : "off");
-    $("status").textContent = s.ok
-      ? `Ready: sending to the bars on ${s.pin}. (The Pi can't tell whether they're plugged in.)`
-      : s.error || "Not available.";
+    const where = s.remote ? `On the sorter's Pi (${s.remote.replace(/^https?:\/\//, "")}): ` : "";
+    $("status").textContent = where + (s.ok
+      ? `ready, sending to the bars on ${s.pin}. (The Pi can't tell whether they're plugged in.)`
+      : s.error || "Not available.");
     $("spiRow").hidden = s.ok || !/SPI/.test(s.error || "");
     $("on").checked = set.on;
     $("flashes").checked = set.flashes;
