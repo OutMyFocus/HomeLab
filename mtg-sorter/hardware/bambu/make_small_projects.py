@@ -35,6 +35,7 @@ mp.PER_PART.update({
     "bed_chute_servo_crank3_left": SOLID,
     "bed_chute_door_link3": SOLID,
     "enc_bridge_cap": SOLID,
+    "enc_splice": SOLID,
 })
 
 PROJECTS = {
@@ -51,7 +52,8 @@ PROJECTS = {
                                                         "bed_chute_door3", "bed_chute_door3_left",
                                                         "bed_chute_door_crank3", "bed_chute_door_crank3_left",
                                                         "bed_chute_servo_crank3", "bed_chute_servo_crank3_left",
-                                                        "bed_chute_door_link3", "bed_chute_door_link3"]),
+                                                        "bed_chute_door_link3", "bed_chute_door_link3",
+                                                        "enc_splice", "enc_splice"]),
     ],
 }
 
