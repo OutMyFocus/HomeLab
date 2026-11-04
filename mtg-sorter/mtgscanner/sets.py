@@ -9,7 +9,7 @@ import re
 
 from flask import jsonify, request, send_from_directory
 
-from . import config
+from . import accounts, config
 from .decks import name_key
 from .library import holdings, read_rows, row_foil, qty
 from .sorting import card_price
@@ -117,7 +117,7 @@ def spares(items: list[dict], keep: int = PLAYSET, lands: bool = False) -> list[
 def add_sets_routes(app, scanner, web_dir):
     def rows():
         with scanner.lock:
-            return read_rows(config.COLLECTION_CSV)
+            return read_rows(accounts.collection_csv())
 
     @app.get("/sets")
     def sets_page():

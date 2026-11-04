@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS cards (
     colors TEXT,                  -- e.g. "W,U" (empty for colorless)
     price_usd REAL,               -- NULL if Scryfall has no price
     price_usd_foil REAL,
-    fingerprint BLOB NOT NULL     -- 32-byte perceptual hash
+    fingerprint BLOB NOT NULL     -- perceptual hash: 64 bytes (whole card + art), 32 in older databases
 );
 
 -- Extra fingerprints taught from your own scans (the Train tab). A card can have
@@ -91,12 +91,43 @@ def connect(path: Path) -> sqlite3.Connection:
 _POPCOUNT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint16)
 
 
-def _distances(hashes: np.ndarray, fp: bytes) -> np.ndarray:
-    """Bits that differ between the fingerprint and every row of hashes (uint64 view)."""
-    x = np.bitwise_xor(hashes, np.frombuffer(fp, dtype=np.uint64))
+def _popcount(x: np.ndarray) -> np.ndarray:
     if hasattr(np, "bitwise_count"):
         return np.bitwise_count(x).sum(axis=1, dtype=np.uint32)
     return _POPCOUNT[x.view(np.uint8)].sum(axis=1)
+
+
+def _split(fps: list[bytes]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Fingerprints as (whole-card hashes, art hashes, has art) arrays of 64-bit numbers.
+
+    A fingerprint is 64 bytes: 32 for the whole card, then 32 for its art (vision.py).
+    Databases built before the art fingerprint have 32-byte ones; they still match on
+    the whole card until build_db.py refreshes them."""
+    n = len(fps)
+    whole = np.zeros((n, 4), dtype=np.uint64)
+    art = np.zeros((n, 4), dtype=np.uint64)
+    has_art = np.zeros(n, dtype=bool)
+    if n:
+        buf = np.frombuffer(b"".join(fp[:32].ljust(32, b"\0") for fp in fps), dtype=np.uint64)
+        whole[:] = buf.reshape(n, 4)
+        long = [i for i, fp in enumerate(fps) if len(fp) >= 64]
+        if long:
+            art[long] = np.frombuffer(b"".join(fps[i][32:64] for i in long), dtype=np.uint64).reshape(-1, 4)
+            has_art[long] = True
+    return whole, art, has_art
+
+
+def _distances(table: tuple, fp: bytes) -> np.ndarray:
+    """Bits that differ between the fingerprint and every known one (0-256).
+
+    With both art fingerprints there, it's the average of the whole-card and art
+    distances: a different card has to look alike in both to come close."""
+    whole, art, has_art = table
+    d = _popcount(np.bitwise_xor(whole, np.frombuffer(fp[:32], dtype=np.uint64)))
+    if len(fp) >= 64 and has_art.any():
+        da = _popcount(np.bitwise_xor(art, np.frombuffer(fp[32:64], dtype=np.uint64)))
+        d = np.where(has_art, (d + da) // 2, d)
+    return d
 
 
 def _name_key(name: str) -> str:
@@ -119,17 +150,19 @@ class Matcher:
             learned = self.conn.execute(
                 "SELECT l.card_id, c.name, l.fingerprint FROM learned l JOIN "
                 "(SELECT id, name FROM cards UNION ALL SELECT id, name FROM extra_cards) c ON c.id = l.card_id").fetchall()
-        if not rows:
-            raise RuntimeError("The card database is empty. Run build_db.py first.")
+        # An empty database (a fresh install, before build_db.py or a restored backup) still
+        # starts: every scan simply comes back as not recognized, and the Maintenance page says why.
         rows += learned
         ids = [r[0] for r in rows]
         # Every card name gets a number, so "is this the same card?" is an integer compare.
         self._name_numbers: dict[str, int] = {}
         names = np.fromiter((self._name_numbers.setdefault(_name_key(r[1]), len(self._name_numbers)) for r in rows),
                             dtype=np.int32, count=len(rows))
-        # 32-byte fingerprints as 4 x 64-bit numbers: comparing those is much faster.
-        hashes = np.frombuffer(b"".join(r[2] for r in rows), dtype=np.uint64).reshape(len(rows), -1)
+        # Fingerprints as 64-bit numbers: comparing those is much faster.
+        hashes = _split([bytes(r[2]) for r in rows])
         self.card_count, self.learned_count = len(rows) - len(learned), len(learned)
+        # Cards still on the whole-card-only fingerprint (built before the art one was added).
+        self.old_count = int((~hashes[2][:self.card_count]).sum())
         self._table = ids, hashes, names   # swapped in one step, so a scan never sees half of it
 
     def add_learned(self, scan: str, card_id: str, fp: bytes):
@@ -142,8 +175,9 @@ class Matcher:
                 return   # a card it doesn't know at all: nothing to learn it as
             ids, hashes, names = self._table
             number = self._name_numbers.setdefault(_name_key(row[1]), len(self._name_numbers))
-            self._table = (ids + [card_id], np.vstack([hashes, np.frombuffer(fp, dtype=np.uint64)]),
-                           np.append(names, np.int32(number)))
+            one = _split([fp])
+            hashes = tuple(np.concatenate([a, b]) for a, b in zip(hashes, one))
+            self._table = (ids + [card_id], hashes, np.append(names, np.int32(number)))
             self.learned_count += 1
 
     def _closest(self, dists: np.ndarray) -> int:
@@ -157,6 +191,8 @@ class Matcher:
     def best_match(self, fp: bytes) -> tuple[str, int]:
         """Return (card id, distance) of the closest card. Smaller distance is better."""
         ids, hashes, _ = self._table
+        if not ids:
+            return "", 256
         dists = _distances(hashes, fp)
         i = self._closest(dists)
         return ids[i], int(dists[i])
@@ -165,6 +201,8 @@ class Matcher:
         """The closest card, how far behind the closest *different* card is (the margin),
         and the next few different cards in case the first guess is wrong."""
         ids, hashes, names = self._table
+        if not ids:
+            return Hit("", 256, 0)   # nothing to compare with: as far from a match as it gets
         dists = _distances(hashes, fp)
         i = self._closest(dists)
         others = dists[names != names[i]]

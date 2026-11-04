@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from flask import Response, jsonify, request, send_from_directory
 
-from . import config
+from . import accounts, config
 from .library import export, holdings, qty, read_rows, write_rows
 
 GAP = timedelta(minutes=30)
@@ -93,7 +93,7 @@ def add_history_routes(app, scanner, web_dir):
 
     def answer():
         with scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
+            rows = read_rows(accounts.collection_csv())
         found = sessions(rows)
         return jsonify({"sessions": found[:300], "total_sessions": len(found), "days": per_day(rows)})
 
@@ -113,11 +113,11 @@ def add_history_routes(app, scanner, web_dir):
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         with scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
+            rows = read_rows(accounts.collection_csv())
             keep = [r for r in rows if not _in(r, start, end)]
             if len(keep) == len(rows):
                 return jsonify({"error": "No cards from that session are left"}), 404
-            write_rows(config.COLLECTION_CSV, keep)
+            write_rows(accounts.collection_csv(), keep)
         return answer()
 
     @app.post("/api/history/export")
@@ -128,7 +128,7 @@ def add_history_routes(app, scanner, web_dir):
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         with scanner.lock:
-            rows = [r for r in read_rows(config.COLLECTION_CSV) if _in(r, start, end)]
+            rows = [r for r in read_rows(accounts.collection_csv()) if _in(r, start, end)]
         items = holdings(rows, scanner.matcher, scanner.vault, getattr(scanner, "live", None))
         try:
             text, name, mime = export(items, str(js.get("format", "manabox")))

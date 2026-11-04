@@ -42,6 +42,7 @@ class Machine:
         self.angles = {}          # last angle sent to each channel (None: relaxed)
         self.feeding = False
         self._stop_timer = None
+        self._relax_timers = {}   # channel -> timer that lets that servo go after a move
 
     # --- connecting ---------------------------------------------------------
 
@@ -81,7 +82,8 @@ class Machine:
     def feeder_defaults(self) -> dict:
         saved = load_saved().get("feeder", {})
         return {"seconds": float(saved.get("seconds", config.FEEDER_SECONDS)),
-                "speed": float(saved.get("speed", config.FEEDER_SPEED))}
+                "speed": float(saved.get("speed", config.FEEDER_SPEED)),
+                "reverse": bool(saved.get("reverse", False))}
 
     def _write(self, saved: dict):
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -100,13 +102,34 @@ class Machine:
 
     def save_feeder(self, seconds: float, speed: float):
         saved = load_saved()
-        saved["feeder"] = {"seconds": round(min(5.0, max(0.05, float(seconds))), 2),
-                           "speed": round(min(1.0, max(0.1, float(speed))), 2)}
+        feeder = saved.setdefault("feeder", {})
+        feeder.update(seconds=round(min(5.0, max(0.05, float(seconds))), 2),
+                      speed=round(min(1.0, max(0.1, float(speed))), 2))
+        self._write(saved)
+
+    def set_feeder_reverse(self, on: bool):
+        """For a motor fitted the other way round: "forward" then turns it backwards."""
+        saved = load_saved()
+        saved.setdefault("feeder", {})["reverse"] = bool(on)
         self._write(saved)
 
     def reset_saved(self):
         """Back to the angles and feeder settings in config.py."""
         settings_file().unlink(missing_ok=True)
+
+    def wide_travel(self) -> bool:
+        return bool(load_saved().get("wide_travel", False))
+
+    def pulse_range(self) -> tuple[int, int]:
+        """The servo pulse widths (microseconds) that 0 and 180 mean. ServoKit's default
+        750-2250 only turns an MG90S about 130-140 real degrees; 500-2500 gives about the
+        full 180. 90 is 1500 either way, so a horn fitted at 90 stays put."""
+        return config.SERVO_PULSE_WIDE if self.wide_travel() else config.SERVO_PULSE
+
+    def set_wide_travel(self, on: bool):
+        saved = load_saved()
+        saved["wide_travel"] = bool(on)
+        self._write(saved)
 
     # --- servos -------------------------------------------------------------
 
@@ -121,11 +144,42 @@ class Machine:
             if kit is None:
                 raise RuntimeError(self.servo_error)
             try:
-                kit.servo[channel].angle = angle
+                servo = kit.servo[channel]
+                if hasattr(servo, "set_pulse_width_range"):   # cheap: no I2C, just the scale
+                    servo.set_pulse_width_range(*self.pulse_range())
+                servo.angle = angle
             except OSError:
                 self._kit = None   # board unplugged or lost: find it again next time
                 raise
             self.angles[channel] = angle
+            old = self._relax_timers.pop(channel, None)
+            if old:
+                old.cancel()
+            hold = getattr(config, "SERVO_HOLD_SECONDS", 0)
+            keep = {config.SERVOS[p][0] for p in getattr(config, "SERVO_KEEP_HOLDING", ())
+                    if p in config.SERVOS}
+            if angle is not None and hold > 0 and channel not in keep:
+                # Let go once it has had time to get there. A servo held against
+                # something it can't push past draws full current and gets hot.
+                token = object()
+                t = threading.Timer(hold, self._relax_after_move, (channel, token))
+                t.daemon = True
+                t.token = token
+                self._relax_timers[channel] = t
+                t.start()
+
+    def _relax_after_move(self, channel, token):
+        with self.lock:
+            t = self._relax_timers.get(channel)
+            if t is None or t.token is not token:
+                return            # moved again since: that move has its own timer
+            self._relax_timers.pop(channel, None)
+            try:
+                if self._kit is not None:
+                    self._kit.servo[channel].angle = None
+                    self.angles[channel] = None
+            except OSError:
+                self._kit = None
 
     def _fresh_servos(self):
         """The servo board, set up again if it lost power since we last used it.
@@ -192,6 +246,8 @@ class Machine:
                 raise RuntimeError(self.feeder_error)
             if self._stop_timer:
                 self._stop_timer.cancel()
+            if defaults["reverse"]:
+                backward = not backward
             (motor.backward if backward else motor.forward)(speed)
             self.feeding = True
             self._stop_timer = threading.Timer(seconds, self.stop_feeder)
@@ -223,6 +279,7 @@ class Machine:
                                  "angle": self.angles.get(ch)}
                           for part, (ch, pos) in servos.items()},
                 "feeder_defaults": defaults,
+                "wide_travel": self.wide_travel(),
                 "customized": settings_file().exists(),
             }
 
@@ -275,6 +332,10 @@ def add_machine_routes(app, machine: Machine, web_dir):
         if "part" in body:
             return answer(lambda: machine.save_position(str(body["part"]), str(body.get("position")),
                                                         body.get("angle")))
+        if "wide_travel" in body:
+            return answer(lambda: machine.set_wide_travel(bool(body["wide_travel"])))
+        if "reverse" in body and "seconds" not in body:
+            return answer(lambda: machine.set_feeder_reverse(bool(body["reverse"])))
         return answer(lambda: machine.save_feeder(body.get("seconds"), body.get("speed")))
 
     @app.post("/api/machine/reset")

@@ -17,17 +17,32 @@ CARD_W, CARD_H = 488, 680
 HASH_SIZE = 16  # 16x16 = 256-bit fingerprint
 
 
-def fingerprint(card_bgr: np.ndarray) -> bytes:
-    """Return the 32-byte fingerprint of an upright, cropped card image."""
-    rgb = cv2.cvtColor(card_bgr, cv2.COLOR_BGR2RGB)
-    h = imagehash.phash(Image.fromarray(rgb), hash_size=HASH_SIZE)
-    return np.packbits(h.hash.flatten()).tobytes()
+# The part of the card the second fingerprint looks at, as shares of its width and height:
+# the art box on most frames. The whole-card fingerprint is mostly frame, name box and
+# text box, which thousands of cards share, so among every card ever printed two
+# different cards can sit close together. The art tells them apart. On frames where the
+# art sits elsewhere (full art, old borders) it's still the same region on the stock
+# picture and the scan, so it still works as a second opinion.
+ART_BOX = (0.08, 0.11, 0.92, 0.56)
+FINGERPRINT_BYTES = 64   # 32 for the whole card, then 32 for the art
+
+
+def _phash(img: Image.Image) -> bytes:
+    return np.packbits(imagehash.phash(img, hash_size=HASH_SIZE).hash.flatten()).tobytes()
 
 
 def fingerprint_pil(img: Image.Image) -> bytes:
-    """Same as fingerprint(), but for an image loaded with Pillow (used when building the DB)."""
-    h = imagehash.phash(img.convert("RGB"), hash_size=HASH_SIZE)
-    return np.packbits(h.hash.flatten()).tobytes()
+    """The 64-byte fingerprint of an upright card picture: the whole card, then its art."""
+    img = img.convert("RGB")
+    w, h = img.size
+    x0, y0, x1, y1 = ART_BOX
+    art = img.crop((round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h)))
+    return _phash(img) + _phash(art)
+
+
+def fingerprint(card_bgr: np.ndarray) -> bytes:
+    """Same as fingerprint_pil(), for an upright, cropped card from the camera (OpenCV's BGR)."""
+    return fingerprint_pil(Image.fromarray(cv2.cvtColor(card_bgr, cv2.COLOR_BGR2RGB)))
 
 
 def _order_corners(pts: np.ndarray) -> np.ndarray:
@@ -58,7 +73,10 @@ def _masks(small_bgr: np.ndarray):
     yield cv2.morphologyEx(closed, cv2.MORPH_OPEN, np.ones((11, 11), np.uint8))
 
     # 2. Low color saturation: a black card border on a colorful surface (wood, a playmat).
+    # Nearly black pixels get a random hue and saturation from sensor noise, so count
+    # anything dark as unsaturated too, or the border itself falls out of the mask.
     _, sat = cv2.threshold(hsv[..., 1], 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    sat = cv2.bitwise_or(sat, cv2.inRange(hsv[..., 2], 0, 60))
     yield cv2.morphologyEx(cv2.morphologyEx(sat, cv2.MORPH_OPEN, k, iterations=2), cv2.MORPH_CLOSE, k, iterations=3)
 
     # 3. Darkness: a black border on a lighter surface.
@@ -66,8 +84,52 @@ def _masks(small_bgr: np.ndarray):
     yield cv2.morphologyEx(cv2.morphologyEx(dark, cv2.MORPH_OPEN, k, iterations=2), cv2.MORPH_CLOSE, k, iterations=3)
 
 
+def _refine_corners(contour: np.ndarray, approx: np.ndarray) -> np.ndarray | None:
+    """Sharpen a rough 4-corner outline by fitting a straight line to each side.
+
+    Real cards have rounded corners, so the rough outline's vertices land a little
+    inside the card. Fitting the straight middle of each edge and intersecting
+    neighbouring edges gives the corner the card would have if it were square.
+    Returns None if the outline is too degenerate to refine.
+    """
+    pts = contour.reshape(-1, 2).astype("float32")
+    verts = approx.reshape(4, 2).astype("float32")
+    lines = []
+    for i in range(4):
+        a, b = verts[i], verts[(i + 1) % 4]
+        length = float(np.linalg.norm(b - a))
+        if length < 8:
+            return None
+        along = (b - a) / length
+        rel = pts - a
+        t = rel @ along
+        off = np.abs(rel[:, 0] * along[1] - rel[:, 1] * along[0])
+        # Points along the straight middle 70% of this side, close to it.
+        near = pts[(t > 0.15 * length) & (t < 0.85 * length) & (off < max(3.0, 0.03 * length))]
+        if len(near) < 4:
+            lines.append((a, along))
+            continue
+        vx, vy, x0, y0 = cv2.fitLine(near, cv2.DIST_L2, 0, 0.01, 0.01).ravel()
+        lines.append((np.array([x0, y0], dtype="float32"), np.array([vx, vy], dtype="float32")))
+    corners = []
+    for i in range(4):
+        (p1, d1), (p2, d2) = lines[i - 1], lines[i]
+        cross = d1[0] * d2[1] - d1[1] * d2[0]
+        if abs(cross) < 1e-6:
+            return None
+        s = ((p2[0] - p1[0]) * d2[1] - (p2[1] - p1[1]) * d2[0]) / cross
+        corners.append(p1 + s * d1)
+    corners = np.array(corners, dtype="float32")
+    # A refined corner should stay close to the rough one. If a line fit went wild, give up.
+    if np.linalg.norm(corners - verts, axis=1).max() > 0.08 * max(cv2.arcLength(approx, True), 1):
+        return None
+    return corners
+
+
 def find_card_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05) -> list[np.ndarray]:
     """Return every card-shaped outline (4 corners each) found by any of the methods."""
+    if frame_bgr is None or frame_bgr.ndim != 3 or frame_bgr.shape[2] != 3 or min(frame_bgr.shape[:2]) < 16:
+        return []   # not a colour picture (a broken upload or a dead camera can hand back junk)
     # Work on a smaller copy for speed, then scale the corners back up.
     scale = min(1.0, 1000 / max(frame_bgr.shape[:2]))
     small = cv2.resize(frame_bgr, None, fx=scale, fy=scale) if scale < 1 else frame_bgr
@@ -77,7 +139,8 @@ def find_card_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05) -> 
     for mask in _masks(small):
         # RETR_LIST also returns shapes inside other shapes: a card in a sleeve, or a card
         # whose outline merged with its neighbours on a crowded table.
-        contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        # Every point of each outline (CHAIN_APPROX_NONE), so the sides can be fitted exactly.
+        contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
         # Look at plenty of shapes: on a busy table, dice boxes and sleeves can be bigger than the cards.
         for c in sorted(contours, key=cv2.contourArea, reverse=True)[:60]:
             if cv2.contourArea(c) < min_area:
@@ -88,7 +151,10 @@ def find_card_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05) -> 
                 approx = cv2.approxPolyDP(hull, eps * cv2.arcLength(hull, True), True)
                 if len(approx) == 4:
                     break
-            if len(approx) != 4:
+            refined = None
+            if len(approx) == 4:
+                refined = _refine_corners(c, approx)
+            else:
                 # Not a clean 4-cornered shape (a sleeve's rounded, shiny edge, say). If it
                 # nearly fills the tightest rectangle around it, that rectangle is the card.
                 (_, _), (rw, rh), _ = rect = cv2.minAreaRect(c)
@@ -98,7 +164,7 @@ def find_card_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05) -> 
             x, y, w, h = cv2.boundingRect(approx)
             if x <= 2 or y <= 2 or x + w >= small.shape[1] - 2 or y + h >= small.shape[0] - 2:
                 continue  # touches the photo's edge: the whole background, not a card
-            corners = _order_corners(approx) / scale
+            corners = _order_corners(refined if refined is not None else approx) / scale
             if _looks_like_card(corners):
                 found.append(corners)
     return found

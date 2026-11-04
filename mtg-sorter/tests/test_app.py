@@ -302,3 +302,92 @@ def test_starts_without_a_camera_and_picks_one_up(db, monkeypatch):  # noqa: F81
     monkeypatch.setattr(app, "startup_camera", lambda index: found)
     assert waiting.read() is None
     assert scanner._next_source is found
+
+
+def test_each_phone_scans_on_its_own(db, tmp_path, monkeypatch):  # noqa: F811
+    """A phone picks "This device's camera" and gets a scanner of its own: its pictures,
+    its table and its session, while the machine's camera carries on untouched. Two
+    phones at once don't see each other's cards, and each card remembers who scanned it."""
+    from mtgscanner.camera import BrowserSource
+
+    monkeypatch.setattr(config, "COLLECTION_CSV", tmp_path / "collection.csv")
+    monkeypatch.setattr(config, "CAPTURES_DIR", tmp_path / "captures")
+    monkeypatch.setattr(Scanner, "run", lambda self: None)   # no scanner threads: pictures are fed by hand below
+    machine = Scanner(db, None, source=FakeCamera(0, "Integrated Webcam"))
+    app = create_app(machine)
+    client = app.test_client()
+    scanners = app.config["scanners"]
+
+    assert client.post("/api/camera", json={"index": "browser"}).status_code == 400
+
+    nic = {"X-Scanner": "phone-1"}
+    state = client.post("/api/camera", json={"index": "browser", "name": "Phone camera", "token": "phone-1", "who": "Nic"},
+                        headers=nic).get_json()
+    assert state["camera"]["name"] == "Phone camera" and state["camera"]["browser"] and state["owner"] == "Nic"
+    phone = scanners["phone-1"]
+    assert isinstance(phone.source, BrowserSource) and phone is not machine
+    assert isinstance(machine.source, FakeCamera) and machine._next_source is None   # untouched
+
+    # A picture from a page that isn't scanning is turned away; a bad picture too.
+    photo = jpeg(photograph(fake_card(2)))
+    assert client.post("/api/frame", data=photo, headers={"X-Scanner": "someone-else"}).status_code == 409
+    assert client.post("/api/frame", data=b"not a picture", headers=nic).status_code == 400
+
+    for _ in range(4):
+        assert client.post("/api/frame", data=photo, headers=nic).status_code == 204
+        phone.process(phone.source.read(timeout=0.1))
+    state = client.get("/api/state", headers=nic).get_json()
+    assert state["camera"]["index"] == "browser" and state["camera"]["size"] == [960, 720]
+    assert state["cards"] and state["cards"][0]["card"]["id"] == "id2"
+    assert client.get("/api/state").get_json()["cards"] == []   # the machine's table is empty
+
+    # Saving from the phone: its session, and the card's Source is the name typed on it.
+    state = client.post("/api/save_all", json={"foil": False}, headers=nic).get_json()
+    assert state["totals"]["count"] == 1 and state["session"][0]["name"] == "Card 2"
+    assert client.get("/api/state").get_json()["totals"]["count"] == 0
+    rows = list(csv.DictReader(config.COLLECTION_CSV.open()))
+    assert [(r["Name"], r["Source"]) for r in rows] == [("Card 2", "Nic")]
+    assert client.get("/api/state").get_json()["scanners"] == [{"name": "Phone camera", "owner": "Nic", "cards": 1}]
+
+    # A second phone gets its own scanner; picking the camera again on the first changes nothing.
+    sam = {"X-Scanner": "phone-2"}
+    client.post("/api/camera", json={"index": "browser", "name": "Phone camera", "token": "phone-2", "who": "Sam"}, headers=sam)
+    assert set(scanners) == {"phone-1", "phone-2"} and scanners["phone-2"].owner == "Sam"
+    client.post("/api/camera", json={"index": "browser", "token": "phone-1"}, headers=nic)
+    assert scanners["phone-1"] is phone and phone.owner == "Nic"
+    assert client.get("/api/state", headers=sam).get_json()["totals"]["count"] == 0
+    assert client.post("/api/undo", json={}, headers=nic).get_json()["totals"]["count"] == 0
+    assert list(csv.DictReader(config.COLLECTION_CSV.open())) == []
+
+    # Closing the page drops its scanner; the machine never noticed any of it.
+    client.post("/api/camera/release", json={"token": "nobody"})
+    assert set(scanners) == {"phone-1", "phone-2"}
+    client.post("/api/camera/release", json={"token": "phone-1"})
+    assert set(scanners) == {"phone-2"} and phone.stopped
+    back = client.get("/api/state", headers=nic).get_json()   # the page sees the machine's scanner again
+    assert back["owner"] == "" and back["status"] == "starting" and back["scanners"] == [{"name": "Phone camera", "owner": "Sam", "cards": 0}]
+    assert isinstance(machine.source, FakeCamera)
+
+
+def test_quiet_phone_pauses_then_goes_away(db):  # noqa: F811
+    """The phone's page went to the background: its table clears and the page says paused;
+    after long enough with no pictures its scanner stops and is dropped."""
+    import time
+
+    from mtgscanner.camera import BrowserSource
+
+    source = BrowserSource("phone-3")
+    source.gone_after = 0.0
+    sc = Scanner(db, None, source=source)
+    sc.started = True
+    dropped = []
+    sc.on_stop = dropped.append
+    time.sleep(0.01)
+    assert sc.state()["status"] == "paused"
+    sc.turn()                      # one go of the scanner thread's loop
+    assert not sc.started and not sc.stopped
+    sc.expire = 0.0
+    sc.turn()
+    assert sc.stopped
+    sc.run()                       # the thread's loop ends at once, and the app is told
+    assert dropped == [sc]

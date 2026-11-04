@@ -1,0 +1,13 @@
+# Lets the app inside Docker ask the Pi for the Maintenance page's root jobs (restart,
+# reboot, update, logs, Wi-Fi, SPI): it drops a request file in data/host/, and this starts
+# mtg-sorter-host.service, which runs it through mtg-sorter-admin (the same fixed list of
+# jobs as before). Installed by install.sh once the Pi runs the Docker image.
+[Unit]
+Description=Watch for jobs from the MTG sorter app in Docker
+
+[Path]
+PathExistsGlob=/home/nic/HomeLab/mtg-sorter/data/host/req-*.json
+MakeDirectory=yes
+
+[Install]
+WantedBy=multi-user.target

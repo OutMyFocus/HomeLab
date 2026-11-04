@@ -1,0 +1,14 @@
+.venv
+data
+__pycache__
+**/__pycache__
+.pytest_cache
+hardware
+tests
+*.3mf
+*.md
+!README.md
+deploy
+Dockerfile
+docker-compose.yml
+.dockerignore
