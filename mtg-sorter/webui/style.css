@@ -513,39 +513,43 @@ input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
 a.brand { color: inherit; text-decoration: none; }
 .site-nav { display: flex; align-items: center; gap: 2px; margin-right: auto; background: var(--raised); padding: 4px;
   border-radius: calc(var(--radius) * .75); border: 1px solid var(--line); min-width: 0; }
-.site-nav a, .site-nav .more-btn { position: relative; padding: 6px 13px; border-radius: calc(var(--radius) * .55); color: var(--muted); text-decoration: none;
+.site-nav a, .site-nav .menu-btn { position: relative; padding: 6px 13px; border-radius: calc(var(--radius) * .55); color: var(--muted); text-decoration: none;
   font-weight: 550; font-size: .92rem; white-space: nowrap; transition: color var(--speed), background var(--speed); }
-.site-nav a:hover, .site-nav .more-btn:hover { color: var(--text); }
-.site-nav a[aria-current="page"] { background: var(--panel-solid); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
-.more-btn { border: 0; background: none; cursor: pointer; font: inherit; display: inline-flex; align-items: center; gap: 4px; }
-.site-nav .more-wrap { display: none; }
+.site-nav a:hover, .site-nav .menu-btn:hover, .site-nav .menu-btn[aria-expanded="true"] { color: var(--text); }
+.site-nav [aria-current="page"] { background: var(--panel-solid); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
+.menu-btn { border: 0; background: none; cursor: pointer; font: inherit; display: inline-flex; align-items: center; gap: 3px; }
+.site-nav .menu-btn .caret { width: 14px; height: 14px; opacity: .7; transition: transform var(--speed); }
+.site-nav .menu-btn[aria-expanded="true"] .caret { transform: rotate(180deg); }
+.site-nav .menu-btn.icon-only { padding: 6px 9px; }
+.site-nav .menu-btn.icon-only .nav-ico { width: 18px; height: 18px; }
+.site-nav [hidden], .tab-bar [hidden], .more-list [hidden] { display: none !important; }
 .nav-ico { width: 20px; height: 20px; }
-.site-nav .more-btn .nav-ico { width: 16px; height: 16px; }
 /* the check-up found a problem */
-[data-key="maintenance"][data-state]::after, .more-btn[data-state]::after { content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
+[data-key="maintenance"][data-state]::after, .menu-btn[data-state]::after { content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
   border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2px var(--bg); }
-[data-key="maintenance"][data-state="bad"]::after, .more-btn[data-state="bad"]::after { background: var(--bad); }
+[data-key="maintenance"][data-state="bad"]::after, .menu-btn[data-state="bad"]::after { background: var(--bad); }
 .site-nav a[data-key="maintenance"][data-state]::after { top: 3px; right: 3px; }
 
 .tab-bar { display: none; }
-.more-sheet { position: fixed; inset: 0; z-index: 38; }
+.more-sheet { position: fixed; inset: 0; z-index: 38; pointer-events: none; }
+.more-sheet .more-list { pointer-events: auto; }
 .more-scrim { position: absolute; inset: 0; }
-.more-sheet .more-list { position: absolute; width: min(330px, calc(100vw - 24px)); padding: 6px; display: grid; gap: 2px; max-height: calc(100vh - 90px);
+.more-sheet .more-list { position: absolute; width: min(320px, calc(100vw - 24px)); padding: 6px; display: grid; gap: 2px; max-height: calc(100vh - 90px);
   overflow-y: auto; background: var(--panel-solid); box-shadow: 0 20px 50px rgba(0, 0, 0, .35); animation: rise .2s var(--ease); }
-.more-list a { position: relative; display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: calc(var(--radius) * .5); color: var(--text); text-decoration: none; }
+/* every page at once (M on the scanner, More on a phone): the groups side by side */
+.more-sheet .more-list.sections { width: min(680px, calc(100vw - 24px)); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 8px; align-items: start; }
+.menu-sec { display: grid; gap: 2px; }
+.menu-sec h4 { margin: 6px 10px 2px; font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.more-list a { position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: calc(var(--radius) * .5); color: var(--text); text-decoration: none; }
 .more-list a:hover, .more-list a:focus-visible { background: var(--raised); }
 .more-list a[aria-current="page"] { background: var(--tint); }
-.more-list .nav-ico { color: var(--accent); }
+.more-list .nav-ico { color: var(--accent); flex: none; }
 .more-list a span { display: flex; flex-direction: column; line-height: 1.25; }
 .more-list a b { font-weight: 600; font-size: .92rem; }
 .more-list a small { color: var(--muted); font-size: .78rem; }
+.more-list.sections a small { display: none; }
 .more-list a[data-key="maintenance"][data-state]::after { top: 50%; right: 12px; transform: translateY(-50%); }
 
-/* the window is narrow: the extra pages fold into More */
-@media (max-width: 1420px) {
-  .site-nav a.extra { display: none; }
-  .site-nav .more-wrap { display: block; }
-}
 /* a phone: the tab bar along the bottom instead */
 @media (max-width: 700px) {
   .site-nav { display: none; }
@@ -560,8 +564,12 @@ a.brand { color: inherit; text-decoration: none; }
   .has-tab-bar body { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
   .has-tab-bar .toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
   .has-tab-bar .save-bar { bottom: calc(76px + env(safe-area-inset-bottom)); }
-  .more-sheet { background: rgba(0, 0, 0, .4); animation: fade var(--speed); }
-  .more-sheet.from-bar .more-list { left: 8px; right: 8px; bottom: calc(72px + env(safe-area-inset-bottom)); width: auto; top: auto; }
+  .more-sheet { background: rgba(0, 0, 0, .4); animation: fade var(--speed); pointer-events: auto; }
+  .more-sheet.from-bar .more-list, .more-sheet.from-bar .more-list.sections { left: 8px; right: 8px; bottom: calc(72px + env(safe-area-inset-bottom)); width: auto; top: auto; }
+  /* on a phone the groups stack, and the pages in each sit two to a row */
+  .more-sheet .more-list.sections { grid-template-columns: 1fr; }
+  .more-list.sections .menu-sec { grid-template-columns: 1fr 1fr; }
+  .more-list.sections .menu-sec h4 { grid-column: 1 / -1; }
   .top { position: sticky; }
 }
 
