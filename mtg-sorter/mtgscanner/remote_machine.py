@@ -118,6 +118,9 @@ class RemoteMachine:
     def set_feeder_reverse(self, on: bool):
         self._call("/api/machine/save", {"reverse": bool(on)})
 
+    def set_wide_travel(self, on: bool):
+        self._call("/api/machine/save", {"wide_travel": bool(on)})
+
     def reset_saved(self):
         self._call("/api/machine/reset", {})
 

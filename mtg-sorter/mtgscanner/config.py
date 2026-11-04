@@ -110,6 +110,12 @@ SERVOS = {
     "door_r": (2, {"closed": 90, "open": 0}),                 # right trapdoor (bin 2)
     "door_l": (3, {"closed": 90, "open": 180}),               # left trapdoor (bin 2)
 }
+# Servo pulse widths in microseconds for 0 and 180 degrees. The first is ServoKit's
+# default, which turns an MG90S only about 130-140 real degrees. "Wider servo travel" on
+# the Machine page switches to the second for about the full 180 (some cheap servos buzz
+# at the very ends of it). 90 is 1500 in both, so horns fitted at 90 stay where they are.
+SERVO_PULSE = (750, 2250)
+SERVO_PULSE_WIDE = (500, 2500)
 # The feeder's N20 motor, through the DRV8833 driver: Pi GPIO17 to IN1, GPIO27 to IN2.
 FEEDER_PINS = (17, 27)
 # How fast the feeder turns (0-1) and how long one push lasts (seconds).
