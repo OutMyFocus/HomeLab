@@ -20,7 +20,8 @@ case "$job" in
         case "${2:-}" in
             on)  systemctl enable --now mtg-sorter-update.timer ;;
             off) systemctl disable --now mtg-sorter-update.timer ;;
-            *)   echo "autoupdate on|off" >&2; exit 2 ;;
+            state) systemctl is-enabled mtg-sorter-update.timer || true ;;
+            *)   echo "autoupdate on|off|state" >&2; exit 2 ;;
         esac ;;
     logs)
         lines=${3:-200}
@@ -30,6 +31,15 @@ case "$job" in
             updates) journalctl --no-pager -o short -n "$lines" -u mtg-sorter-update ;;
             system)  journalctl --no-pager -o short -n "$lines" -b -p warning ;;
             *)       echo "logs app|updates|system [lines]" >&2; exit 2 ;;
+        esac ;;
+    docker)
+        # Switch between the git copy and the server's Docker image (see use-docker.sh).
+        # Runs on its own, since it restarts the app that may have asked for it.
+        case "${2:-}" in
+            on|off) systemd-run --unit=mtg-sorter-switch --collect --quiet \
+                        /bin/bash /home/nic/HomeLab/mtg-sorter/deploy/use-docker.sh "$2"
+                    echo "Switching Docker $2. Follow it with: journalctl -fu mtg-sorter-switch" ;;
+            *)      echo "docker on|off" >&2; exit 2 ;;
         esac ;;
     spi-on)
         # For the RGB light bars, whose data wire is on GPIO10 (SPI MOSI). Needs a reboot after.
@@ -58,6 +68,6 @@ case "$job" in
         nmcli connection delete id "$name" >/dev/null
         echo "Forgot $name" ;;
     *)
-        echo "Usage: mtg-sorter-admin restart|reboot|poweroff|update|update-force|autoupdate on|off|logs app|updates|system [lines]|spi-on|wifi-add|wifi-forget" >&2
+        echo "Usage: mtg-sorter-admin restart|reboot|poweroff|update|update-force|autoupdate on|off|logs app|updates|system [lines]|docker on|off|spi-on|wifi-add|wifi-forget" >&2
         exit 2 ;;
 esac

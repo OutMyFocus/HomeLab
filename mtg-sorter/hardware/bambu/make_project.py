@@ -76,7 +76,7 @@ PLATES = [
     ("feeder_stand_mid", ["feeder_stand_mid"]),
     ("floor_fr, 8 splices", ["enc_floor_fr"] + ["enc_splice"] * 8),
     ("floor_bl, floor_br", ["enc_floor_bl", "enc_floor_br"]),
-    ("post_front, post_back, leg", ["enc_post_front", "enc_post_back", "enc_leg"]),
+    ("post_front_r, post_back, leg", ["enc_post_front_r", "enc_post_back", "enc_leg"]),
     ("post_back, leg, tower", ["enc_post_back", "enc_leg", "enc_tower"]),
     ("side 1 of 4", ["enc_side"]),
     ("side 2 of 4", ["enc_side"]),

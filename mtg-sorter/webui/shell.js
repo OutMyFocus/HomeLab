@@ -1,5 +1,6 @@
-// The same page menu on every page: links across the header on a computer, a tab bar
-// along the bottom on a phone, and a "More" list for the rest. Also puts a dot on
+// The same page menu on every page: Home, Scanner and four short drop-downs (Cards, Decks,
+// Machine and the gear) across the header on a computer, a tab bar along the bottom on a
+// phone. Also puts a dot on
 // Maintenance when the Pi's check-up finds a problem. Load it right after the header.
 (() => {
   const ICONS = {
@@ -19,28 +20,38 @@
     sets: '<rect x="4" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="13" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M13 16.5h7M16.5 13v7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
     more: '<circle cx="6" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18" cy="12" r="1.6" fill="currentColor"/>',
   };
-  // main: always in the header and the phone's bottom bar. The rest fold into More
-  // when the window is narrow.
+  // Every page, then the few groups the menu shows them in. Home and Scanner are links of
+  // their own; the rest sit under Cards, Decks, Machine and the gear (Settings).
   const PAGES = [
-    { key: "home", href: "/", label: "Home", desc: "Everything at a glance", main: true },
-    { key: "scan", href: "/scan", label: "Scanner", desc: "Scan cards with the camera or photos", main: true },
-    { key: "collection", href: "/collection", label: "Collection", desc: "Every card you've saved, stats and exports", main: true },
-    { key: "machine", href: "/machine", label: "Machine", desc: "Test the servos and feeder", main: true },
-    { key: "sets", href: "/sets", label: "Sets", desc: "How complete each set is, and spare copies to trade" },
-    { key: "decks", href: "/decks", label: "Decks", desc: "Build Commander decks and check them against your cards" },
-    { key: "cards", href: "/cards", label: "Card lookup", desc: "Every Commander card, with Canadian prices" },
-    { key: "play", href: "/play", label: "Play", desc: "Life counter and the games log" },
+    { key: "home", href: "/", label: "Home", desc: "Everything at a glance" },
+    { key: "scan", href: "/scan", label: "Scanner", desc: "Scan cards with the camera or photos" },
+    { key: "collection", href: "/collection", label: "Collection", desc: "Every card you've saved, stats and exports" },
+    { key: "sets", href: "/sets", label: "Sets", desc: "How complete each set is, and spares to trade" },
     { key: "wishlist", href: "/wishlist", label: "Wishlist", desc: "Cards you want, and your trade binder" },
-    { key: "history", href: "/history", label: "History", desc: "Past scanning sessions" },
+    { key: "cards", href: "/cards", label: "Card lookup", desc: "Any Commander card, with Canadian prices" },
+    { key: "history", href: "/history", label: "Scan history", desc: "Past scanning sessions" },
+    { key: "decks", href: "/decks", label: "Decks", desc: "Build decks, check them and find upgrades" },
+    { key: "play", href: "/play", label: "Play", desc: "Life counter and the games log" },
+    { key: "machine", href: "/machine", label: "Machine", desc: "Test the servos and feeder" },
     { key: "bins", href: "/bins", label: "Bins", desc: "What goes in each bin" },
-    { key: "lights", href: "/lights", label: "Lights", desc: "Color of the RGB light bars" },
+    { key: "lights", href: "/lights", label: "Lights", desc: "Color of the light strip" },
+    { key: "settings", href: "/settings", label: "Settings", desc: "Accounts, alerts, PIN lock and the look" },
     { key: "maintenance", href: "/maintenance", label: "Maintenance", desc: "Health, updates, backups" },
-    { key: "settings", href: "/settings", label: "Settings", desc: "Alerts, PIN lock and the look" },
   ];
+  const LINKS = ["home", "scan"];
+  const GROUPS = [
+    { key: "g-cards", label: "Cards", icon: "collection", pages: ["collection", "sets", "wishlist", "cards", "history"] },
+    { key: "g-decks", label: "Decks", icon: "decks", pages: ["decks", "play"] },
+    { key: "g-machine", label: "Machine", icon: "machine", pages: ["machine", "bins", "lights"] },
+    { key: "g-system", label: "Settings", icon: "settings", pages: ["settings", "maintenance"], iconOnly: true },
+  ];
+  const page = k => PAGES.find(p => p.key === k);
   const here = location.pathname.replace(/\/+$/, "") || "/";
   const current = PAGES.find(p => p.href === here)?.key || (here === "/" ? "home" : "");
   const icon = k => `<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg>`;
   const cur = p => p.key === current ? ' aria-current="page"' : "";
+  const inGroup = g => g.pages.includes(current);
+  const caret = '<svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   const header = document.querySelector("header.top");
   if (!header) return;
@@ -52,64 +63,115 @@
     brand.replaceWith(a);
   }
 
+  // Computer: Home, Scanner, then a button for each group that drops down its pages.
   const nav = document.createElement("nav");
   nav.className = "site-nav"; nav.setAttribute("aria-label", "Pages");
-  nav.innerHTML = PAGES.map(p => `<a href="${p.href}" data-key="${p.key}" class="${p.main ? "main" : "extra"}"${cur(p)}>${p.label}</a>`).join("")
-    + `<div class="more-wrap"><button class="more-btn" type="button" aria-haspopup="true" aria-expanded="false">More${icon("more")}</button></div>`;
-  const anchor = header.querySelector(".brand");
-  anchor.after(nav);
+  nav.innerHTML = LINKS.map(k => page(k)).map(p => `<a href="${p.href}" data-key="${p.key}"${cur(p)}>${p.label}</a>`).join("")
+    + GROUPS.map(g => `<button type="button" class="menu-btn${g.iconOnly ? " icon-only" : ""}" data-group="${g.key}" aria-haspopup="true" aria-expanded="false"${inGroup(g) ? ' aria-current="page"' : ""}${g.iconOnly ? ` aria-label="${g.label}" title="${g.label}"` : ""}>${g.iconOnly ? icon(g.icon) : g.label + caret}</button>`).join("");
+  header.querySelector(".brand").after(nav);
 
-  // Phone: a bar along the bottom with the main pages and More.
+  // Phone: a bar along the bottom with Home, Scanner, Cards, Decks and More (Machine and Settings).
+  const BAR = [...LINKS.map(k => ({ ...page(k), link: true })), GROUPS[0], GROUPS[1],
+    { key: "g-more", label: "More", icon: "more", pages: [...GROUPS[2].pages, ...GROUPS[3].pages], sections: [GROUPS[2], GROUPS[3]] }];
   const bar = document.createElement("nav");
   bar.className = "tab-bar"; bar.setAttribute("aria-label", "Pages");
-  bar.innerHTML = PAGES.filter(p => p.main).map(p => `<a href="${p.href}" data-key="${p.key}"${cur(p)}>${icon(p.key)}<span>${p.label}</span></a>`).join("")
-    + `<button type="button" class="more-btn" aria-haspopup="true" aria-expanded="false"${PAGES.some(p => !p.main && p.key === current) ? ' aria-current="page"' : ""}>${icon("more")}<span>More</span></button>`;
+  bar.innerHTML = BAR.map(b => b.link
+    ? `<a href="${b.href}" data-key="${b.key}"${cur(b)}>${icon(b.key)}<span>${b.label}</span></a>`
+    : `<button type="button" class="menu-btn" data-group="${b.key}" aria-haspopup="true" aria-expanded="false"${inGroup(b) ? ' aria-current="page"' : ""}>${icon(b.icon)}<span>${b.label}</span></button>`).join("");
   document.body.append(bar);
   document.documentElement.classList.add("has-tab-bar");
 
-  // The More list: every page, with a line on what it's for.
+  // The drop-down (a sheet from the bottom on a phone). One at a time, filled for the group asked for.
+  const ALL = { key: "all", sections: [{ label: "Start", pages: LINKS }, ...GROUPS] };
+  const groupOf = k => GROUPS.find(g => g.key === k) || BAR.find(b => b.key === k) || ALL;
+  const item = p => `<a href="${p.href}" data-key="${p.key}"${cur(p)}>${icon(p.key)}<span><b>${p.label}</b><small>${p.desc}</small></span></a>`;
   const sheet = document.createElement("div");
   sheet.className = "more-sheet"; sheet.hidden = true;
-  sheet.innerHTML = `<div class="more-scrim"></div><nav class="more-list panel" aria-label="All pages">
-    ${PAGES.map(p => `<a href="${p.href}" data-key="${p.key}"${cur(p)}>${icon(p.key)}<span><b>${p.label}</b><small>${p.desc}</small></span></a>`).join("")}</nav>`;
+  sheet.innerHTML = `<div class="more-scrim"></div><nav class="more-list panel" aria-label="Pages"></nav>`;
   document.body.append(sheet);
-  const moreBtns = [...document.querySelectorAll(".more-btn")];
-  let opener = null;
-  function setMore(open, btn) {
-    sheet.hidden = !open;
-    moreBtns.forEach(b => b.setAttribute("aria-expanded", open && b === btn));
-    if (open) {
-      opener = btn;
-      // On a computer it drops down under the More button; on a phone it rises from the bottom.
-      const r = btn.getBoundingClientRect(), list = sheet.querySelector(".more-list");
-      const fromBar = !!btn.closest(".tab-bar");
-      sheet.classList.toggle("from-bar", fromBar);
-      if (!fromBar) { list.style.top = r.bottom + 8 + "px"; list.style.right = Math.max(12, innerWidth - r.right) + "px"; }
-      else list.style.top = list.style.right = "";
-      (list.querySelector('[aria-current="page"]') || list.querySelector("a")).focus({ preventScroll: true });
-    } else if (opener) { opener.focus({ preventScroll: true }); opener = null; }
+  const list = sheet.querySelector(".more-list");
+  const menuBtns = () => [...document.querySelectorAll(".menu-btn")];
+  let opener = null, openKey = null;
+  function fill(g) {
+    const secs = g.sections || [g];
+    list.classList.toggle("sections", secs.length > 1);
+    list.innerHTML = secs.map(s => `<div class="menu-sec">${secs.length > 1 ? `<h4>${s.label}</h4>` : ""}${s.pages.map(k => item(page(k))).join("")}</div>`).join("");
+    hideBlocked(list);
+    if (window.MTGHealth) markHealth(window.MTGHealth);
   }
-  moreBtns.forEach(b => b.addEventListener("click", e => { e.stopPropagation(); setMore(sheet.hidden, b); }));
-  sheet.querySelector(".more-scrim").addEventListener("click", () => setMore(false));
+  function setMenu(key, btn) {
+    const open = !!key && !(key === openKey && !sheet.hidden);
+    sheet.hidden = !open;
+    menuBtns().forEach(b => b.setAttribute("aria-expanded", open && b === btn));
+    if (open) {
+      openKey = key; opener = btn || null;
+      fill(groupOf(key));
+      // On a computer it drops down under its button; on a phone it rises from the bottom.
+      const fromBar = !btn || !!btn.closest(".tab-bar");
+      sheet.classList.toggle("from-bar", fromBar && innerWidth <= 700);
+      list.style.top = list.style.left = list.style.right = "";
+      if (btn && !fromBar) {
+        const r = btn.getBoundingClientRect();
+        list.style.top = r.bottom + 8 + "px";
+        const w = list.offsetWidth;
+        list.style.left = Math.max(12, Math.min(r.left, innerWidth - w - 12)) + "px";
+      } else if (!btn && innerWidth > 700) { list.style.top = "70px"; list.style.right = "16px"; }
+      (list.querySelector('[aria-current="page"]') || list.querySelector("a:not([hidden])"))?.focus({ preventScroll: true });
+    } else {
+      openKey = null;
+      if (opener) { opener.focus({ preventScroll: true }); opener = null; }
+    }
+  }
+  document.addEventListener("click", e => {
+    const b = e.target.closest(".menu-btn");
+    if (b) setMenu(b.dataset.group, b);
+    // On a computer the rest of the page stays clickable; a click outside the list closes it.
+    else if (!sheet.hidden && !e.target.closest(".more-list")) setMenu(null);
+  });
+  sheet.querySelector(".more-scrim").addEventListener("click", () => setMenu(null));
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape" && !sheet.hidden) { e.stopImmediatePropagation(); setMore(false); }
+    if (sheet.hidden) return;
+    if (e.key === "Escape") { e.stopImmediatePropagation(); setMenu(null); return; }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const links = [...list.querySelectorAll("a:not([hidden])")], i = links.indexOf(document.activeElement);
+      if (!links.length) return;
+      e.preventDefault();
+      links[(i + (e.key === "ArrowDown" ? 1 : -1) + links.length) % links.length].focus();
+    }
   }, true);
-  addEventListener("resize", () => { if (!sheet.hidden) setMore(false); });
-  // Pages can open it from a shortcut (the scanner uses M).
-  window.MTGMenu = { toggle: () => setMore(sheet.hidden, moreBtns.find(b => b.offsetParent) || moreBtns[0]), isOpen: () => !sheet.hidden };
+  addEventListener("resize", () => { if (!sheet.hidden) setMenu(null); });
+  // Pages can open every page at once from a shortcut (the scanner uses M).
+  window.MTGMenu = { toggle: () => setMenu(sheet.hidden ? "all" : null, null), isOpen: () => !sheet.hidden };
+
+  // Accounts can hide pages (see the end of this file). A group with nothing left in it goes too.
+  let blocked = new Set();
+  function hideBlocked(root = document) {
+    for (const k of blocked) root.querySelectorAll(`[data-key="${k}"]`).forEach(a => a.hidden = true);
+    if (root !== document) return;
+    for (const b of menuBtns()) {
+      const g = groupOf(b.dataset.group);
+      b.hidden = g.pages.every(k => blocked.has(k));
+    }
+  }
+  function markHealth(h) {
+    const state = h.overall === "ok" || blocked.has("maintenance") ? "" : h.overall;
+    const tip = state ? "Maintenance: " + h.problems.map(p => p.label + ": " + p.summary).join(" · ") : "";
+    for (const a of document.querySelectorAll('[data-key="maintenance"]')) {
+      if (state) { a.dataset.state = state; a.title = tip; } else { delete a.dataset.state; a.removeAttribute("title"); }
+    }
+    for (const b of menuBtns()) {
+      if (state && groupOf(b.dataset.group).pages.includes("maintenance")) b.dataset.state = state; else delete b.dataset.state;
+    }
+  }
 
   // A dot on Maintenance when the check-up finds something wrong.
   async function checkHealth() {
+    if (window.MTGMe && !window.MTGMe.perms.admin) return;   // Maintenance is for admins
     try {
       const r = await fetch("/api/health");
       if (!r.ok) return;
       const h = await r.json();
-      const state = h.overall === "ok" ? "" : h.overall;
-      const tip = state ? "Maintenance: " + h.problems.map(p => p.label + ": " + p.summary).join(" · ") : "";
-      for (const a of document.querySelectorAll('[data-key="maintenance"]')) {
-        if (state) { a.dataset.state = state; a.title = tip; } else { delete a.dataset.state; a.removeAttribute("title"); }
-      }
-      for (const b of moreBtns) if (state) b.dataset.state = state; else delete b.dataset.state;
+      markHealth(h);
       window.MTGHealth = h;
       window.dispatchEvent(new CustomEvent("mtg-health", { detail: h }));
     } catch (e) {}
@@ -122,4 +184,30 @@
       if (!document.hidden) { checkHealth(); t = setInterval(checkHealth, 60000); }
     });
   }
+
+  // With accounts on (Settings): who's logged in, at the right of the header, and only the
+  // pages this account may open.
+  const NEEDS = { machine: "machine", lights: "machine", maintenance: "admin" };
+  fetch("/api/me").then(r => r.ok ? r.json() : null).then(s => {
+    if (!s || !s.accounts) return;
+    blocked = new Set(Object.entries(NEEDS).filter(([, perm]) => !s.perms[perm]).map(([key]) => key));
+    hideBlocked();
+    window.MTGMe = s;
+    if (window.MTGHealth) markHealth(window.MTGHealth);
+    if (!s.me) return;
+    const style = document.createElement("style");
+    style.textContent = `.who-chip{display:inline-flex;align-items:center;gap:7px;padding:4px 10px 4px 4px;border-radius:999px;
+      background:var(--raised);color:var(--text);text-decoration:none;font-size:.85rem;font-weight:600;white-space:nowrap;flex:none}
+      .who-chip:hover{background:var(--hover)}.who-chip i{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;
+      background:var(--accent);color:var(--on-accent);font-style:normal;font-size:.75rem}
+      @media (max-width:700px){.who-chip b{display:none}.who-chip{padding:4px}}
+      `;
+    document.head.append(style);
+    const chip = document.createElement("a");
+    chip.className = "who-chip"; chip.href = "/settings"; chip.title = `Logged in as ${s.me.name}: your account`;
+    const initial = document.createElement("i"), name = document.createElement("b");
+    initial.textContent = (s.me.name || s.me.username).slice(0, 1).toUpperCase(); name.textContent = s.me.name;
+    chip.append(initial, name);
+    header.append(chip);
+  }).catch(() => {});
 })();

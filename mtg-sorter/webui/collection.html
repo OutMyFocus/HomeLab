@@ -90,6 +90,7 @@
           <option value="value">Most value first</option>
           <option value="price">Highest price first</option>
           <option value="cheap">Lowest price first</option>
+          <option value="mtl">Highest Montreal price first</option>
           <option value="name">Name A–Z</option>
           <option value="set">Set, then number</option>
           <option value="new">Newest scans first</option>
@@ -140,6 +141,7 @@
           <div class="sub" id="dSet"></div>
           <div class="price" id="dPrice"></div>
           <div class="sub" id="dSource"></div>
+          <div class="mtl" id="dMontreal" hidden></div>
           <dl class="facts" id="dFacts"></dl>
           <div class="stepper" aria-label="How many you have">
             <button class="icon-btn" id="dMinus" aria-label="One fewer"><svg><use href="#i-minus" /></svg></button>
@@ -198,6 +200,7 @@
 
   <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
   <script src="/static/common.js"></script>
+  <script src="/static/montreal.js"></script>
   <script src="/static/collection.js"></script>
   <script src="/static/sources.js"></script>
 </body>

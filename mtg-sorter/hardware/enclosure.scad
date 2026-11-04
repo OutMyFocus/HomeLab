@@ -20,7 +20,7 @@
 // then the joined plate goes in as one piece.
 //
 // Printable parts (set `epart`, F6, F7). No supports, 0.2 mm, 15-20% infill:
-//   post_front    x2    16 mm quarter-round corner post, prints standing (pegs up); its inner
+//   post_front, post_front_r   left and right front posts (mirror images, not interchangeable): 16 mm quarter-round corner post, prints standing (pegs up); its inner
 //                       face is the dock's cheek, the outer drawer plate slides along it
 //   post_back     x2    same, with the back panel's groove running the full height
 //   side          x4    side panel half (two per side, flip one end for end)
@@ -96,10 +96,12 @@ feeder_wall = 3;
 feeder_shelf = 30;        // exit shelf in front of the hopper
 feeder_floor_z = 206;     // top of the hopper floor
 hopper_h = 60;
-stand_h = feeder_floor_z - 3 - bridge_top;   // 92: print feeder_stand with stand_h = this
+stand_h = 96;             // print feeder_stand with stand_h = this and bed_cut = true. 4 mm more than
+                          // feeder_floor_z - 3 - bridge_top, so the hopper clears the back of the bed
 
 // --- Electronics -----------------------------------------------------------------
-pi_pos = [40, 178];       // Pi 5 board corner (x, y). Board is 56 across, 85 deep, ports at the back
+pi_pos = [57, 178];       // Pi 5 board corner (x, y). Board is 56 across, 85 deep, ports at the back.
+                          // x = 57 keeps it clear of the right rear leg (x 38..52) and leaves 27 mm for the USB-C plug
 pca_pos = [-110, 190];    // PCA9685 board corner, 62 across, 25 deep
 
 // --- Colours -----------------------------------------------------------------------------
@@ -296,7 +298,7 @@ module floor_full() {
         for (x = [3, 59], y = [3, 22]) translate([pca_pos[0] + x, pca_pos[1] + y, 1]) cylinder(d = 2.2, h = 20);
         for (x = [-1, 1]) translate([x * (bridge_half - 7), bridge_y1 - 8, floor_t]) cylinder(d = 10.4, h = 10);
         // zip-tie slots for the motor driver and cables
-        for (x = [-60, -45], y = [230, 250]) translate([x, y, -1]) cube([4, 2.5, floor_t + 2]);
+        for (x = [-100, -86], y = [230, 250]) translate([x, y, -1]) cube([4, 2.5, floor_t + 2]);   // clear of the left rear leg
     }
 }
 
@@ -387,15 +389,17 @@ module place_divider() {
 
 // ============================ BRIDGE ==========================================
 
-module bridge_full() {
+module bridge_full(upstand = true) {
     difference() {
         union() {
             translate([-bridge_half, bridge_y0, bridge_top - bridge_t]) cube([2 * bridge_half, bridge_y1 - bridge_y0, bridge_t]);
             // ears under the bed side walls
             translate([-(side_in + side_t + 4), bed_y, bridge_top - bridge_t]) cube([2 * (side_in + side_t + 4), bed_back_y - bed_y, bridge_t]);
             // upstand for the chute's front axle (replaces front_bar), with gussets
-            translate([-bridge_half + 4, axle_y, bridge_top - 0.01]) cube([2 * bridge_half - 8, 6, pivot_z + 7 - bridge_top]);
-            for (x = [-bridge_half + 6, bridge_half - 9]) translate([x, axle_y + 6, bridge_top - 0.01]) rotate([90, 0, 90]) linear_extrude(3) polygon([[0, 0], [14, 0], [0, 24]]);
+            if (upstand) {
+                translate([-bridge_half + 4, axle_y, bridge_top - 0.01]) cube([2 * bridge_half - 8, 6, pivot_z + 7 - bridge_top]);
+                for (x = [-bridge_half + 6, bridge_half - 9]) translate([x, axle_y + 6, bridge_top - 0.01]) rotate([90, 0, 90]) linear_extrude(3) polygon([[0, 0], [14, 0], [0, 24]]);
+            }
             // fence around the feeder stand's footprint
             translate([0, stand_y0 + stand_l / 2, bridge_top - 0.01]) linear_extrude(2) difference() {
                 square([feeder_out_w + 4.6, stand_l + 4.6], center = true);
@@ -427,10 +431,95 @@ module bridge_tile(i) {
     intersection() { bridge_full(); translate([-500, y0, 0]) cube([1000, y1 - y0, 400]); }
 }
 
+// ---- Front bridge v3 (2026-11-04). Same footprint, screws and splices as bridge_tile(0), so the
+// back bridge, dividers and bed walls stay. What's new:
+//   - a 10 mm bearing wall across the whole front, framed with two windows, gusseted to the
+//     side strips and either side of the axle (the old one was a 6 mm plate on two 3 mm gussets)
+//   - the tray's front axle drops into an open slot from above and a screw-on cap closes it,
+//     so the tray goes in and out without taking the tilt servo off
+//   - the front strip becomes a 10 mm shelf behind the wall: an L beam that can't sag or twist,
+//     and an arched beam along the back edge ties the two side strips together there too
+// Nothing hangs under the plate, so it still prints flat. Above the plate, everything behind
+// the wall stays low (the door cranks and links swing at y -54 .. -64, above z 120).
+bw3_y0 = axle_y;  bw3_y1 = axle_y + 10;        // bearing wall y -77 .. -67
+bw3_top = pivot_z + 17;                         // 162
+bw3_slot = axle_d / 2 + 0.25;                   // slot half width = the bore radius
+bw3_win = [[16, 41], [bridge_top + 7, pivot_z + 5]];   // window x range (each side) and z range
+shelf3_y1 = -55;  shelf3_top = 117;             // shelf behind the wall (clear of the cranks: they swing above 120) ...
+beam3_y0 = 49.5;  beam3_mid = 12;  beam3_end = 1.5;  beam3_flat = 8;   // back beam: y 49.5 .. 56, 12 tall in the middle
+shelf3_low = 112.5;                             // ... except at x +-12..33, where an open door's crank dips to 114
+cap3_w = 30;  cap3_t = 4;  cap3_screw_x = 10;
+module bridge_front3() {
+    difference() {
+        union() {
+            intersection() { bridge_full(false); translate([-500, -500, 0]) cube([1000, bridge_seam_y + 500, 400]); }
+            // bearing wall
+            translate([-bridge_half, bw3_y0, bridge_top - 0.01]) cube([2 * bridge_half, bw3_y1 - bw3_y0, bw3_top - bridge_top]);
+            // gussets behind it: over the side strips, and either side of the axle (under it)
+            for (m = [0, 1]) mirror([m, 0, 0]) {
+                translate([bridge_half - 7, bw3_y1 - 0.01, bridge_top - 0.01]) rotate([90, 0, 90]) linear_extrude(7)
+                    polygon([[0, 0], [12, 0], [0, bw3_top - 12 - bridge_top]]);
+                translate([5, bw3_y1 - 0.01, bridge_top - 0.01]) rotate([90, 0, 90]) linear_extrude(4)
+                    polygon([[0, 0], [11, 0], [0, pivot_z - axle_d / 2 - 2 - bridge_top]]);
+            }
+            // the front strip thickens to a 10 mm shelf behind the wall, so wall + shelf make an L beam
+            translate([-bridge_half, bw3_y1 - 0.01, bridge_top - 0.01]) cube([2 * bridge_half, shelf3_y1 - bw3_y1, shelf3_top - bridge_top]);
+            // a beam along the back edge too, arched to stay under the tray's hinge frame as it tips
+            translate([0, bridge_seam_y, bridge_top - 0.01]) rotate([90, 0, 0]) linear_extrude(bridge_seam_y - beam3_y0)
+                polygon([[-bridge_half, 0], [-bridge_half, beam3_end], [-beam3_flat, beam3_mid], [beam3_flat, beam3_mid], [bridge_half, beam3_end], [bridge_half, 0]]);
+        }
+        // ... lower where the open door cranks pass if the tray tips with the doors open
+        for (m = [0, 1]) mirror([m, 0, 0]) translate([12, bw3_y1, shelf3_low]) cube([21, shelf3_y1 - bw3_y1 + 1, 10]);
+        // windows through the wall
+        for (m = [0, 1]) mirror([m, 0, 0]) translate([bw3_win[0][0], bw3_y0 - 1, bw3_win[1][0]])
+            rotate([-90, 0, 0]) linear_extrude(bw3_y1 - bw3_y0 + 2) offset(r = 3) offset(delta = -3)
+                translate([0, -(bw3_win[1][1] - bw3_win[1][0])]) square([bw3_win[0][1] - bw3_win[0][0], bw3_win[1][1] - bw3_win[1][0]]);
+        // axle: round bottom, open slot above it
+        translate([0, bw3_y0 - 1, pivot_z]) rotate([-90, 0, 0]) cylinder(r = bw3_slot, h = 12);
+        translate([-bw3_slot, bw3_y0 - 1, pivot_z]) cube([2 * bw3_slot, 12, 50]);
+        // cap screws (M3 self-tapping, down into the wall top)
+        for (x = [-cap3_screw_x, cap3_screw_x]) translate([x, (bw3_y0 + bw3_y1) / 2, bw3_top - 14]) cylinder(d = 2.6, h = 15);
+    }
+}
+// Bearing cap: a plug down the slot to the top of the axle, on a flange screwed to the wall top.
+module bridge_cap3() {
+    difference() {
+        union() {
+            translate([-cap3_w / 2, bw3_y0, bw3_top]) cube([cap3_w, bw3_y1 - bw3_y0, cap3_t]);
+            translate([-bw3_slot + 0.15, bw3_y0, pivot_z]) cube([2 * bw3_slot - 0.3, bw3_y1 - bw3_y0, bw3_top - pivot_z + 0.01]);
+        }
+        translate([0, bw3_y0 - 1, pivot_z]) rotate([-90, 0, 0]) cylinder(r = bw3_slot, h = 12);
+        for (x = [-cap3_screw_x, cap3_screw_x]) translate([x, (bw3_y0 + bw3_y1) / 2, bw3_top - 1]) cylinder(d = 3.4, h = cap3_t + 2);
+    }
+}
+
 leg_h = bridge_top - bridge_t - floor_t;
 module leg() {
     cylinder(d = 10, h = leg_h + 3);                  // pegs: into the floor boss, through the bridge
     translate([0, 0, 3]) cylinder(d = 14, h = leg_h - 3);
+}
+
+// Stand-in for the right rear leg on floors printed with the Pi at x = 40, where the Pi
+// covers the leg's boss. The column stands on the bare floor beside the Pi (x 24..38,
+// y 231..245, clear of the camera ribbon slot) and an L-shaped arm under the bridge
+// carries the peg over to the leg's hole. Origin = the leg's hole. Prints standing up.
+leg_off = [-14, -15.5];   // column centre relative to the leg hole
+module leg_offset() {
+    translate([leg_off[0], leg_off[1], 0]) {
+        cylinder(d = 18, h = 2);                       // foot: tape or glue it down
+        cylinder(d = 14, h = leg_h);
+    }
+    // the arm: along x, then along y to the hole (an L, so it stays out of the
+    // camera ribbon slot), sloped underneath so it prints without supports
+    hull() {
+        translate([leg_off[0], leg_off[1], leg_h - 40]) cylinder(d = 14, h = 40);
+        translate([0, leg_off[1], leg_h - 22]) cylinder(d = 10, h = 22);
+    }
+    hull() {
+        translate([0, leg_off[1], leg_h - 22]) cylinder(d = 10, h = 22);
+        translate([0, 0, leg_h - 8]) cylinder(d = 10, h = 8);
+    }
+    translate([0, 0, leg_h - 0.01]) cylinder(d = 10, h = 3);   // peg into the bridge
 }
 
 module splice() {
@@ -512,7 +601,7 @@ module shell(open = false) {   // open: no deck, tower or right side, to see ins
     color(c_inner) for (xi = [0, 1], yi = [0, 1]) floor_tile(xi, yi);
     if (!open) color(c_shell) for (xi = [0, 1], yi = [0, 1]) deck_tile(xi, yi);
     color(c_inner) for (m = [0, 1]) mirror([m, 0, 0]) place_divider();
-    color("#555b63") for (i = [0, 1]) bridge_tile(i);
+    color("#555b63") { bridge_front3(); bridge_cap3(); bridge_tile(1); }
     color(c_inner) for (x = [-1, 1]) translate([x * (bridge_half - 7), bridge_y1 - 8, floor_t]) leg();
     if (!open) { color(c_shell) tower(); color(c_fascia) tower_lid(); }
     color(c_fascia) on_bed() translate([tower_x, card_s, 14]) post_sleeve();
@@ -541,7 +630,8 @@ module mechanism() {
 
 // ============================ OUTPUT ==========================================
 
-if (epart == "post_front") translate([0, 0, post_h]) mirror([0, 0, 1]) post(true);    // upside down: flat top on the bed, pegs up
+if (epart == "post_front") translate([0, 0, post_h]) mirror([0, 0, 1]) post(true);    // front LEFT; upside down: flat top on the bed, pegs up
+else if (epart == "post_front_r") translate([0, 0, post_h]) mirror([0, 0, 1]) mirror([1, 0, 0]) post(true);  // front RIGHT: the mirror image, its short groove is on the other face
 else if (epart == "post_back") translate([0, 0, post_h]) mirror([0, 0, 1]) post(false);
 else if (epart == "side") side();
 else if (epart == "fascia_l") fascia_tile(0);
@@ -559,9 +649,12 @@ else if (epart == "deck_fr") translate([0, 0, deck_z]) mirror([0, 0, 1]) deck_ti
 else if (epart == "deck_bl") translate([0, 0, deck_z]) mirror([0, 0, 1]) deck_tile(0, 1);
 else if (epart == "deck_br") translate([0, 0, deck_z]) mirror([0, 0, 1]) deck_tile(1, 1);
 else if (epart == "divider") divider();
-else if (epart == "bridge_front") translate([0, 0, -(bridge_top - bridge_t)]) bridge_tile(0);
+else if (epart == "bridge_front") translate([0, 0, -(bridge_top - bridge_t)]) bridge_front3();     // v3, flat on its bottom
+else if (epart == "bridge_cap") translate([0, 0, bw3_top + cap3_t]) mirror([0, 0, 1]) bridge_cap3();     // flange down
+else if (epart == "bridge_front_old") translate([0, 0, -(bridge_top - bridge_t)]) bridge_tile(0);   // until 2026-11-04
 else if (epart == "bridge_back") translate([0, 0, -(bridge_top - bridge_t)]) bridge_tile(1);
 else if (epart == "leg") leg();
+else if (epart == "leg_offset") leg_offset();
 else if (epart == "splice") splice();
 else if (epart == "tower") translate([0, 0, -deck_z]) tower();
 else if (epart == "tower_lid") translate([0, 0, deck_z + tower_h + 3]) mirror([0, 0, 1]) tower_lid();
@@ -569,7 +662,7 @@ else if (epart == "post_sleeve") post_sleeve();
 else if (epart == "head_cover") translate([0, 0, 16]) mirror([0, 0, 1]) head_cover();
 else if (epart == "shell") shell();
 else if (epart == "inside") { shell(true); drawers(); mechanism(); }
-else if (epart == "none") { }   // nothing: for files that include this one
+else if (epart == "none") { }   // for files that include this one (guide/scenes.scad)
 else {
     shell();
     drawers();

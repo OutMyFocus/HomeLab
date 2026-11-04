@@ -14,7 +14,7 @@ from pathlib import Path
 
 from flask import jsonify, request, send_from_directory
 
-from . import config
+from . import accounts, config
 from .database import Card
 from .library import holdings, read_rows
 from .live import card_from_scryfall
@@ -139,7 +139,7 @@ def check(text: str, rows: list[dict], matcher, vault=None, live=None) -> dict:
 # --- Saved decks ---------------------------------------------------------------------------
 
 def decks_file() -> Path:
-    return config.DATA_DIR / "decks.json"
+    return accounts.user_file("decks.json")
 
 
 def load_decks() -> list[dict]:
@@ -151,7 +151,7 @@ def load_decks() -> list[dict]:
 
 
 def _write(decks):
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    decks_file().parent.mkdir(parents=True, exist_ok=True)
     tmp = decks_file().with_suffix(".tmp")
     tmp.write_text(json.dumps({"decks": decks}, indent=1))
     tmp.replace(decks_file())
@@ -209,7 +209,7 @@ def add_deck_routes(app, scanner, web_dir):
         if not parse(text):
             return jsonify({"error": "Paste a decklist first: one card per line, like 4 Lightning Bolt"}), 400
         with scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
+            rows = read_rows(accounts.collection_csv())
         return jsonify(check(text, rows, scanner.matcher, scanner.vault, getattr(scanner, "live", None)))
 
     @app.post("/api/decks/save")

@@ -19,7 +19,7 @@ from pathlib import Path
 
 from flask import Response, jsonify, request, send_from_directory
 
-from . import config
+from . import accounts, config, montreal
 from .collection import COLUMNS, add_card
 from .database import Card
 from . import sort_rules
@@ -139,6 +139,7 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
             "qty": g["qty"],
             "price": price,
             "price_source": source,
+            "mtl": montreal.first(vault, card.name, foil),  # Face to Face Games, else the next Montreal store
             "value": None if price is None else round(price * g["qty"], 2),
             "scanned_price": scanned_price,
             "change": None if price is None or scanned_price is None else round(price - scanned_price, 2),
@@ -197,7 +198,7 @@ def summarize(items: list[dict]) -> dict:
 # --- Value over time --------------------------------------------------------------------
 
 def history_file() -> Path:
-    return config.DATA_DIR / HISTORY_FILE_NAME
+    return accounts.user_file(HISTORY_FILE_NAME)
 
 
 def load_history() -> dict:
@@ -216,7 +217,7 @@ def note_value(summary: dict, today: str | None = None) -> list[dict]:
     if days.get(today) != point and summary["cards"]:
         days[today] = point
         try:
-            config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+            history_file().parent.mkdir(parents=True, exist_ok=True)
             history_file().write_text(json.dumps(dict(sorted(days.items()))))
         except OSError:
             pass
@@ -400,7 +401,7 @@ def add_collection_routes(app, scanner, web_dir):
 
     def current() -> list[dict]:
         with scanner.lock:
-            rows = read_rows(config.COLLECTION_CSV)
+            rows = read_rows(accounts.collection_csv())
         return holdings(rows, scanner.matcher, scanner.vault, getattr(scanner, "live", None))
 
     def everything():
@@ -442,7 +443,7 @@ def add_collection_routes(app, scanner, web_dir):
             if js.get("printing") and new_card is None:
                 return jsonify({"error": "Couldn't find that printing"}), 404
             with scanner.lock:
-                path = config.COLLECTION_CSV
+                path = accounts.collection_csv()
                 if js.get("delete"):
                     ok = set_quantity(path, key, 0)
                 elif "qty" in js:
@@ -475,7 +476,7 @@ def add_collection_routes(app, scanner, web_dir):
         price = card_price(card, foil, scanner.vault, live)
         with scanner.lock:
             for _ in range(count):
-                add_card(config.COLLECTION_CSV, card, foil, bin_for(card, foil, price[0])[1], price)
+                add_card(accounts.collection_csv(), card, foil, bin_for(card, foil, price[0])[1], price)
         return everything()
 
     @app.post("/api/collection/refresh")
