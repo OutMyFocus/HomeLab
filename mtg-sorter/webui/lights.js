@@ -8,7 +8,8 @@
   let state = null, saveT, pending = {};
 
   function save(change, now = false) {
-    Object.assign(pending, change);
+    for (const [k, v] of Object.entries(change))   // card and events are merged one level deep
+      pending[k] = v && typeof v === "object" && pending[k] ? { ...pending[k], ...v } : v;
     clearTimeout(saveT);
     saveT = setTimeout(async () => {
       const body = pending; pending = {};
@@ -29,6 +30,14 @@
     $("flashes").onchange = () => save({ flashes: $("flashes").checked }, true);
     $("count").max = s.max_count;
     $("count").onchange = () => save({ count: +$("count").value }, true);
+    $("cardCount").max = s.max_count;
+    $("cardCount").onchange = () => save({ card: { count: +$("cardCount").value } }, true);
+    $("cardOn").onchange = () => save({ card: { on: $("cardOn").checked } }, true);
+    $("cardColor").oninput = () => save({ card: { color: $("cardColor").value } });
+    document.querySelectorAll("[data-cc]").forEach((b) => { b.onclick = () => save({ card: { color: b.dataset.cc, on: true } }, true); });
+    $("cardBrightness").oninput = () => {
+      $("cbOut").value = $("cardBrightness").value + "%"; save({ card: { brightness: +$("cardBrightness").value } });
+    };
     $("events").innerHTML = s.events.map(([k, label]) => `
       <div class="event">
         <label class="switch"><input type="checkbox" data-ev="${k}"><span></span></label>
@@ -81,6 +90,12 @@
     $("bOut").value = set.brightness + "%"; $("sOut").value = set.speed + "%";
     $("speed").closest(".slide").hidden = set.effect === "solid";
     if (document.activeElement !== $("count")) $("count").value = set.count;
+    const card = set.card;
+    $("cardOn").checked = card.on;
+    if (document.activeElement !== $("cardCount")) $("cardCount").value = card.count;
+    if (document.activeElement !== $("cardColor")) $("cardColor").value = card.color;
+    if (document.activeElement !== $("cardBrightness")) $("cardBrightness").value = card.brightness;
+    $("cbOut").value = card.brightness + "%";
     for (const [k, ev] of Object.entries(set.events)) {
       document.querySelector(`[data-ev="${k}"]`).checked = ev.on;
       const c = document.querySelector(`[data-evc="${k}"]`);
@@ -88,7 +103,7 @@
     }
     $("maxAmps").textContent = s.max_amps + " A";
     $("power").textContent = `Drawing about ${s.amps} A right now. The app keeps it under ${s.max_amps} A ` +
-      `(${set.count} LEDs at full white would be about ${s.full_white_amps} A).`;
+      `(${set.count + set.card.count} LEDs at full white would be about ${s.full_white_amps} A).`;
   }
 
   // The preview follows exactly what's sent to the bars, a few times a second.

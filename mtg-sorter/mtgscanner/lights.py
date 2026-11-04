@@ -5,6 +5,11 @@ app sends the LED colors over SPI. (The usual LED library, rpi_ws281x, doesn't w
 Pi 5, and SPI needs no extra package.) Each bit an LED expects becomes one SPI byte: a
 short pulse (0b11000000) for 0, a long one (0b11111000) for 1, at 6.4 MHz.
 
+One strip can do two jobs. The first LEDs ("count") are the status lights behind the
+fascia slots: they take the color, effect and flashes. The LEDs chained after them ("card"
+LEDs) light the scan bed for the camera: they stay one steady color and never flash, so the
+picture's colors don't change while a card is being read.
+
 Like the rest of the machine, nothing fails without the bars: on a PC, or with SPI off,
 the Lights page says what's missing, and the preview on the page still shows what the
 bars would do. The Pi can't tell whether bars are plugged in, because LEDs only listen.
@@ -46,6 +51,9 @@ DEFAULTS = {
     "count": config.LIGHTS_COUNT,
     "flashes": True,
     "events": {k: {"on": True, "color": c} for k, (_, c) in EVENTS.items()},
+    # the card light: LEDs chained after the status lights, in the scan bed walls
+    "card": {"on": True, "count": config.LIGHTS_CARD_COUNT, "color": "#ffffff",
+             "brightness": config.LIGHTS_CARD_BRIGHTNESS},
 }
 MAX_LEDS = 150         # one SPI write holds 4096 bytes: 150 LEDs x 24 bytes plus the reset
 FLASH_SECONDS = 1.4
@@ -121,12 +129,24 @@ def clean(raw: dict, old: dict) -> dict:
         if raw["effect"] not in EFFECTS:
             raise ValueError("Unknown effect")
         s["effect"] = raw["effect"]
-    for key, lo, hi in (("brightness", 0, 100), ("speed", 1, 100), ("count", 1, MAX_LEDS)):
+    for key, lo, hi in (("brightness", 0, 100), ("speed", 1, 100), ("count", 0, MAX_LEDS)):
         if key in raw:
-            try:
-                s[key] = int(max(lo, min(hi, round(float(raw[key])))))
-            except (TypeError, ValueError):
-                raise ValueError(f"{key.capitalize()} has to be a number")
+            s[key] = _number(raw[key], lo, hi, key.capitalize())
+    card = raw.get("card")
+    if card is not None:
+        if not isinstance(card, dict):
+            raise ValueError("Card light settings have to be a list of values")
+        if "on" in card:
+            s["card"]["on"] = bool(card["on"])
+        if "color" in card:
+            if not HEX.match(str(card["color"])):
+                raise ValueError("Color has to look like #ffffff")
+            s["card"]["color"] = card["color"].lower()
+        for key, hi in (("count", MAX_LEDS), ("brightness", 100)):
+            if key in card:
+                s["card"][key] = _number(card[key], 0, hi, f"Card light {key}")
+    if s["count"] + s["card"]["count"] > MAX_LEDS:
+        raise ValueError(f"That's more than {MAX_LEDS} LEDs together")
     for name, ev in (raw.get("events") or {}).items():
         if name not in EVENTS or not isinstance(ev, dict):
             raise ValueError(f"Unknown flash: {name}")
@@ -137,6 +157,13 @@ def clean(raw: dict, old: dict) -> dict:
                 raise ValueError("Color has to look like #ff7a1a")
             s["events"][name]["color"] = ev["color"].lower()
     return s
+
+
+def _number(v, lo: int, hi: int, name: str) -> int:
+    try:
+        return int(max(lo, min(hi, round(float(v)))))
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} has to be a number")
 
 
 def load_settings() -> dict:
@@ -257,12 +284,22 @@ class Lights:
     # --- what to show ---------------------------------------------------------
 
     def render(self, now: float) -> tuple[np.ndarray, bool]:
-        """The colors for every LED right now, and whether they're changing (call with the lock)."""
+        """The colors for every LED right now, and whether they're changing (call with the lock).
+        The status lights come first, then the card light chained after them."""
+        status, moving = self._render_status(now)
+        card = self.settings["card"]
+        px = np.zeros((card["count"], 3))
+        if card["on"]:
+            px[:] = to_rgb(card["color"]) * card["brightness"] / 100
+        px = limit_power(np.vstack([status, px]), config.LIGHTS_MAX_AMPS)
+        return np.clip(np.rint(px), 0, 255).astype(np.uint8), moving
+
+    def _render_status(self, now: float) -> tuple[np.ndarray, bool]:
         s = self.settings
         n = s["count"]
         level = s["brightness"] / 100
         if not s["on"]:
-            return np.zeros((n, 3), np.uint8), False
+            return np.zeros((n, 3)), False
         t = now - self.started
         speed = s["speed"] / 50       # 1 at the middle of the slider
         color = to_rgb(s["color"])
@@ -272,7 +309,7 @@ class Lights:
             k = 0.12 + 0.88 * (0.5 - 0.5 * math.cos(2 * math.pi * t * 0.25 * speed))
             px = np.tile(color * k, (n, 1))
         elif effect == "rainbow":
-            px = np.array([colorsys.hsv_to_rgb((p + t * 0.15 * speed) % 1, 1, 1) for p in pos]) * 255
+            px = np.array([colorsys.hsv_to_rgb((p + t * 0.15 * speed) % 1, 1, 1) for p in pos]).reshape(n, 3) * 255
         elif effect == "sweep":
             centre = 0.5 - 0.5 * math.cos(math.pi * t * 0.5 * speed)    # back and forth
             glow = np.clip(1 - np.abs(pos - centre) / 0.18, 0, 1) ** 1.6
@@ -290,8 +327,7 @@ class Lights:
                 w = 1.0 if age < 0.5 else 1 - (age - 0.5) / (FLASH_SECONDS - 0.5)
                 px = px * (1 - w) + np.tile(rgb * max(level, 0.25), (n, 1)) * w
                 moving = True
-        px = limit_power(px, config.LIGHTS_MAX_AMPS)
-        return np.clip(np.rint(px), 0, 255).astype(np.uint8), moving
+        return px, moving
 
     def flash(self, event: str, force: bool = False):
         """Flashes the color for a scanner event (saved, valuable, unsure, unknown)."""
@@ -342,7 +378,7 @@ class Lights:
                 "max_count": MAX_LEDS,
                 "max_amps": config.LIGHTS_MAX_AMPS,
                 "amps": round(amps(frame), 2),
-                "full_white_amps": round(self.settings["count"] * (3 * MA_PER_CHANNEL + MA_IDLE) / 1000, 1),
+                "full_white_amps": round(len(frame) * (3 * MA_PER_CHANNEL + MA_IDLE) / 1000, 1),
                 "pin": "GPIO10 (pin 19)",
             }
 
