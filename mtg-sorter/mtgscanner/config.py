@@ -102,6 +102,10 @@ CAMERA_SIZE = (1920, 1080)
 # Seconds a servo keeps holding after a move before it lets go (0 = hold until told).
 # Holding against something it can't push past makes a servo hot.
 SERVO_HOLD_SECONDS = 1.5
+# Parts that keep holding after a move, because they fall back on their own if let go:
+# the stop gate drops under its own weight, and it has to stand firm against the card the
+# feeder pushes into it.
+SERVO_KEEP_HOLDING = ("pins",)
 
 SERVOS = {
     # part: (PCA9685 channel, {position: angle})
