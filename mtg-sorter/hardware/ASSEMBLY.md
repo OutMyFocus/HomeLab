@@ -408,6 +408,10 @@ app recognizes it. Then drop the pins and check the card slides off cleanly.
 
 ## Stage E: the chute and trapdoors
 
+> **Since 2026-11-04 the chute is v3: follow [CHUTE_V3.md](CHUTE_V3.md) instead of the steps below** (new tray,
+> doors on journals, crank-and-link drive, new front bridge with a drop-in bearing). The steps below are for the
+> retired door carriers.
+
 1. **Door carriers.** Each `door_carrier` is a servo mount and a hinge lug on one bar, so
    the servo shaft and the hinge pin always line up. Push a servo into each carrier's front
    plate (shaft toward the back) and fit its 2 tab screws.

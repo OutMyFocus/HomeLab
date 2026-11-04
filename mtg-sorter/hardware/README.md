@@ -103,10 +103,13 @@ the tray tilted both ways, the trapdoors open, and the pins up and down.
 | `stop_gate` | 1 | black | v2: four stop teeth, 8 mm tall, on a bar across the bed. Turned by the pin servo; replaces `pin_rocker` |
 | `gate_bearing` | 1 | black | v2: clips on the right end of the tilt bracket and holds the stop gate's right end |
 | `tilt_bracket` | 1 | black | |
-| `chute` | 1 | any | The tray |
-| `trapdoor`, `trapdoor_left` | 1 each | any | |
-| `hinge_pin` | 2 (+2 spare) | any | prints standing on its head; replaces the M3 hinge screws |
-| `door_carrier`, `door_carrier_left` | 1 each | any | servo mount + hinge lug in one; prints upside down (as exported). v2: the servo body points inwards so it clears the bridge when the tray tilts |
+| `chute3` | 1 | black | v3 (2026-11-04) tray: no screws through the floor, door servos in pockets in its 8 mm front wall. See [CHUTE_V3.md](CHUTE_V3.md) |
+| `door3`, `door3_left` | 1 each | black | v3 doors, on round journals at both ends |
+| `hinge_frame3` | 1 | black | screws up under the tray and clamps the door journals (7 × M3 × 12) |
+| `door_crank3`, `door_crank3_left`, `servo_crank3`, `servo_crank3_left`, `door_link3` ×2 | | black | the crank-and-link drive from each servo to its door (95°) |
+
+The v1/v2 `chute`, `trapdoor`s, `hinge_pin`s, `trapdoor_mount`s, `hinge_lug`s and `door_carrier`s are retired
+(the carrier snapped in testing, and their screws stood in the card's path).
 
 All print flat, as they open, with no supports. 15–20% infill is fine. The open frame and
 the three bins the bed first sat in (`frame_side`, `front_bar`, `bin`) are gone: the
@@ -210,7 +213,8 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `floor_fl`, `floor_fr`, `floor_bl`, `floor_br` | 1 each | black | the base plate; its edge shows |
 | `deck_fl`, `deck_fr`, `deck_bl`, `deck_br` | 1 each | black | print as they open (upside down) |
 | `divider` | 2 | any | |
-| `bridge_front`, `bridge_back` | 1 each | any | |
+| `bridge_front`, `bridge_back` | 1 each | any | `bridge_front` is v3 since 2026-11-04: a 10 mm bearing wall the tray's front axle drops into, closed by `bridge_cap` |
+| `bridge_cap` | 1 | any | the bearing cap on `bridge_front` (2 × M3 × 12) |
 | `leg` | 2 | any | |
 | `leg_offset` | 0 or 1 | any | only for a floor printed with the Pi at x = 40: replaces the right rear `leg`, standing beside the Pi |
 | `splice` | 26 | any | 24 used (floor 6, bridge 2, deck 2, fascia 4, back 4, sides 6), 2 spare |

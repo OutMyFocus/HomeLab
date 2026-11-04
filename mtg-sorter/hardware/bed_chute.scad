@@ -306,6 +306,10 @@ module camera_head() {
 tilt_bracket_y = 78;      // front face of the tilt bracket
 back_axle_end = 70;       // where the back axle meets the horn plate
 
+// ---- OLD CHUTE (v1/v2: chute, trapdoor, hinge_pin, trapdoor_mount, hinge_lug, door_carrier).
+// Retired 2026-11-04 by CHUTE v3 below; no longer exported. Kept only because the older picture
+// guides (guide/scenes.scad, guide/v2/bed_scenes.scad) still draw them.
+
 module chute() {
     difference() {
         union() {
@@ -447,6 +451,234 @@ module door_carrier() {
 }
 carrier_screws_y = [-ch_in + 6, 0, ch_in - 3];
 
+
+// ============================ CHUTE v3: SOLID BOMB BAY ========================
+// Replaces chute, trapdoor, door_carrier and hinge_pin (and goes with bridge_front3 in
+// enclosure.scad). What it fixes:
+//   - no screws through the tray floor: the card's surface is the bare print
+//   - each door turns on two round journals (front and back) clamped between the tray and
+//     one hinge_frame underneath, so a servo never holds a door up
+//   - the door servos sit in pockets in an 8 mm thick front wall, high above the card,
+//     and turn the doors through a crank and a link (a parallelogram: door and servo turn
+//     the same amount), so a spline tooth off just shifts the slider angle
+//   - nothing hangs low enough to touch the bridge when the tray tips 25 degrees
+// Parts: chute3, door3 + door3_left, door_crank3 + door_crank3_left, hinge_frame3,
+// servo_crank3 + servo_crank3_left, door_link3 x2. All print flat with no supports.
+v3_hx = 36.6;            // door hinge axes x = +-36.6, along y ...
+v3_hz = pivot_z - floor_t - 0.5;   // ... at z = 142, the underside of the floor
+v3_edge = 36;            // door's outer top edge (the wing starts at 36.25)
+v3_gap = 0.25;
+v3_door_y = ch_in - 0.25;          // doors run y = +-45.25
+hub3_r = 4;              // door journals
+hub3_flat = pivot_z - v3_hz;       // the journals are flat on top (3 mm up), so the door prints top down
+bore3_r = hub3_r + 0.25;
+wall3_y0 = -ch_in - 8;   // front wall y = -53.5 .. -45.5 (8 thick)
+back3_y1 = ch_in + 6;    // back rail y = 45.5 .. 51.5
+back3_h = 10;            // back rail stands 10 above the floor
+front3_h = front_rail_h; // front rail height above the floor (30) ...
+mount3_top = 190;        // ... and up to z = 190 where the servos sit (x = +-41)
+mount3_x = 41;
+// door servo shafts (right one; the left is mirrored), and the crank sweep
+sv3_x = 28;  sv3_z = 180;
+crank3_r = 12;
+crank3_shut = 145;       // crank angle with the door shut (degrees, 0 = +x, 90 = up) ...
+crank3_open = 95;        // ... and how far it turns to open the door
+// along y, in front of the tray's front wall (servo tab face is the wall's back face, y = -45.5):
+crank3_y0 = wall3_y0 - 0.5;        // door crank: y -54 .. -60.5
+crank3_y1 = crank3_y0 - 6.5;
+scrank3_y0 = -ch_in - 11;          // servo crank: -56.5 .. -60.5 (stock horn sits in a pocket on its back)
+scrank3_y1 = scrank3_y0 - 4;
+link3_y0 = crank3_y1 - 0.5;        // link: -61 .. -64
+link3_y1 = link3_y0 - 3;
+link3_len = norm([sv3_x - v3_hx, sv3_z - v3_hz]);
+frame3_z0 = 135;         // hinge frame: beams z 135..142 under the front wall and back rail
+gate3_cut_x = 31.5;      // back rail stays full depth only outside x = +-31.5
+// hinge frame screws (x, y): either side of the front journals; outside the back ones and one
+// in the middle, under the back axle
+frame3_screws = [for (x = [-46, -20, 20, 46]) [x, wall3_y0 + 4], for (x = [-46, 0, 46]) [x, (ch_in + back3_y1) / 2]];
+
+// The D-shaped journal profile, in the (x, z) plane about the axis.
+module hub3_2d(r = hub3_r, flat = hub3_flat) { intersection() { circle(r = r); translate([-r - 1, -r - 1]) square([2 * r + 2, flat + r + 1]); } }
+// A 2D shape in the (x, z) plane, extruded along y between a and b (either order).
+module along_y(a, b) { translate([0, min(a, b), 0]) rotate([-90, 0, 0]) linear_extrude(abs(b - a)) mirror([0, 1, 0]) children(); }
+
+// ---- tray
+module chute3() {
+    top = pivot_z;  bot = pivot_z - floor_t;
+    difference() {
+        union() {
+            // floor wings, outside the door opening
+            for (m = [0, 1]) mirror([m, 0, 0]) translate([v3_edge + v3_gap, -ch_in, bot]) cube([ch_half - v3_edge - v3_gap, 2 * ch_in, floor_t]);
+            // front wall: 8 thick, rail height at the ends, up to z 190 across the servo mounts
+            translate([-ch_half, wall3_y0, bot]) cube([2 * ch_half, 8, front3_h + floor_t]);
+            translate([-mount3_x, wall3_y0, bot]) cube([2 * mount3_x, 8, mount3_top - bot]);
+            // back rail, 6 thick
+            translate([-ch_half, ch_in, bot]) cube([2 * ch_half, back3_y1 - ch_in, back3_h + floor_t]);
+            // axles along y, flat underneath (as before)
+            for (y = [[front_bar_y - 8, wall3_y0], [back3_y1, back_axle_end]])
+                translate([0, y[0], pivot_z]) intersection() {
+                    rotate([-90, 0, 0]) cylinder(d = axle_d, h = y[1] - y[0]);
+                    translate([-axle_d, 0, -floor_t]) cube([2 * axle_d, y[1] - y[0], axle_d]);
+                }
+            // plate the tilt servo's horn screws onto
+            translate([-12, back_axle_end, bot]) cube([24, 2.5, 14]);
+        }
+        // round off the outer exit edges a little (cards slide off here)
+        for (m = [0, 1]) mirror([m, 0, 0]) translate([ch_half, -ch_in - 1, top]) rotate([-90, 0, 0]) difference() {
+            translate([-1.5, -1.5, 0]) cube([3, 3, 2 * ch_in + 2]); translate([-1.5, 1.5, -1]) cylinder(r = 1.5, h = 2 * ch_in + 4); }
+        // upper halves of the door journal bores, in the underside of the front wall and back rail
+        for (m = [0, 1]) mirror([m, 0, 0]) for (y = [[wall3_y0 - 1, -ch_in + 0.01], [ch_in - 0.01, back3_y1 + 1]])
+            translate([v3_hx, 0, v3_hz]) along_y(y[1], y[0]) circle(r = bore3_r);
+        // the journals turn in a small notch at each inner corner of the wings
+        for (m = [0, 1]) mirror([m, 0, 0]) for (y = [-ch_in - 1, ch_in - 1]) translate([v3_hx - 5, y, v3_hz - 5]) cube([bore3_r + 5.25, 2, 10]);
+        // servo pockets: the servo's top goes through the front wall from behind, shaft forward
+        for (m = [0, 1]) mirror([m, 0, 0]) {
+            translate([sv3_x, -ch_in + 1, sv3_z]) rotate([90, 0, 0]) rotate([0, 0, 180]) { servo_hole(10); servo_screws(9); }
+            // and a clear path for the horn and servo crank in front of it
+        }
+        // horn screw holes and hub clearance (tilt servo)
+        translate([0, back_axle_end - 1, pivot_z]) rotate([-90, 0, 0]) cylinder(d = 7.2, h = 5);
+        for (d = [-1, 1]) translate([d * 7, back_axle_end - 1, pivot_z]) rotate([-90, 0, 0]) cylinder(d = 1.5, h = 5);
+        // the stop gate's teeth swing through here if they drop while the tray is tipped, so between
+        // the hinges the back rail is only a 2 mm lip (kept full in the middle, where the back axle
+        // joins it; the hinge frame's back beam stiffens it from below)
+        for (m = [0, 1]) mirror([m, 0, 0]) translate([6, ch_in - 0.01, top - 1]) cube([gate3_cut_x - 6, back3_y1 - ch_in + 0.02, 20]);
+        for (m = [0, 1]) mirror([m, 0, 0]) translate([6, ch_in - 0.01, top + 5]) cube([gate3_cut_x - 3, back3_y1 - ch_in + 0.02, 20]);
+        // screw holes for the hinge frame (M3 self-tapping, up from below)
+        for (xy = frame3_screws) translate([xy[0], xy[1], bot - 1]) cylinder(d = 2.6, h = 13);
+    }
+}
+
+// ---- door (right; door3_left is its mirror image)
+module door3() {
+    top = pivot_z;
+    difference() {
+        union() {
+            // the slab
+            translate([v3_gap, -v3_door_y, top - floor_t]) cube([v3_edge - v3_gap, 2 * v3_door_y, floor_t]);
+            // spine under its outer edge, full length (stiffens it; stays inboard of the axis so it
+            // can't swing up into the wing)
+            translate([v3_hx - 8, -v3_door_y, v3_hz - 4]) cube([7, 2 * v3_door_y, 4.01]);
+            // journals at both ends, and the D-shaped end the crank slides onto
+            translate([v3_hx, 0, v3_hz]) along_y(crank3_y1 + 0.01, -ch_in + 0.75) hub3_2d();
+            translate([v3_hx, 0, v3_hz]) along_y(back3_y1 - 0.25, ch_in - 0.75) hub3_2d();
+            // fill between slab and spine at the ends, where the journals join (all inboard of x = 36,
+            // so nothing swings up into the wing as the door opens)
+            for (y = [-v3_door_y, v3_door_y - 6]) translate([v3_hx - 8, y, v3_hz - 4]) cube([v3_edge - v3_hx + 8, 6, 4 + floor_t]);
+        }
+        // axial screw hole for the crank (M3 self-tapping, from the front)
+        translate([v3_hx, crank3_y1 - 1, v3_hz]) rotate([-90, 0, 0]) cylinder(d = 2.6, h = 12);
+    }
+}
+
+// ---- door crank (right): slides on the D end of the front journal, held by one M3 from the front
+module door_crank3() {
+    a = crank3_shut;
+    difference() {
+        hull() {
+            translate([v3_hx, 0, v3_hz]) along_y(crank3_y0, crank3_y1) circle(r = 6);
+            translate([v3_hx + crank3_r * cos(a), 0, v3_hz + crank3_r * sin(a)]) along_y(crank3_y0, crank3_y1) circle(r = 4.5);
+        }
+        translate([v3_hx, 0, v3_hz]) along_y(crank3_y0 + 1, crank3_y1 - 1) offset(delta = 0.15) hub3_2d();
+        translate([v3_hx, crank3_y1 - 1, v3_hz]) rotate([-90, 0, 0]) cylinder(d = 3.4, h = 10);
+        // link pin: M3 self-tapping into the crank
+        translate([v3_hx + crank3_r * cos(a), crank3_y1 - 1, v3_hz + crank3_r * sin(a)]) rotate([-90, 0, 0]) cylinder(d = 2.6, h = 10);
+    }
+}
+
+// ---- servo crank: the servo's own single-arm horn presses into a pocket on its back. The
+// horn's arm points a quarter turn from the link pin (so the pin screw can't hit it, and it
+// stays pointing down-ish, clear of the deck, whatever the doors and tilt do); the pocket runs
+// out through the end, so any length of horn fits.
+horn3_len = 22;  horn3_w = 6.6;  horn3_hub = 7.8;
+horn3_turn = 90;  horn3_reach = 17;
+module servo_crank3() {
+    a = crank3_shut;
+    difference() {
+        hull() {
+            translate([sv3_x, 0, sv3_z]) along_y(scrank3_y0, scrank3_y1) circle(r = 7);
+            translate([sv3_x + crank3_r * cos(a), 0, sv3_z + crank3_r * sin(a)]) along_y(scrank3_y0, scrank3_y1) circle(r = 4.5);
+            translate([sv3_x + horn3_reach * cos(a + horn3_turn), 0, sv3_z + horn3_reach * sin(a + horn3_turn)]) along_y(scrank3_y0, scrank3_y1) circle(r = 4.5);
+        }
+        // horn pocket, 2 deep, the arm a quarter turn from the link pin
+        translate([sv3_x, 0, sv3_z]) along_y(scrank3_y0 + 1, scrank3_y0 - 2) rotate(a + horn3_turn) {
+            circle(d = horn3_hub);
+            translate([0, -horn3_w / 2]) square([horn3_len + 5, horn3_w]);
+        }
+        // the horn's own screw goes through the middle, head on the front
+        translate([sv3_x, scrank3_y1 - 1, sv3_z]) rotate([-90, 0, 0]) cylinder(d = 2.4, h = 10);
+        // link pin, M3 self-tapping (comes in from the front, through the link)
+        translate([sv3_x + crank3_r * cos(a), scrank3_y1 - 1, sv3_z + crank3_r * sin(a)]) rotate([-90, 0, 0]) cylinder(d = 2.6, h = 10);
+    }
+}
+
+// ---- link: two M3 screws, one at each end
+module door_link3() {
+    a = crank3_shut;
+    p0 = [v3_hx + crank3_r * cos(a), v3_hz + crank3_r * sin(a)];
+    p1 = [sv3_x + crank3_r * cos(a), sv3_z + crank3_r * sin(a)];
+    difference() {
+        hull() for (p = [p0, p1]) translate([p[0], 0, p[1]]) along_y(link3_y0, link3_y1) circle(r = 4);
+        for (p = [p0, p1]) translate([p[0], link3_y1 - 1, p[1]]) rotate([-90, 0, 0]) cylinder(d = 3.4, h = 6);
+    }
+}
+
+// ---- hinge frame: lower halves of the four journal bores, screwed up into the tray
+module hinge_frame3() {
+    bot = pivot_z - floor_t;
+    difference() {
+        union() {
+            for (y = [[wall3_y0, -ch_in], [ch_in, back3_y1]]) {
+                // beam: deep under the bores, shallower out at the ends (tilt clearance)
+                translate([0, y[0], 0]) rotate([90, 0, 0]) mirror([0, 0, 1]) linear_extrude(y[1] - y[0]) polygon([
+                    [-ch_half + 2, bot], [-ch_half + 2, bot - 4], [-47, frame3_z0 + 1], [47, frame3_z0 + 1], [ch_half - 2, bot - 4], [ch_half - 2, bot]]);
+                for (m = [0, 1]) mirror([m, 0, 0]) translate([v3_hx, 0, v3_hz]) along_y(y[1], y[0]) circle(r = bore3_r + 2.6);
+            }
+            // side bars under the wings
+            for (m = [0, 1]) mirror([m, 0, 0]) translate([48, wall3_y0, bot - 4]) cube([ch_half - 2 - 48, back3_y1 - wall3_y0, 4]);
+        }
+        // nothing above the underside of the tray
+        translate([-100, -100, bot]) cube([200, 200, 50]);
+        for (m = [0, 1]) mirror([m, 0, 0]) for (y = [[wall3_y0 - 1, -ch_in + 0.01], [ch_in - 0.01, back3_y1 + 1]])
+            translate([v3_hx, 0, v3_hz]) along_y(y[1], y[0]) circle(r = bore3_r);
+        // keep clear of the door spines and slabs between the beams
+        translate([-v3_hx - 5, -ch_in, frame3_z0 - 1]) cube([2 * v3_hx + 10, 2 * ch_in, 10]);
+        // M3 screws up into the tray
+        for (xy = frame3_screws) {
+            translate([xy[0], xy[1], frame3_z0 - 5]) cylinder(d = 3.4, h = 20);
+            translate([xy[0], xy[1], frame3_z0 - 5]) cylinder(d = 6, h = 5 + 2.5);   // head sits in a counterbore
+        }
+    }
+}
+
+// Moving parts in place: tilt (degrees, + = right side down) and doors (0 = shut, 1 = open).
+module door3_moving(open = 0) {
+    a = open * crank3_open;
+    translate([v3_hx, 0, v3_hz]) rotate([0, -a, 0]) translate([-v3_hx, 0, -v3_hz]) { door3(); door_crank3(); }
+    // the parallelogram: the servo crank turns by the same angle, the link slides without turning
+    translate([sv3_x, 0, sv3_z]) rotate([0, -a, 0]) translate([-sv3_x, 0, -sv3_z]) servo_crank3();
+    translate([crank3_r * (cos(crank3_shut + a) - cos(crank3_shut)), 0, crank3_r * (sin(crank3_shut + a) - sin(crank3_shut))]) door_link3();
+}
+module chute3_moving(tilt = 0, open = 0, servos = true) {
+    translate([0, 0, pivot_z]) rotate([0, tilt, 0]) translate([0, 0, -pivot_z]) {
+        color("#e8772e") chute3();
+        color("#2b2b2b") hinge_frame3();
+        for (m = [0, 1]) mirror([m, 0, 0]) {
+            color("#d0d0d0") door3_moving(open);
+            if (servos) color("#3060c0") translate([sv3_x, -ch_in, sv3_z]) servo_body3();
+        }
+    }
+}
+// MG90S stand-in for the clearance checks: body behind the tabs, inward; shaft at the origin.
+module servo_body3() {
+    rotate([90, 0, 0]) rotate([0, 0, 180]) {
+        translate([-sv_shaft_off - 0.0, -sv_w / 2, -16.5 - 2.5]) cube([sv_len, sv_w, 16.5]);       // body (behind the tabs)
+        translate([-sv_shaft_off - (sv_tab_len - sv_len) / 2, -sv_w / 2, -2.5]) cube([sv_tab_len, sv_w, 2.5]);   // tabs
+        translate([-sv_shaft_off, -sv_w / 2, 0]) cube([sv_len, sv_w, sv_top]);                     // top, through the wall
+        cylinder(d = 11.8, h = 10);
+    }
+}
+
 // Tilt servo bracket: a plate across between the bed side walls, with the servo through it.
 module tilt_bracket() {
     difference() {
@@ -506,16 +738,16 @@ else if (part == "gate_bearing") translate([-160, -78, side_in - 0.3]) rotate([0
 else if (part == "tower_post") translate([0, 0, post_s / 2]) rotate([0, 90, 0]) tower_post();
 else if (part == "camera_head") camera_head();
 else if (part == "tilt_bracket") translate([0, 0, -tilt_bracket_y]) rotate([90, 0, 0]) tilt_bracket();
-else if (part == "chute") translate([0, 0, -pivot_z + floor_t]) chute();
-else if (part == "trapdoor") mirror([0, 0, 1]) translate([0, 0, -pivot_z]) trapdoor();
-else if (part == "trapdoor_left") mirror([1, 0, 0]) mirror([0, 0, 1]) translate([0, 0, -pivot_z]) trapdoor();
-else if (part == "trapdoor_mount") translate([0, 0, ch_out + 2.5]) rotate([90, 0, 0]) trapdoor_mount();
-else if (part == "trapdoor_mount_left") mirror([1, 0, 0]) translate([0, 0, ch_out + 2.5]) rotate([90, 0, 0]) trapdoor_mount();
-else if (part == "hinge_lug") translate([0, 0, -(ch_in - 6)]) rotate([90, 0, 0]) hinge_lug();
-else if (part == "hinge_lug_left") mirror([1, 0, 0]) translate([0, 0, -(ch_in - 6)]) rotate([90, 0, 0]) hinge_lug();
-else if (part == "door_carrier") mirror([0, 0, 1]) translate([0, 0, -(pivot_z - floor_t)]) door_carrier();
-else if (part == "door_carrier_left") mirror([1, 0, 0]) mirror([0, 0, 1]) translate([0, 0, -(pivot_z - floor_t)]) door_carrier();
-else if (part == "hinge_pin") hinge_pin();
+// chute v3 (solid bomb bay)
+else if (part == "chute3") translate([0, 0, -(pivot_z - floor_t)]) chute3();                       // floor down
+else if (part == "door3") mirror([0, 0, 1]) translate([0, 0, -pivot_z]) door3();                   // top face down
+else if (part == "door3_left") mirror([1, 0, 0]) mirror([0, 0, 1]) translate([0, 0, -pivot_z]) door3();
+else if (part == "door_crank3") translate([0, 0, -crank3_y1]) rotate([90, 0, 0]) door_crank3();  // front face down
+else if (part == "door_crank3_left") mirror([1, 0, 0]) translate([0, 0, -crank3_y1]) rotate([90, 0, 0]) door_crank3();
+else if (part == "servo_crank3") translate([0, 0, -scrank3_y1]) rotate([90, 0, 0]) servo_crank3(); // front face down, horn pocket up
+else if (part == "servo_crank3_left") mirror([1, 0, 0]) translate([0, 0, -scrank3_y1]) rotate([90, 0, 0]) servo_crank3();
+else if (part == "door_link3") translate([0, 0, -link3_y1]) rotate([90, 0, 0]) door_link3();
+else if (part == "hinge_frame3") mirror([0, 0, 1]) translate([0, 0, -(pivot_z - floor_t)]) hinge_frame3();   // top face down
 else if (part == "frame_side") translate([0, 0, -frame_x]) rotate([0, -90, 0]) frame_side();
 else if (part == "front_bar") translate([0, 0, -(front_bar_y - 6)]) rotate([90, 0, 0]) front_bar();
 else if (part == "bin") bin();
@@ -536,14 +768,8 @@ module assembly() {
     // camera tower
     color("#3a3f47") on_bed() translate([tower_x, card_s, -4]) tower_post();
     color("#3a3f47") on_bed() translate([0, card_s, cam_height]) rotate([0, 0, 0]) camera_head();
-    // chute, tilting about the y axis through (x = 0, z = pivot_z)
-    translate([0, 0, pivot_z]) rotate([0, show_tilt, 0]) translate([0, 0, -pivot_z]) {
-        color("#e8772e") chute();
-        for (m = [0, 1]) mirror([m, 0, 0]) {
-            color("#d0d0d0") translate([door_half, 0, hinge_z]) rotate([0, show_doors_open ? -90 : 0, 0]) translate([-door_half, 0, -hinge_z]) trapdoor();
-            color("#2b2b2b") door_carrier();
-        }
-    }
+    // chute (v3), tilting about the y axis through (x = 0, z = pivot_z)
+    chute3_moving(show_tilt, show_doors_open ? 1 : 0);
     color("#2b2b2b") tilt_bracket();
     if (show_frame) {
         for (m = [0, 1]) mirror([m, 0, 0]) color("#2b2b2b", 0.9) frame_side();
