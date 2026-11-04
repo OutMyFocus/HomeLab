@@ -104,15 +104,18 @@ CAMERA_SIZE = (1920, 1080)
 SERVO_HOLD_SECONDS = 1.5
 # Parts that keep holding after a move, because they fall back on their own if let go:
 # the stop gate drops under its own weight, and it has to stand firm against the card the
-# feeder pushes into it.
-SERVO_KEEP_HOLDING = ("pins",)
+# feeder pushes into it. The chute v3 trapdoors hang from hinges at their outer edges, so
+# they sag open if their servos let go (set "closed" a hair short of the door's stop, so the
+# servo isn't pushing against it: hardware/CHUTE_V3.md).
+SERVO_KEEP_HOLDING = ("pins", "door_r", "door_l")
 
 SERVOS = {
     # part: (PCA9685 channel, {position: angle})
     "pins":   (0, {"up": 90, "down": 62}),                   # stop pins: up stops the card
     "chute":  (1, {"centre": 90, "left": 65, "right": 115}),  # tilts the tray to bin 1 or 3
-    "door_r": (2, {"closed": 90, "open": 0}),                 # right trapdoor (bin 2)
-    "door_l": (3, {"closed": 90, "open": 180}),               # left trapdoor (bin 2)
+    # chute v3 doors turn 95 degrees through a crank and link (needs Wider servo travel on)
+    "door_r": (2, {"closed": 40, "open": 135}),               # right trapdoor (bin 2)
+    "door_l": (3, {"closed": 140, "open": 45}),               # left trapdoor (bin 2)
 }
 # Servo pulse widths in microseconds for 0 and 180 degrees. The first is ServoKit's
 # default, which turns an MG90S only about 130-140 real degrees. "Wider servo travel" on
