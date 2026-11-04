@@ -76,23 +76,38 @@
 
     <section class="panel setting">
       <h3>Flash while scanning</h3>
-      <p class="sub">The bars flash a color for a moment, then go back to the color above. If the bars light the scan bed,
-        colored flashes tint the camera's picture: keep them outside the camera's view, or turn this off.</p>
+      <p class="sub">The status lights flash a color for a moment, then go back to the color above. The card light
+        never flashes, so the camera's picture keeps the same colors.</p>
       <label class="switch"><input type="checkbox" id="flashes"><span></span>Flash for scanned cards</label>
       <div class="events" id="events"></div>
     </section>
 
     <section class="panel setting">
+      <h3>Card light</h3>
+      <p class="sub">The LEDs in the scan bed walls, chained after the status lights. They light the card for the camera
+        and stay one steady color. White works best.</p>
+      <label class="switch"><input type="checkbox" id="cardOn"><span></span>Card light on</label>
+      <div class="row">
+        <button class="btn ghost" data-cc="#ffffff">White</button>
+        <button class="btn ghost" data-cc="#ffe2c0">Warm white</button>
+        <input type="color" id="cardColor" aria-label="Card light color">
+      </div>
+      <label class="slide"><span>Brightness</span><input type="range" id="cardBrightness" min="0" max="100" step="1"><output id="cbOut"></output></label>
+    </section>
+
+    <section class="panel setting">
       <h3>Setup</h3>
-      <label class="row">Number of LEDs <input class="field count" type="number" id="count" min="1" step="1"></label>
-      <p class="sub">Count the LEDs on both bars together. Not sure? Lower the number until the last LED goes dark, then add one back.
-        Too many does no harm; it only makes the power estimate too high.</p>
+      <label class="row">Status LEDs <input class="field count" type="number" id="count" min="0" step="1"></label>
+      <label class="row">Card light LEDs <input class="field count" type="number" id="cardCount" min="0" step="1"></label>
+      <p class="sub">The strip is one chain: first the status LEDs behind the slots (14), then the card light LEDs in the
+        scan bed walls (5 + 5). Not sure of a number? Lower it until the last LED goes dark, then add one back.</p>
       <details>
         <summary><b>Wiring</b></summary>
         <ol class="wiring">
-          <li>The kit's motherboard plug (3-pin ARGB) has <b>5V</b>, <b>D</b> (data) and <b>G</b> (ground), plus one empty spot. 5V is usually the side with the arrow; check the labels on the plug or cable.</li>
-          <li><b>5V</b> and <b>G</b> go to your 5 V supply, on the same screw jack as the servos. <b>Never 12 V</b>: it burns the LEDs out at once.</li>
-          <li><b>D</b> goes to <b>GPIO10, pin 19</b> on the Pi, with a dupont jumper pushed into the plug.</li>
+          <li>Use the strip's <b>input</b> end: the pads say <b>+5V, Din, GND</b> and the arrows point away from it. On the 3-pin plug, <b>red</b> is 5V, <b>green</b> is data, <b>white</b> is GND. Follow the wire colors through the plug, not the jumpers' colors.</li>
+          <li><b>5V</b> goes to a <b>middle</b> pin (V+) on the servo board and <b>GND</b> to an <b>edge</b> pin (GND) of the same channel. Any free channel works. <b>Never 12 V</b>: it burns the LEDs out at once.</li>
+          <li><b>Data</b> goes to <b>GPIO10, pin 19</b> on the Pi.</li>
+          <li>The card light pieces chain on from the last status LED: solder <b>+5V to +5V</b>, <b>DO to Din</b> and <b>GND to GND</b>, following the arrows.</li>
           <li>The bars and the Pi have to share a ground. On the same 5 V supply they already do; on a separate one, also run a wire from G to the Pi's pin 20.</li>
           <li>SPI has to be on. Press <b>Turn SPI on</b> above if the page asks, then reboot.</li>
           <li>Flickering or random colors? Keep the data wire short, and put a 330 Ω resistor in it if you have one.</li>
