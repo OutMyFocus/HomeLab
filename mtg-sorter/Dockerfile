@@ -24,19 +24,18 @@ FROM python:3.12-slim AS base-amd64
 # flavour uses the system Python and a venv that can see them (--system-site-packages).
 FROM debian:trixie-slim AS base-arm64
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
-    && curl -fsSL https://archive.raspberrypi.com/debian/raspberrypi.gpg.key \
-       | gpg --dearmor -o /usr/share/keyrings/raspberrypi.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/raspberrypi.gpg] http://archive.raspberrypi.com/debian trixie main" \
+# The Raspberry Pi repository's signing key, from its raspberrypi-archive-keyring 2025.1
+# package (the old raspberrypi.gpg.key download uses SHA-1, which trixie's apt refuses).
+COPY docker/raspberrypi-archive-keyring.pgp /usr/share/keyrings/raspberrypi-archive-keyring.pgp
+RUN echo "deb [signed-by=/usr/share/keyrings/raspberrypi-archive-keyring.pgp] http://archive.raspberrypi.com/debian trixie main" \
        > /etc/apt/sources.list.d/raspi.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+       ca-certificates \
        python3 python3-venv python3-pip \
        python3-picamera2 python3-libcamera \
        python3-gpiozero python3-lgpio python3-rpi-lgpio \
        raspi-utils-core \
-    && apt-get purge -y gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv --system-site-packages /opt/venv
 ENV PATH=/opt/venv/bin:$PATH \
