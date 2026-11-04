@@ -19,13 +19,27 @@ put() {
     return 1
 }
 
-for unit in mtg-sorter.service mtg-sorter-update.service mtg-sorter-update.timer; do
-    if put "$D/$unit" "/etc/systemd/system/$unit" 644; then
-        units_changed=1
-        [ "$unit" = mtg-sorter.service ] && echo app-changed
-    fi
+# Once the Pi is switched to the Docker image (mtg docker on, see PI_DOCKER.md), the app's
+# service runs the container instead, and a small bridge lets the app ask for root jobs.
+docker_mode=0
+[ -e /etc/mtg-sorter/docker ] && docker_mode=1
+app_unit=mtg-sorter.service
+[ "$docker_mode" = 1 ] && app_unit=mtg-sorter-docker.service
+
+if put "$D/$app_unit" /etc/systemd/system/mtg-sorter.service 644; then
+    units_changed=1
+    echo app-changed
+fi
+for unit in mtg-sorter-update.service mtg-sorter-update.timer; do
+    put "$D/$unit" "/etc/systemd/system/$unit" 644 && units_changed=1
 done
 put "$D/mtg-sorter-admin" /usr/local/sbin/mtg-sorter-admin 755 || true
+if [ "$docker_mode" = 1 ]; then
+    for unit in mtg-sorter-host.path mtg-sorter-host.service; do
+        put "$D/$unit" "/etc/systemd/system/$unit" 644 && units_changed=1
+    done
+    put "$D/mtg-sorter-host" /usr/local/sbin/mtg-sorter-host 755 || true
+fi
 put "$D/mtg" /usr/local/bin/mtg 755 || true
 
 # A broken sudoers file can lock sudo for everyone, so check it before it goes in.
@@ -40,4 +54,7 @@ fi
 
 if [ "$units_changed" = 1 ]; then
     systemctl daemon-reload
+fi
+if [ "$docker_mode" = 1 ] && ! systemctl is-enabled -q mtg-sorter-host.path 2>/dev/null; then
+    systemctl enable --now mtg-sorter-host.path
 fi

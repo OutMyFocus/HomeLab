@@ -81,7 +81,8 @@ class Machine:
     def feeder_defaults(self) -> dict:
         saved = load_saved().get("feeder", {})
         return {"seconds": float(saved.get("seconds", config.FEEDER_SECONDS)),
-                "speed": float(saved.get("speed", config.FEEDER_SPEED))}
+                "speed": float(saved.get("speed", config.FEEDER_SPEED)),
+                "reverse": bool(saved.get("reverse", False))}
 
     def _write(self, saved: dict):
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -100,8 +101,15 @@ class Machine:
 
     def save_feeder(self, seconds: float, speed: float):
         saved = load_saved()
-        saved["feeder"] = {"seconds": round(min(5.0, max(0.05, float(seconds))), 2),
-                           "speed": round(min(1.0, max(0.1, float(speed))), 2)}
+        feeder = saved.setdefault("feeder", {})
+        feeder.update(seconds=round(min(5.0, max(0.05, float(seconds))), 2),
+                      speed=round(min(1.0, max(0.1, float(speed))), 2))
+        self._write(saved)
+
+    def set_feeder_reverse(self, on: bool):
+        """For a motor fitted the other way round: "forward" then turns it backwards."""
+        saved = load_saved()
+        saved.setdefault("feeder", {})["reverse"] = bool(on)
         self._write(saved)
 
     def reset_saved(self):
@@ -192,6 +200,8 @@ class Machine:
                 raise RuntimeError(self.feeder_error)
             if self._stop_timer:
                 self._stop_timer.cancel()
+            if defaults["reverse"]:
+                backward = not backward
             (motor.backward if backward else motor.forward)(speed)
             self.feeding = True
             self._stop_timer = threading.Timer(seconds, self.stop_feeder)
@@ -275,6 +285,8 @@ def add_machine_routes(app, machine: Machine, web_dir):
         if "part" in body:
             return answer(lambda: machine.save_position(str(body["part"]), str(body.get("position")),
                                                         body.get("angle")))
+        if "reverse" in body and "seconds" not in body:
+            return answer(lambda: machine.set_feeder_reverse(bool(body["reverse"])))
         return answer(lambda: machine.save_feeder(body.get("seconds"), body.get("speed")))
 
     @app.post("/api/machine/reset")
