@@ -120,3 +120,10 @@ background pauses and picks up again when it comes back. Everything else on the 
 code; see [REMOTE_ACCESS.md](REMOTE_ACCESS.md), step 3) is the easy one, since they install
 nothing. Set a PIN in Settings before sharing any link: without one, anyone with the link can
 scan into, delete from and download your collection.
+
+## The sorter machine
+
+The servos and feeder are wired to the sorter's Pi. To drive them from this server's Machine
+page, fill in **Sorter's Pi** (`MTG_MACHINE_URL`, e.g. `http://10.0.0.247:5000`) on the
+container. The Pi can also run this same image, so both have the same version: see
+[PI_DOCKER.md](PI_DOCKER.md).
