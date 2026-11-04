@@ -22,6 +22,8 @@ FROM python:3.12-slim AS base-amd64
 # --- arm64: Debian with the Raspberry Pi repository, like Raspberry Pi OS ---------------
 # picamera2 and libcamera only come as Raspberry Pi OS packages (not from pip), so this
 # flavour uses the system Python and a venv that can see them (--system-site-packages).
+# gcc and python3-dev: Adafruit-Blinka-Raspberry-Pi-PWM (for the servo board) has no
+# ready-made wheel for this Python, so pip compiles it.
 FROM debian:trixie-slim AS base-arm64
 ENV DEBIAN_FRONTEND=noninteractive
 # The Raspberry Pi repository's signing key, from its raspberrypi-archive-keyring 2025.1
@@ -36,6 +38,7 @@ RUN echo "deb [signed-by=/usr/share/keyrings/raspberrypi-archive-keyring.pgp] ht
        python3-picamera2 python3-libcamera \
        python3-gpiozero python3-lgpio python3-rpi-lgpio \
        raspi-utils-core \
+       gcc python3-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv --system-site-packages /opt/venv
 ENV PATH=/opt/venv/bin:$PATH \
