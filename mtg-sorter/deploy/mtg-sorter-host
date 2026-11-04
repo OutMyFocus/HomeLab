@@ -1,0 +1,58 @@
+#!/usr/bin/python3
+"""Runs the root jobs the app inside Docker asks for, then answers it.
+
+The app can't use sudo from inside its container, so it writes data/host/req-<id>.json:
+{"args": ["reboot"], "input": "..."}. This runs `mtg-sorter-admin <args>` with that input
+(the helper only knows a fixed list of jobs, so nothing else can be asked for) and writes
+data/host/res-<id>.json: {"ok": true, "out": "..."}. Started by mtg-sorter-host.path.
+Installed to /usr/local/sbin/mtg-sorter-host by install.sh.
+"""
+import json
+import os
+import re
+import subprocess
+import time
+from pathlib import Path
+
+HOST = Path("/home/nic/HomeLab/mtg-sorter/data/host")
+ADMIN = "/usr/local/sbin/mtg-sorter-admin"
+
+
+def answer(rid: str, ok: bool, out: str):
+    tmp = HOST / f"res-{rid}.tmp"
+    tmp.write_text(json.dumps({"ok": ok, "out": out}))
+    os.chmod(tmp, 0o644)
+    tmp.replace(HOST / f"res-{rid}.json")
+
+
+def main():
+    for req in sorted(HOST.glob("req-*.json")):
+        rid = req.stem[4:]
+        try:
+            body = json.loads(req.read_text())
+        except (OSError, ValueError):
+            body = None
+        req.unlink(missing_ok=True)   # read once: Wi-Fi passwords don't stay on disk
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", rid):
+            continue
+        args = body.get("args") if isinstance(body, dict) else None
+        if not (isinstance(args, list) and args and all(isinstance(a, str) for a in args)):
+            answer(rid, False, "Bad request")
+            continue
+        try:
+            r = subprocess.run([ADMIN, *args], input=str(body.get("input") or ""), text=True,
+                               capture_output=True, timeout=120)
+            answer(rid, r.returncode == 0, (r.stdout + r.stderr).strip())
+        except (OSError, subprocess.SubprocessError) as e:
+            answer(rid, False, str(e))
+    # Answers nobody collected (the app restarted meanwhile) are cleared after 10 minutes.
+    for old in HOST.glob("res-*.json"):
+        try:
+            if time.time() - old.stat().st_mtime > 600:
+                old.unlink()
+        except OSError:
+            pass
+
+
+if __name__ == "__main__":
+    main()

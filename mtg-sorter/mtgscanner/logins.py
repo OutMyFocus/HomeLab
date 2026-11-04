@@ -11,6 +11,7 @@ from urllib.parse import quote
 from flask import jsonify, make_response, redirect, request, send_from_directory
 
 from . import accounts, config, security, system
+from .remote_machine import server_allowed
 
 OPEN_PATHS = {"/login", "/api/login", "/api/logout", "/api/me", "/api/health", "/favicon.ico",
               "/lock", "/api/lock"}
@@ -64,6 +65,8 @@ def install(app, web_dir):
     def account_guard():
         accounts.set_current(None)
         if not accounts.enabled():
+            return None
+        if server_allowed():     # the server driving this Pi's machine (remote_machine.py)
             return None
         path = request.path
         username = who()

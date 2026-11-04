@@ -41,6 +41,10 @@ app_answers() {
 }
 
 main() {
+    # Switched to the Docker image (mtg docker on)? Then the image is the app: see update-docker.sh.
+    if [ -e /etc/mtg-sorter/docker ]; then
+        exec bash "$APP/deploy/update-docker.sh"
+    fi
     cd "$REPO"
 
     # 1. System files, every run, so changes to them arrive even without a new commit.
