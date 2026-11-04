@@ -6,7 +6,8 @@ the same way the Vault does:
 
   1. the exact printing (set + collector number + foil), if the Vault has it
   2. Face to Face Games' price for the card name
-  3. the cheapest other store (401 Games, The Mythic Store, Hobbiesville)
+  3. the cheapest other store (401 Games, The Mythic Store, Hobbiesville, Card Brawlers,
+     L'Univers de la Carte)
 
 Cards the Vault hasn't priced fall back to Scryfall's USD price converted to CAD.
 """
@@ -16,7 +17,8 @@ from pathlib import Path
 
 from .database import Card
 
-STORE_NAMES = {"f2f": "Face to Face Games", "401": "401 Games", "myth": "The Mythic Store", "hob": "Hobbiesville"}
+STORE_NAMES = {"f2f": "Face to Face Games", "401": "401 Games", "myth": "The Mythic Store", "hob": "Hobbiesville",
+               "cb": "Card Brawlers", "udc": "L'Univers de la Carte"}
 
 
 class VaultPrices:

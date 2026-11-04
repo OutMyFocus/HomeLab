@@ -14,6 +14,7 @@ import io
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import sqlite3
@@ -34,6 +35,16 @@ BACKUP_DIR = config.DATA_DIR / "backups"                 # copies made before a 
 SETUP_HINT = ("The maintenance helper isn't installed yet. It installs itself within 5 minutes of an "
               "update, or run: bash ~/HomeLab/mtg-sorter/deploy/setup.sh")
 ON_PI = sys.platform.startswith("linux") and Path("/proc/device-tree/model").exists()
+# The Docker image (see ../Dockerfile and deploy/UNRAID.md): no hardware, and updates come as a new image.
+IN_DOCKER = bool(os.environ.get("MTG_IN_DOCKER")) or Path("/.dockerenv").exists()
+# The Pi running the Docker image (deploy/mtg-sorter-docker.service sets MTG_HOST_BRIDGE).
+# The app can't use sudo from inside the container, so it asks the Pi for root jobs by
+# dropping a file in data/host/ that deploy/mtg-sorter-host picks up. See deploy/PI_DOCKER.md.
+HOST_BRIDGE = IN_DOCKER and bool(os.environ.get("MTG_HOST_BRIDGE"))
+
+
+def host_dir() -> Path:
+    return config.DATA_DIR / "host"
 
 
 def run(cmd: list[str], timeout: float = 10, input: str | None = None) -> tuple[bool, str]:
@@ -46,13 +57,41 @@ def run(cmd: list[str], timeout: float = 10, input: str | None = None) -> tuple[
 
 
 def admin_installed() -> bool:
+    if HOST_BRIDGE:
+        return host_dir().is_dir()
     return Path(ADMIN).exists()
+
+
+def ask_host(args, input: str | None = None, timeout: float = 30) -> tuple[bool, str]:
+    """From inside Docker on the Pi: has the Pi run mtg-sorter-admin with these arguments."""
+    rid = f"{int(time.time() * 1000)}-{secrets.token_hex(4)}"
+    req, res = host_dir() / f"req-{rid}.json", host_dir() / f"res-{rid}.json"
+    tmp = req.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"args": list(args), "input": input or ""}))
+    os.chmod(tmp, 0o600)
+    tmp.replace(req)   # whole, so the Pi never reads half a request
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        try:
+            answer = json.loads(res.read_text())
+            res.unlink(missing_ok=True)
+            return bool(answer.get("ok")), str(answer.get("out") or "")
+        except (OSError, ValueError):
+            time.sleep(0.2)
+    req.unlink(missing_ok=True)
+    return False, ("The Pi didn't pick up the job. Is mtg-sorter-host.path running? "
+                   "On the Pi: sudo systemctl enable --now mtg-sorter-host.path")
 
 
 def admin(*args: str, input: str | None = None, timeout: float = 30) -> str:
     """Asks the root helper to do one of its jobs. Raises RuntimeError in plain words."""
     if not admin_installed():
         raise RuntimeError(SETUP_HINT)
+    if HOST_BRIDGE:
+        ok, out = ask_host(args, input=input, timeout=timeout)
+        if not ok:
+            raise RuntimeError(out or "That didn't work.")
+        return out
     ok, out = run(["sudo", "-n", ADMIN, *args], timeout=timeout, input=input)
     if not ok:
         if "password is required" in out or "a terminal is required" in out:
@@ -188,7 +227,8 @@ def version() -> dict:
     """Which version of the code is running, and whether GitHub has a newer one."""
     head = git("rev-parse", "--short", "HEAD")
     if not head:
-        return {"available": False}
+        built = os.environ.get("MTG_VERSION", "")[:7]   # the Docker image's commit
+        return {"available": False, "commit": built, "docker": True} if built else {"available": False}
     when, subject = (git("log", "-1", "--format=%cI%x00%s") or "\x00").split("\x00", 1)
     upstream = git("rev-parse", "--short", "origin/main")
     behind = git("rev-list", "--count", "HEAD..origin/main")
@@ -206,7 +246,15 @@ def update_status() -> dict | None:
         return None
 
 
+_autoupdate = {"at": -1e9, "on": None}
+
+
 def auto_updates_on() -> bool | None:
+    if HOST_BRIDGE:   # asked of the Pi at most once a minute (every page's header checks)
+        if time.monotonic() - _autoupdate["at"] > 60:
+            ok, out = ask_host(["autoupdate", "state"], timeout=5)
+            _autoupdate.update(at=time.monotonic(), on={"enabled": True, "disabled": False}.get(out.strip()) if ok else None)
+        return _autoupdate["on"]
     if not shutil.which("systemctl"):
         return None
     ok, out = run(["systemctl", "is-enabled", "mtg-sorter-update.timer"], timeout=5)
@@ -302,6 +350,12 @@ def camera_check(scanner) -> dict:
     if src == "DemoSource":
         return check("camera", "Camera", "ok", "Using demo photos instead of a camera.")
     if src == "WaitingForCamera" or scanner.source is None:
+        device = ("On the Scan page, pick \"This device's camera\" to scan with your phone's or "
+                  "computer's camera (needs the https address), or scan photos.")
+        if IN_DOCKER:   # the server has no camera of its own; that's expected, not a problem
+            return check("camera", "Camera", "off", "No camera on the server.", device)
+        if not ON_PI:
+            return check("camera", "Camera", "bad", "No camera found.", device)
         return check("camera", "Camera", "bad", "No camera found.",
                      "Power off, then check the ribbon cable: contacts facing the board at both ends, latches "
                      "pressed down. Then turn the Pi back on. See MAINTENANCE.md, \"Camera not found\".")
@@ -358,16 +412,49 @@ def lights_check(scanner) -> dict | None:
 
 
 def database_check(scanner) -> dict:
+    from .cardbuild import FULL_DATABASE
+    build = getattr(scanner, "card_build", None)
+    job = build.state() if build else {}
     n = scanner.matcher.card_count
+    learned = scanner.matcher.learned_count
+    have = f"{n:,} cards" + (f", {learned:,} learned scans" if learned else "")
+    if job.get("running"):
+        return check("cards", "Card database", "ok", f"{have}. Downloading every card: {job['message']}")
+    if job.get("error"):
+        return check("cards", "Card database", "warn", job["error"], None, "cards_build")
     if not n:
         return check("cards", "Card database", "bad", "The card database is empty, so no card can be recognized.",
-                     "On the Pi: cd ~/HomeLab/mtg-sorter && .venv/bin/python build_db.py --sets dmu,one")
-    learned = scanner.matcher.learned_count
-    return check("cards", "Card database", "ok", f"{n:,} cards" + (f", {learned:,} learned scans" if learned else ""))
+                     "Press Download every card (30-60 minutes), or restore a backup below.", "cards_build")
+    if n < FULL_DATABASE:
+        return check("cards", "Card database", "warn",
+                     f"Only {n:,} cards, so cards from other sets can't be recognized.",
+                     "Press Download every card: about 108,000 printings, 30-60 minutes. "
+                     "Scanning keeps working while it runs.", "cards_build")
+    old = getattr(scanner.matcher, "old_count", 0)
+    if old:
+        return check("cards", "Card database", "warn",
+                     f"{have}. {old:,} of them still have the older fingerprint, which mixes up look-alike cards.",
+                     "Press Download every card to give them the newer one. Scanning keeps working while it runs.",
+                     "cards_build")
+    return check("cards", "Card database", "ok", have)
 
 
 def updates_check() -> dict:
     v, st, on = version(), update_status(), auto_updates_on()
+    if HOST_BRIDGE:   # the Pi, on the server's image: update-docker.sh pulls it every 5 minutes
+        built = f" (version {v['commit']})" if v.get("commit") else ""
+        if st and st.get("result") in ("failed", "rolled back"):
+            return check("updates", "Updates", "warn", st.get("message", "The last update didn't work."),
+                         "Press Update now to try again. If it keeps failing, see the update log below.", "update")
+        if on is False:
+            return check("updates", "Updates", "warn", "Automatic updates are off.", "Turn them on below.",
+                         "autoupdate_on")
+        return check("updates", "Updates", "ok", f"Same Docker image as the server{built}. "
+                     "The Pi checks for a new one every 5 minutes.", None, "update")
+    if IN_DOCKER:
+        built = f" Version {v['commit']}." if v.get("commit") else ""
+        return check("updates", "Updates", "off", "Running in Docker: updates arrive as a new image." + built,
+                     "On Unraid's Docker tab, press Check for updates, then Update next to mtg-sorter.")
     if not v.get("available"):
         return check("updates", "Updates", "off", "Not a git copy, so it can't update itself.")
     if not ON_PI:
@@ -416,6 +503,7 @@ def summary(scanner, machine) -> dict:
         "overall": overall(checks),
         "checks": checks,
         "on_pi": ON_PI,
+        "docker": IN_DOCKER, "pi_docker": HOST_BRIDGE,
         "model": model(),
         "hostname": socket.gethostname(),
         "uptime_s": up,
@@ -428,6 +516,7 @@ def summary(scanner, machine) -> dict:
         "ip": ip_address(),
         "tailscale_ip": tailscale_ip(),
         "throttled": [text for bit, text in THROTTLE_BITS.items() if (throttled() or 0) >> bit & 1],
+        "cards": scanner.card_build.state() if getattr(scanner, "card_build", None) else None,
     }
 
 
@@ -483,7 +572,9 @@ def forget_wifi(name: str):
 # scanner learned from them is already in cards.db.
 BACKUP_FILES = ["collection.csv", "cards.db", "app_settings.json", "machine_settings.json",
                 "vault_prices.json", "usd_cad.json", "decks.json", "wishlist.json", "alerts.json",
-                "sort_rules.json", "games.json", "trades.json"]
+                "sort_rules.json", "games.json", "trades.json", "price_history.json", "users.json"]
+# Folders a backup holds too: everyone else's cards (accounts.py) and deck guides.
+BACKUP_FOLDERS = ["users", "guides"]
 
 
 def make_backup(with_scans: bool = False) -> io.BytesIO:
@@ -508,10 +599,11 @@ def make_backup(with_scans: bool = False) -> io.BytesIO:
                     tmp.unlink(missing_ok=True)
             else:
                 z.write(path, name)
-        if with_scans and (data / "captures").is_dir():
-            for path in sorted((data / "captures").rglob("*")):
-                if path.is_file():
-                    z.write(path, path.relative_to(data).as_posix())
+        for folder in BACKUP_FOLDERS + (["captures"] if with_scans else []):
+            if (data / folder).is_dir():
+                for path in sorted((data / folder).rglob("*")):
+                    if path.is_file() and path.suffix not in (".tmp", ".restoring"):
+                        z.write(path, path.relative_to(data).as_posix())
     buf.seek(0)
     return buf
 
@@ -520,7 +612,7 @@ def _safe_member(name: str) -> bool:
     if name in BACKUP_FILES:
         return True
     parts = Path(name).parts
-    return (len(parts) >= 2 and parts[0] == "captures" and ".." not in parts
+    return (len(parts) >= 2 and parts[0] in ["captures"] + BACKUP_FOLDERS and ".." not in parts
             and not name.startswith("/") and "\\" not in name)
 
 
@@ -595,8 +687,14 @@ def add_system_routes(app, scanner, machine, web_dir):
             later(*args)
         return answer(go, message)
 
+    def docker_restart():
+        # Docker restarts the container when the app exits (restart: unless-stopped).
+        threading.Timer(1.0, lambda: os._exit(0)).start()
+
     @app.post("/api/system/restart")
     def restart():
+        if IN_DOCKER:
+            return answer(docker_restart, "Restarting the app. The page comes back in about 10 seconds.")
         return soon("restart", message="Restarting the app. The page comes back in about 10 seconds.")
 
     @app.post("/api/system/reboot")
@@ -614,9 +712,41 @@ def add_system_routes(app, scanner, machine, web_dir):
         return soon("update-force" if force else "update",
                     message="Checking GitHub. If there's a new version the app restarts with it in a minute.")
 
+    from .cardbuild import CardBuild
+    scanner.card_build = CardBuild(scanner.matcher)
+
+    @app.get("/api/system/cards")
+    def cards_build_state():
+        return jsonify(scanner.card_build.state())
+
+    @app.post("/api/system/cards")
+    def cards_build():
+        """Download every card's picture and fingerprint it (see cardbuild.py)."""
+        if not scanner.card_build.start(everything=True):
+            return jsonify(ok=True, message="It's already downloading.")
+        return jsonify(ok=True, message="Downloading every card. Scanning keeps working, and new cards "
+                       "are recognized as they arrive. This takes 30-60 minutes.")
+
+    @app.post("/api/system/cards/stop")
+    def cards_build_stop():
+        scanner.card_build.stop()
+        return jsonify(ok=True, message="Stopping after the cards in progress. Press Download every card to carry on.")
+
+    @app.post("/api/system/docker")
+    def use_docker():
+        """The Pi only: switch between its git copy and the server's Docker image (PI_DOCKER.md)."""
+        on = bool((request.get_json(silent=True) or {}).get("on"))
+        if not ON_PI:
+            return jsonify(error="Only the Pi can switch to the Docker image."), 400
+        return answer(lambda: admin("docker", "on" if on else "off"),
+                      "Switching to the server's Docker image. The first time takes 5-10 minutes (it downloads "
+                      "Docker and the image), then the page comes back by itself." if on else
+                      "Going back to the git copy. The page comes back in about a minute.")
+
     @app.post("/api/system/autoupdate")
     def autoupdate():
         on = bool((request.get_json(silent=True) or {}).get("on"))
+        _autoupdate["at"] = -1e9   # read it fresh next time
         return answer(lambda: admin("autoupdate", "on" if on else "off"),
                       "Automatic updates are " + ("on." if on else "off."))
 
@@ -648,7 +778,10 @@ def add_system_routes(app, scanner, machine, web_dir):
 
         def go():
             done = restore_backup(f.stream)
-            if admin_installed():
+            if IN_DOCKER:
+                docker_restart()
+                done["message"] = "Restored. The app restarts to load it."
+            elif admin_installed():
                 later("restart")
                 done["message"] = "Restored. The app restarts to load it."
             else:

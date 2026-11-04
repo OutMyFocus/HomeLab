@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- Unraid Docker template for the MTG scanner web app. Copy it to
+     /boot/config/plugins/dockerMan/templates-user/ on the server (or fill in the same fields
+     by hand on Docker > Add Container). Setup steps: deploy/UNRAID.md -->
+<Container version="2">
+  <Name>mtg-sorter</Name>
+  <Repository>ghcr.io/outmyfocus/mtg-sorter:latest</Repository>
+  <Registry>https://github.com/OutMyFocus/HomeLab/pkgs/container/mtg-sorter</Registry>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/OutMyFocus/HomeLab</Support>
+  <Project>https://github.com/OutMyFocus/HomeLab/tree/main/mtg-sorter</Project>
+  <Overview>Scans Magic: The Gathering cards with your phone's or computer's camera (or from photos), looks each one up, and keeps your collection, decks, bins, wishlist and prices in one place. Open it from any device on your network. For the phone camera, turn on Tailscale Serve on this container so it has an https address.</Overview>
+  <Category>Tools: HomeAutomation: Other:</Category>
+  <WebUI>http://[IP]:[PORT:5000]</WebUI>
+  <Icon>https://raw.githubusercontent.com/OutMyFocus/HomeLab/main/mtg-sorter/webui/icon.svg</Icon>
+  <Config Name="Web port" Target="5000" Default="5000" Mode="tcp" Description="The port the app answers on." Type="Port" Display="always" Required="true" Mask="false">5000</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/mtg-sorter" Mode="rw" Description="Card database, collection, settings and backups." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/mtg-sorter</Config>
+  <Config Name="Time zone" Target="TZ" Default="America/Toronto" Mode="" Description="For the times shown in History." Type="Variable" Display="advanced" Required="false" Mask="false">America/Toronto</Config>
+  <Config Name="Sorter's Pi" Target="MTG_MACHINE_URL" Default="" Mode="" Description="The sorter Pi's address, e.g. http://10.0.0.247:5000. The Machine page here then moves the Pi's servos and feeder. Leave empty if there's no sorter." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Sorter's Pi key" Target="MTG_MACHINE_KEY" Default="" Mode="" Description="Only if the Pi has a PIN or accounts on: the key `mtg machine-key` prints on the Pi." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+</Container>

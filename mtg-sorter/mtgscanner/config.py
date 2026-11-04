@@ -1,9 +1,11 @@
 """Settings you can tweak. Start here if you want to change how the scanner behaves."""
 
+import os
 from pathlib import Path
 
-# Where data files live (the card database and your collection CSV).
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# Where data files live (the card database and your collection CSV): the data folder
+# next to app.py, or the folder named by MTG_DATA_DIR (the Docker image uses /data).
+DATA_DIR = Path(os.environ.get("MTG_DATA_DIR") or Path(__file__).resolve().parent.parent / "data").resolve()
 DB_PATH = DATA_DIR / "cards.db"
 COLLECTION_CSV = DATA_DIR / "collection.csv"
 # Canadian prices saved from Commander Vault (optional, see vault_prices.py).
@@ -33,18 +35,21 @@ NO_PRICE_BIN = (0, "Unknown price")
 USD_TO_CAD = 1.38
 
 # --- Recognition tuning ---------------------------------------------------
-# Each card image turns into a 256-bit "fingerprint". The distance between two
-# fingerprints counts the bits that differ (0 means identical). Two unrelated
-# cards usually land around 128; a blurry webcam picture of the right card lands
-# around 30-60 from its stock picture.
-MAX_MATCH_DISTANCE = 90
+# Each card image turns into a fingerprint: 256 bits for the whole card plus 256 for its
+# art (vision.py). The distance between two fingerprints is the average number of bits
+# that differ in the two (0 means identical). Measured on every card Scryfall has
+# (108,000 printings) with simulated phone photos: the right card lands around 20-60,
+# while the closest *different* card is rarely under 75 and a thing that isn't a card at
+# all is 84 or more. So anything over this is "not a card I know":
+MAX_MATCH_DISTANCE = 78
 # The scanner also looks at the MARGIN: how many more bits away the closest card
 # with a *different* name is. A small margin means two cards look alike to it, so
 # the answer is shown as "unsure" (never auto-saved) with the other candidates.
-SURE_DISTANCE = 50     # this close, with this much margin, and the card is "sure"...
+SURE_DISTANCE = 60     # this close, with this much margin, and the card is "sure"...
 SURE_MARGIN = 10
-LIKELY_MARGIN = 4      # ...otherwise "likely" with at least this margin, else "unsure"
-CANDIDATE_DISTANCE = 100   # other cards no further than this are offered as alternatives
+LIKELY_DISTANCE = 75   # ...this close with at least LIKELY_MARGIN is "likely", else "unsure"
+LIKELY_MARGIN = 5
+CANDIDATE_DISTANCE = 90    # other cards no further than this are offered as alternatives
 # Scans learned in the Train tab come from your own camera, so they share its light
 # and background with every new scan, which can make unrelated cards look a little
 # alike. A match to a learned scan therefore has to be closer than this.
@@ -94,6 +99,14 @@ CAMERA_SIZE = (1920, 1080)
 # fitted. These are first guesses: find better ones on the Machine page (/machine) and
 # press Save there. Saved angles live in data/machine_settings.json and win over these, so
 # there's no need to edit this file on the Pi (which would stop automatic updates).
+# Seconds a servo keeps holding after a move before it lets go (0 = hold until told).
+# Holding against something it can't push past makes a servo hot.
+SERVO_HOLD_SECONDS = 1.5
+# Parts that keep holding after a move, because they fall back on their own if let go:
+# the stop gate drops under its own weight, and it has to stand firm against the card the
+# feeder pushes into it.
+SERVO_KEEP_HOLDING = ("pins",)
+
 SERVOS = {
     # part: (PCA9685 channel, {position: angle})
     "pins":   (0, {"up": 90, "down": 62}),                   # stop pins: up stops the card
@@ -101,6 +114,12 @@ SERVOS = {
     "door_r": (2, {"closed": 90, "open": 0}),                 # right trapdoor (bin 2)
     "door_l": (3, {"closed": 90, "open": 180}),               # left trapdoor (bin 2)
 }
+# Servo pulse widths in microseconds for 0 and 180 degrees. The first is ServoKit's
+# default, which turns an MG90S only about 130-140 real degrees. "Wider servo travel" on
+# the Machine page switches to the second for about the full 180 (some cheap servos buzz
+# at the very ends of it). 90 is 1500 in both, so horns fitted at 90 stay where they are.
+SERVO_PULSE = (750, 2250)
+SERVO_PULSE_WIDE = (500, 2500)
 # The feeder's N20 motor, through the DRV8833 driver: Pi GPIO17 to IN1, GPIO27 to IN2.
 FEEDER_PINS = (17, 27)
 # How fast the feeder turns (0-1) and how long one push lasts (seconds).

@@ -22,8 +22,10 @@ when something needs a look. What to do when something goes wrong:
    biggest 4-cornered shape shaped like a card.
 2. **Straighten it.** It stretches that shape into a flat, upright rectangle, as if
    the card had been scanned on a flatbed scanner.
-3. **Fingerprint it.** It shrinks the image and turns it into a 256-bit "perceptual
-   hash". Similar-looking images get similar fingerprints, even with blur or different lighting.
+3. **Fingerprint it.** It shrinks the image and turns it into two 256-bit "perceptual
+   hashes", one of the whole card and one of its art. Similar-looking images get similar
+   fingerprints, even with blur, glare or different lighting. The art one is what tells
+   apart two different cards with the same frame among the 108,000 printings there are.
 4. **Look it up.** `build_db.py` already downloaded every card image from
    [Scryfall](https://scryfall.com) and fingerprinted it. The scanner finds the closest
    fingerprint. That gives the card name, set, collector number and price.
@@ -41,21 +43,26 @@ pip install -r requirements.txt
 
 ## Build the card database
 
-Start small to try it out. This fetches two sets and takes under a minute:
+The scanner can only recognize cards that are in its database, so get every card. The
+easiest way is the **Download every card** button on the Maintenance page (it runs in the
+background, scanning keeps working, and new cards are recognized as they arrive). From a
+terminal it's:
+
+```bash
+python build_db.py --all       # every card: an 80 MB list, then 108,000 small pictures, 30-60 minutes
+```
+
+To try it out quickly, fetch a few sets, or just the sets of the cards in your collection:
 
 ```bash
 python build_db.py --sets dmu,one
+python build_db.py --mine
 ```
 
-Set codes are the 3-letter codes on Scryfall (for example `mkm`, `blb`, `fdn`, `cmm`). When
-you're happy, fetch every card. It takes a few hours, and you can stop it and run it again
-to resume:
-
-```bash
-python build_db.py --all
-```
-
-Run the same command again later to **refresh prices** for cards you already have.
+Set codes are the 3-letter codes on Scryfall (for example `mkm`, `blb`, `fdn`, `cmm`). You
+can stop any of these and run it again to resume. Run it again later to add new sets and
+**refresh prices** for cards you already have; cards fingerprinted by an older version get
+the newer fingerprint at the same time.
 
 ## Scan cards with the app (easiest)
 
@@ -159,6 +166,17 @@ No webcam yet? `python app.py --demo path/to/photos` pretends the photos are a c
 On the Raspberry Pi, run `python app.py --host 0.0.0.0` and open `http://<the Pi's address>:5000`
 from your laptop or phone.
 
+**Scan with your phone's camera.** On the Scan page, the camera menu has **This device's
+camera**: the phone (or laptop) you're holding gets a scanner of its own, next to the
+machine's, and its cards go into the same collection with your name (typed under
+**Scanning as**) in the Source column. Several phones can scan at once. Browsers only allow
+the camera on an https address, such as the Tailscale one
+([deploy/REMOTE_ACCESS.md](deploy/REMOTE_ACCESS.md)).
+
+**On a home server** (Unraid, or any Docker host): the app comes as a Docker image,
+`ghcr.io/outmyfocus/mtg-sorter`, so every device at home shares one collection without the Pi
+being on. Setup: [deploy/UNRAID.md](deploy/UNRAID.md).
+
 ## Teach the scanner (Train tab)
 
 Out of the box the scanner knows each card from one clean Scryfall picture. Your camera,
@@ -206,6 +224,29 @@ No webcam yet? Scan photos from your phone instead:
 python scan.py --image card1.jpg card2.jpg --save
 ```
 
+## Accounts: everyone has their own cards
+
+Settings, **Accounts**, Turn on accounts. You become the owner: an admin with every
+permission, and every card, deck, wishlist and trade already in the app stays yours
+(nothing is moved; a backup is saved in `data/backups/` first). From then on everyone
+logs in, and the login replaces the PIN lock.
+
+Add people under **People and permissions**. Each person gets their own collection,
+decks, wishlist, alerts, trade binder, games and value history (in `data/users/<username>/`),
+and scans from their phone land in their own collection. Pick a role or tick permissions:
+
+| Permission | Lets them |
+|---|---|
+| Scan | scan into their own collection with their phone's camera or photos |
+| Edit | change their own collection, decks, wishlist, trades and games |
+| Machine | run the sorting machine (Machine, Lights, Bins, the machine's camera, training); the machine saves into the cards of whoever is using it |
+| Admin | everything, plus Maintenance, price checks and the accounts |
+
+Member = Scan + Edit, Viewer = look only. The card database, prices, bins and the machine
+are shared. Requests from the Pi or server itself always count as the owner. Locked out?
+Delete `data/users.json` and the login is gone (everyone's cards stay; turn accounts on
+again to get them back).
+
 ## Commander Vault is part of the app now
 
 Everything Commander Vault did lives here: collection sources, decks with the deck builder,
@@ -236,7 +277,7 @@ in `mtgscanner/config.py`. Defaults:
 
 Once a week the app checks the Near Mint price of every card in your collection, decks,
 wishlist and trade binder at Face to Face Games (the main price), then 401 Games, The Mythic
-Store and Hobbiesville, and saves them in `data/vault_prices.json`. Valuable cards (foils,
+Store, Hobbiesville, Card Brawlers and L'Univers de la Carte, and saves them in `data/vault_prices.json`. Valuable cards (foils,
 special numbers, $1.50 and up) also get their exact printing's price. The same week it
 updates the Commander card database (`data/carddb.json`, from Scryfall's bulk data) that Card
 lookup and the deck builder use. **Settings, Prices and card data** runs either one now. Cards
@@ -246,6 +287,19 @@ day. While the app runs it also checks Scryfall for today's price of each card i
 recognizes (start it with `--offline` to skip that and use the database's prices). The rate is fetched once a day and saved in `data/usd_cad.json`. Offline, it uses the
 last saved rate, or `USD_TO_CAD` in `config.py`. The `data/` folder is never committed, so
 your prices stay on your computer.
+
+### Montreal prices
+
+When the scanner recognizes a card, the card panel shows what it costs in Montreal today:
+Face to Face Games first, then Card Brawlers and L'Univers de la Carte. Each store's price
+is for that exact printing when the store has it ("this printing"), otherwise its cheapest
+copy ("cheapest"), and each one links to the store's page. Answers are kept for 12 hours.
+The Collection has a **Montreal** column (Face to Face Games' price, or the next Montreal
+store's) from the weekly price check, and each card's details list every Montreal store.
+
+Carta Magica and L'Expédition run on Crystal Commerce, which refuses automated requests, and
+Le Valet d'Coeur sits behind a bot check, so the app can't read their prices. The card panel
+links to a search for the card on each of those sites instead. See `mtgscanner/montreal.py`.
 
 ## Run the tests
 
