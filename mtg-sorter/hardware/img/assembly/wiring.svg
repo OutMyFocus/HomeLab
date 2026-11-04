@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 560" font-family="IBM Plex Sans, Segoe UI, Arial, sans-serif" font-size="12" role="img" aria-label="Wiring diagram">
+<rect width="920" height="560" fill="#f8f8f8"/>
+<defs><marker id="dot" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="5" markerHeight="5"><circle cx="4" cy="4" r="3.2" fill="#1d2733"/></marker></defs>
+<g fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#dot)" marker-end="url(#dot)">
+  <path d="M250 104 H340 V182 H380" stroke="#d62828"/>
+  <path d="M250 128 H320 V200 H380" stroke="#222"/>
+  <path d="M340 182 V392 H380" stroke="#d62828" marker-start="none"/>
+  <path d="M320 200 V410 H380" stroke="#222" marker-start="none"/>
+  <path d="M200 254 H380" stroke="#f08c00"/>
+  <path d="M200 276 H290 V218 H380" stroke="#1971c2"/>
+  <path d="M200 298 H300 V236 H380" stroke="#e0b000"/>
+  <path d="M200 320 H310 V272 H380" stroke="#222"/>
+  <path d="M200 362 H300 V428 H380" stroke="#2b8a3e"/>
+  <path d="M200 384 H290 V446 H380" stroke="#2b8a3e"/>
+  <path d="M200 406 H270 V464 H380" stroke="#222"/>
+  <path d="M560 192 H680" stroke="#555"/><path d="M560 232 H680" stroke="#555"/>
+  <path d="M560 272 H680" stroke="#555"/><path d="M560 312 H680" stroke="#555"/>
+  <path d="M560 420 H680" stroke="#555"/>
+  <path d="M200 500 H680" stroke="#888" stroke-dasharray="2 7"/>
+</g>
+<g stroke="#1d2733" stroke-width="2">
+  <rect x="40" y="76" width="210" height="72" rx="8" fill="#fff"/>
+  <rect x="40" y="232" width="160" height="196" rx="8" fill="#dff0e5"/>
+  <rect x="380" y="164" width="180" height="168" rx="8" fill="#dbe6fb"/>
+  <rect x="380" y="374" width="180" height="104" rx="8" fill="#ece0f8"/>
+  <rect x="680" y="172" width="200" height="160" rx="8" fill="#fff"/>
+  <rect x="680" y="400" width="200" height="40" rx="8" fill="#fff"/>
+  <rect x="40" y="470" width="160" height="60" rx="8" fill="#fff"/>
+  <rect x="680" y="470" width="200" height="60" rx="8" fill="#fff"/>
+  <rect x="40" y="16" width="210" height="40" rx="8" fill="#fff"/>
+</g>
+<g fill="#1d2733">
+  <text x="52" y="98" font-size="14" font-weight="700">5 V 4 A adapter</text>
+  <text x="52" y="118">via the barrel-jack</text><text x="52" y="134">screw adapter</text>
+  <text x="240" y="100" text-anchor="end">+5 V</text><text x="240" y="132" text-anchor="end">GND</text>
+  <text x="52" y="224" font-size="14" font-weight="700">Raspberry Pi 5</text>
+  <text x="190" y="258" text-anchor="end">pin 1 · 3.3 V</text>
+  <text x="190" y="280" text-anchor="end">pin 3 · SDA</text>
+  <text x="190" y="302" text-anchor="end">pin 5 · SCL</text>
+  <text x="190" y="324" text-anchor="end">pin 6 · GND</text>
+  <text x="190" y="366" text-anchor="end">pin 11 · GPIO17</text>
+  <text x="190" y="388" text-anchor="end">pin 13 · GPIO27</text>
+  <text x="190" y="410" text-anchor="end">pin 14 · GND</text>
+  <text x="392" y="156" font-size="14" font-weight="700">PCA9685</text>
+  <text x="392" y="186">V+</text><text x="392" y="204">GND</text><text x="392" y="222">SDA</text>
+  <text x="392" y="240">SCL</text><text x="392" y="258">VCC</text><text x="392" y="276">GND</text>
+  <text x="548" y="196" text-anchor="end">ch 0</text><text x="548" y="236" text-anchor="end">ch 1</text>
+  <text x="548" y="276" text-anchor="end">ch 2</text><text x="548" y="316" text-anchor="end">ch 3</text>
+  <text x="392" y="366" font-size="14" font-weight="700">DRV8833</text>
+  <text x="392" y="396">VM</text><text x="392" y="414">GND</text><text x="392" y="432">IN1</text>
+  <text x="392" y="450">IN2</text><text x="392" y="468">GND</text>
+  <text x="548" y="424" text-anchor="end">OUT1 / OUT2</text>
+  <text x="692" y="196" font-size="13">Stop-pin servo</text><text x="692" y="236" font-size="13">Chute tilt servo</text>
+  <text x="692" y="276" font-size="13">Right trapdoor servo</text><text x="692" y="316" font-size="13">Left trapdoor servo</text>
+  <text x="692" y="425" font-size="13">N20 feeder motor</text>
+  <text x="52" y="494" font-size="14" font-weight="700">27 W USB-C supply</text><text x="52" y="514">into the Pi's USB-C</text>
+  <text x="692" y="494" font-size="14" font-weight="700">Camera Module 3</text><text x="692" y="514">ribbon to a Pi camera port</text>
+  <text x="440" y="494" text-anchor="middle" fill="#555">Pi only, not the servo supply</text>
+  <text x="52" y="40" font-size="13">LED strips: a Pi USB port</text>
+  <text x="680" y="150" fill="#555">MG90S, signal / + / GND on each channel</text>
+</g>
+</svg>
