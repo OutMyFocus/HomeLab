@@ -14,6 +14,7 @@ import io
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import sqlite3
@@ -36,6 +37,14 @@ SETUP_HINT = ("The maintenance helper isn't installed yet. It installs itself wi
 ON_PI = sys.platform.startswith("linux") and Path("/proc/device-tree/model").exists()
 # The Docker image (see ../Dockerfile and deploy/UNRAID.md): no hardware, and updates come as a new image.
 IN_DOCKER = bool(os.environ.get("MTG_IN_DOCKER")) or Path("/.dockerenv").exists()
+# The Pi running the Docker image (deploy/mtg-sorter-docker.service sets MTG_HOST_BRIDGE).
+# The app can't use sudo from inside the container, so it asks the Pi for root jobs by
+# dropping a file in data/host/ that deploy/mtg-sorter-host picks up. See deploy/PI_DOCKER.md.
+HOST_BRIDGE = IN_DOCKER and bool(os.environ.get("MTG_HOST_BRIDGE"))
+
+
+def host_dir() -> Path:
+    return config.DATA_DIR / "host"
 
 
 def run(cmd: list[str], timeout: float = 10, input: str | None = None) -> tuple[bool, str]:
@@ -48,13 +57,41 @@ def run(cmd: list[str], timeout: float = 10, input: str | None = None) -> tuple[
 
 
 def admin_installed() -> bool:
+    if HOST_BRIDGE:
+        return host_dir().is_dir()
     return Path(ADMIN).exists()
+
+
+def ask_host(args, input: str | None = None, timeout: float = 30) -> tuple[bool, str]:
+    """From inside Docker on the Pi: has the Pi run mtg-sorter-admin with these arguments."""
+    rid = f"{int(time.time() * 1000)}-{secrets.token_hex(4)}"
+    req, res = host_dir() / f"req-{rid}.json", host_dir() / f"res-{rid}.json"
+    tmp = req.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"args": list(args), "input": input or ""}))
+    os.chmod(tmp, 0o600)
+    tmp.replace(req)   # whole, so the Pi never reads half a request
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        try:
+            answer = json.loads(res.read_text())
+            res.unlink(missing_ok=True)
+            return bool(answer.get("ok")), str(answer.get("out") or "")
+        except (OSError, ValueError):
+            time.sleep(0.2)
+    req.unlink(missing_ok=True)
+    return False, ("The Pi didn't pick up the job. Is mtg-sorter-host.path running? "
+                   "On the Pi: sudo systemctl enable --now mtg-sorter-host.path")
 
 
 def admin(*args: str, input: str | None = None, timeout: float = 30) -> str:
     """Asks the root helper to do one of its jobs. Raises RuntimeError in plain words."""
     if not admin_installed():
         raise RuntimeError(SETUP_HINT)
+    if HOST_BRIDGE:
+        ok, out = ask_host(args, input=input, timeout=timeout)
+        if not ok:
+            raise RuntimeError(out or "That didn't work.")
+        return out
     ok, out = run(["sudo", "-n", ADMIN, *args], timeout=timeout, input=input)
     if not ok:
         if "password is required" in out or "a terminal is required" in out:
@@ -190,7 +227,8 @@ def version() -> dict:
     """Which version of the code is running, and whether GitHub has a newer one."""
     head = git("rev-parse", "--short", "HEAD")
     if not head:
-        return {"available": False}
+        built = os.environ.get("MTG_VERSION", "")[:7]   # the Docker image's commit
+        return {"available": False, "commit": built, "docker": True} if built else {"available": False}
     when, subject = (git("log", "-1", "--format=%cI%x00%s") or "\x00").split("\x00", 1)
     upstream = git("rev-parse", "--short", "origin/main")
     behind = git("rev-list", "--count", "HEAD..origin/main")
@@ -208,7 +246,15 @@ def update_status() -> dict | None:
         return None
 
 
+_autoupdate = {"at": -1e9, "on": None}
+
+
 def auto_updates_on() -> bool | None:
+    if HOST_BRIDGE:   # asked of the Pi at most once a minute (every page's header checks)
+        if time.monotonic() - _autoupdate["at"] > 60:
+            ok, out = ask_host(["autoupdate", "state"], timeout=5)
+            _autoupdate.update(at=time.monotonic(), on={"enabled": True, "disabled": False}.get(out.strip()) if ok else None)
+        return _autoupdate["on"]
     if not shutil.which("systemctl"):
         return None
     ok, out = run(["systemctl", "is-enabled", "mtg-sorter-update.timer"], timeout=5)
@@ -395,8 +441,19 @@ def database_check(scanner) -> dict:
 
 def updates_check() -> dict:
     v, st, on = version(), update_status(), auto_updates_on()
+    if HOST_BRIDGE:   # the Pi, on the server's image: update-docker.sh pulls it every 5 minutes
+        built = f" (version {v['commit']})" if v.get("commit") else ""
+        if st and st.get("result") in ("failed", "rolled back"):
+            return check("updates", "Updates", "warn", st.get("message", "The last update didn't work."),
+                         "Press Update now to try again. If it keeps failing, see the update log below.", "update")
+        if on is False:
+            return check("updates", "Updates", "warn", "Automatic updates are off.", "Turn them on below.",
+                         "autoupdate_on")
+        return check("updates", "Updates", "ok", f"Same Docker image as the server{built}. "
+                     "The Pi checks for a new one every 5 minutes.", None, "update")
     if IN_DOCKER:
-        return check("updates", "Updates", "off", "Running in Docker: updates arrive as a new image.",
+        built = f" Version {v['commit']}." if v.get("commit") else ""
+        return check("updates", "Updates", "off", "Running in Docker: updates arrive as a new image." + built,
                      "On Unraid's Docker tab, press Check for updates, then Update next to mtg-sorter.")
     if not v.get("available"):
         return check("updates", "Updates", "off", "Not a git copy, so it can't update itself.")
@@ -446,6 +503,7 @@ def summary(scanner, machine) -> dict:
         "overall": overall(checks),
         "checks": checks,
         "on_pi": ON_PI,
+        "docker": IN_DOCKER, "pi_docker": HOST_BRIDGE,
         "model": model(),
         "hostname": socket.gethostname(),
         "uptime_s": up,
@@ -674,9 +732,21 @@ def add_system_routes(app, scanner, machine, web_dir):
         scanner.card_build.stop()
         return jsonify(ok=True, message="Stopping after the cards in progress. Press Download every card to carry on.")
 
+    @app.post("/api/system/docker")
+    def use_docker():
+        """The Pi only: switch between its git copy and the server's Docker image (PI_DOCKER.md)."""
+        on = bool((request.get_json(silent=True) or {}).get("on"))
+        if not ON_PI:
+            return jsonify(error="Only the Pi can switch to the Docker image."), 400
+        return answer(lambda: admin("docker", "on" if on else "off"),
+                      "Switching to the server's Docker image. The first time takes 5-10 minutes (it downloads "
+                      "Docker and the image), then the page comes back by itself." if on else
+                      "Going back to the git copy. The page comes back in about a minute.")
+
     @app.post("/api/system/autoupdate")
     def autoupdate():
         on = bool((request.get_json(silent=True) or {}).get("on"))
+        _autoupdate["at"] = -1e9   # read it fresh next time
         return answer(lambda: admin("autoupdate", "on" if on else "off"),
                       "Automatic updates are " + ("on." if on else "off."))
 

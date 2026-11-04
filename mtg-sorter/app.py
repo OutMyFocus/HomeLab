@@ -48,6 +48,7 @@ from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
 from mtgscanner.machine import Machine, add_machine_routes
+from mtgscanner.remote_machine import RemoteMachine, remote_url
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.system import ON_PI, add_system_routes
@@ -604,7 +605,8 @@ def candidate_info(card: Card, distance: int, foil: bool, vault, live=None) -> d
 
 def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
-    machine = machine or Machine()
+    # On the server, MTG_MACHINE_URL points at the sorter's Pi, which does the moving.
+    machine = machine or (RemoteMachine(remote_url()) if remote_url() else Machine())
     scanner.lights = lights or scanner.lights or Lights()
     logins.install(app, WEB)  # user accounts, once they're on: logging in, and who may do what
     security.install(app, WEB)  # the optional PIN lock, checked before every page (without accounts)
