@@ -117,6 +117,20 @@ class Machine:
         """Back to the angles and feeder settings in config.py."""
         settings_file().unlink(missing_ok=True)
 
+    def wide_travel(self) -> bool:
+        return bool(load_saved().get("wide_travel", False))
+
+    def pulse_range(self) -> tuple[int, int]:
+        """The servo pulse widths (microseconds) that 0 and 180 mean. ServoKit's default
+        750-2250 only turns an MG90S about 130-140 real degrees; 500-2500 gives about the
+        full 180. 90 is 1500 either way, so a horn fitted at 90 stays put."""
+        return config.SERVO_PULSE_WIDE if self.wide_travel() else config.SERVO_PULSE
+
+    def set_wide_travel(self, on: bool):
+        saved = load_saved()
+        saved["wide_travel"] = bool(on)
+        self._write(saved)
+
     # --- servos -------------------------------------------------------------
 
     def set_angle(self, channel: int, angle: float | None):
@@ -130,7 +144,10 @@ class Machine:
             if kit is None:
                 raise RuntimeError(self.servo_error)
             try:
-                kit.servo[channel].angle = angle
+                servo = kit.servo[channel]
+                if hasattr(servo, "set_pulse_width_range"):   # cheap: no I2C, just the scale
+                    servo.set_pulse_width_range(*self.pulse_range())
+                servo.angle = angle
             except OSError:
                 self._kit = None   # board unplugged or lost: find it again next time
                 raise
@@ -139,7 +156,9 @@ class Machine:
             if old:
                 old.cancel()
             hold = getattr(config, "SERVO_HOLD_SECONDS", 0)
-            if angle is not None and hold > 0:
+            keep = {config.SERVOS[p][0] for p in getattr(config, "SERVO_KEEP_HOLDING", ())
+                    if p in config.SERVOS}
+            if angle is not None and hold > 0 and channel not in keep:
                 # Let go once it has had time to get there. A servo held against
                 # something it can't push past draws full current and gets hot.
                 token = object()
@@ -260,6 +279,7 @@ class Machine:
                                  "angle": self.angles.get(ch)}
                           for part, (ch, pos) in servos.items()},
                 "feeder_defaults": defaults,
+                "wide_travel": self.wide_travel(),
                 "customized": settings_file().exists(),
             }
 
@@ -312,6 +332,8 @@ def add_machine_routes(app, machine: Machine, web_dir):
         if "part" in body:
             return answer(lambda: machine.save_position(str(body["part"]), str(body.get("position")),
                                                         body.get("angle")))
+        if "wide_travel" in body:
+            return answer(lambda: machine.set_wide_travel(bool(body["wide_travel"])))
         if "reverse" in body and "seconds" not in body:
             return answer(lambda: machine.set_feeder_reverse(bool(body["reverse"])))
         return answer(lambda: machine.save_feeder(body.get("seconds"), body.get("speed")))

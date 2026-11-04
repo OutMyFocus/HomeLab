@@ -118,6 +118,17 @@ def test_servo_lets_go_after_a_move(machine, monkeypatch):
     assert machine.angles[1] is None
 
 
+def test_stop_pins_keep_holding(machine, monkeypatch):
+    # The gate drops under its own weight when let go, so the pins never go limp by themselves.
+    monkeypatch.setattr(config, "SERVO_HOLD_SECONDS", 0.05)
+    machine.move("pins", "up")
+    pins = config.SERVOS["pins"][0]
+    time.sleep(0.2)
+    assert machine._kit.servo[pins].angle == machine.servos()["pins"][1]["up"]
+    machine.relax_all()                 # Relax still lets them go
+    assert machine._kit.servo[pins].angle is None
+
+
 def test_a_new_move_keeps_holding(machine, monkeypatch):
     monkeypatch.setattr(config, "SERVO_HOLD_SECONDS", 0.15)
     machine.set_angle(1, 70)
