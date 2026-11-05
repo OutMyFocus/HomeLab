@@ -48,7 +48,7 @@ from mtgscanner.wishlist import add_wishlist_routes
 from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
-from mtgscanner.machine import Machine, add_machine_routes
+from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
 from mtgscanner.remote_machine import RemoteMachine, remote_url
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
 from mtgscanner.sorting import card_price, choose_bin
@@ -1176,7 +1176,12 @@ def main():
             "The card database is empty, so nothing can be recognized yet: restore a backup on the "
             "Maintenance page, or press Download every card there (see README.md)."
         )
-    app = create_app(scanner)
+    machine = RemoteMachine(remote_url()) if remote_url() else Machine()
+    app = create_app(scanner, machine)
+    if isinstance(machine, Machine) and ON_PI:
+        # The servos to their saved home positions (Machine page: Home), in the background
+        # so the page is up straight away.
+        threading.Thread(target=home_at_startup, args=(machine,), daemon=True).start()
     # The weekly Canadian price check and card database update (see mtgscanner/vault.py).
     threading.Thread(target=app.config["weekly"].loop, daemon=True).start()
     try:

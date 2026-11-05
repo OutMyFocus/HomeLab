@@ -114,11 +114,22 @@ class Machine:
         self._write(saved)
 
     def reset_saved(self):
-        """Back to the angles and feeder settings in config.py."""
-        settings_file().unlink(missing_ok=True)
+        """Back to the angles and feeder settings in config.py. The old file is kept as
+        machine_settings.json.bak, so a reset pressed by mistake can be undone by hand."""
+        f = settings_file()
+        if f.exists():
+            f.replace(f.with_name(f.name + ".bak"))
 
     def wide_travel(self) -> bool:
-        return bool(load_saved().get("wide_travel", False))
+        return bool(load_saved().get("wide_travel", config.SERVO_WIDE_TRAVEL))
+
+    def home_at_startup(self) -> bool:
+        return bool(load_saved().get("home_at_startup", config.HOME_AT_STARTUP))
+
+    def set_home_at_startup(self, on: bool):
+        saved = load_saved()
+        saved["home_at_startup"] = bool(on)
+        self._write(saved)
 
     def pulse_range(self) -> tuple[int, int]:
         """The servo pulse widths (microseconds) that 0 and 180 mean. ServoKit's default
@@ -211,6 +222,14 @@ class Machine:
         for channel, _ in config.SERVOS.values():
             self.set_angle(channel, None)
 
+    def home(self, pause: float = 0.4):
+        """Every part to its home position (config.SERVO_HOME), with the saved angles, one
+        at a time so they don't all draw current at once."""
+        for part, position in config.SERVO_HOME.items():
+            if part in config.SERVOS:
+                self.move(part, position)
+                time.sleep(pause)
+
     def self_test(self, pause: float = 0.6) -> list[dict]:
         """Moves every servo through its positions and back, then nudges the feeder.
         Returns what worked, one line per part, for the Maintenance page."""
@@ -280,6 +299,7 @@ class Machine:
                           for part, (ch, pos) in servos.items()},
                 "feeder_defaults": defaults,
                 "wide_travel": self.wide_travel(),
+                "home_at_startup": self.home_at_startup(),
                 "customized": settings_file().exists(),
             }
 
@@ -311,6 +331,10 @@ def add_machine_routes(app, machine: Machine, web_dir):
             return answer(lambda: machine.set_angle(int(body.get("channel", -1)), body["angle"]))
         return answer(lambda: machine.move(str(body.get("part")), str(body.get("position"))))
 
+    @app.post("/api/machine/home")
+    def machine_home():
+        return answer(machine.home)
+
     @app.post("/api/machine/relax")
     def machine_relax():
         return answer(machine.relax_all)
@@ -332,6 +356,8 @@ def add_machine_routes(app, machine: Machine, web_dir):
         if "part" in body:
             return answer(lambda: machine.save_position(str(body["part"]), str(body.get("position")),
                                                         body.get("angle")))
+        if "home_at_startup" in body:
+            return answer(lambda: machine.set_home_at_startup(bool(body["home_at_startup"])))
         if "wide_travel" in body:
             return answer(lambda: machine.set_wide_travel(bool(body["wide_travel"])))
         if "reverse" in body and "seconds" not in body:
@@ -346,3 +372,21 @@ def add_machine_routes(app, machine: Machine, web_dir):
     def machine_test():
         report = machine.self_test()
         return jsonify(machine.state() | {"test": report})
+
+
+def home_at_startup(machine: Machine, tries: int = 3, wait: float = 5.0):
+    """Run once when the app starts (app.py main): put every part in its home position with
+    the saved angles, unless that's turned off on the Machine page. The servo board can
+    take a moment to show up after boot, so it tries a few times."""
+    if not machine.home_at_startup():
+        return
+    for attempt in range(tries):
+        try:
+            machine.home()
+            print("Machine: every part is at its home position.")
+            return
+        except (RuntimeError, OSError, ValueError) as e:
+            error = e
+            if attempt < tries - 1:
+                time.sleep(wait)
+    print(f"Machine: couldn't go to the home positions at startup ({error}).")
