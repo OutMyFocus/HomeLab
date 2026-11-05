@@ -115,8 +115,10 @@ class FeedWatcher:
         scanner.tap = self.tap
         self.busy = threading.Lock()
 
-    def feed_one(self, speed=None, max_seconds=None, zone=None) -> dict:
-        """Run the feeder until a card lands in the zone (or max_seconds pass), then stop.
+    def feed_one(self, speed=None, max_seconds=None, zone=None, backoff=None) -> dict:
+        """Run the feeder until a card lands in the zone (or max_seconds pass), then stop,
+        then turn the wheels backwards for `backoff` seconds (config.FEED_BACKOFF_SECONDS) so
+        the next card, which followed it out of the slot, goes back into the hopper.
         Returns what happened: result is "landed", "over" (it went past the zone, over the
         teeth), or "none" (nothing reached the zone: no grip, or a card hanging in the slot)."""
         zone = clean_zone(zone) if zone is not None else feed_zone()
@@ -147,6 +149,14 @@ class FeedWatcher:
             finally:
                 self.machine.stop_feeder()
             motor_ms = round(1000 * (time.monotonic() - t0))
+            backoff = min(1.0, max(0.0, float(config.FEED_BACKOFF_SECONDS if backoff is None else backoff)))
+            if landed_ms is not None and backoff:
+                # The wheels drive the next card out behind the one that landed (they touch it as
+                # soon as the first card's tail passes them). It ends up hanging over the landed
+                # card and pins it, so pull it back into the hopper: a short turn the other way.
+                self.machine.feed(seconds=backoff, speed=speed, backward=True)
+                time.sleep(backoff)
+                self.machine.stop_feeder()
             # Let it come to rest, then look again: still there, or did it go over the teeth?
             share = 0.0
             settle_end = time.monotonic() + config.FEED_SETTLE_SECONDS
@@ -159,7 +169,7 @@ class FeedWatcher:
                 result = "landed" if share >= config.FEED_LAND_SHARE else "none"
             else:
                 result = "landed" if share >= config.FEED_LAND_SHARE / 2 else "over"
-            return {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms,
+            return {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms, "backoff_ms": round(1000 * backoff) if landed_ms is not None else 0,
                     "zone": zone, "settled_share": round(share, 3), "trace": trace}
         finally:
             self.tap.watching -= 1
@@ -183,7 +193,7 @@ def add_feed_watch_routes(app, scanner, machine):
     def machine_feed_one():
         body = request.get_json(silent=True) or {}
         try:
-            out = run(body.get("speed"), body.get("max_seconds"), body.get("zone"))
+            out = run(body.get("speed"), body.get("max_seconds"), body.get("zone"), body.get("backoff"))
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
