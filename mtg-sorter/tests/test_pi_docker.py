@@ -215,8 +215,63 @@ def test_wider_servo_travel(db, data):  # noqa: F811
     m._kit.servo = [Servo() for _ in range(16)]
     client = create_app(Scanner(db, None, source=None), m).test_client()
     client.post("/api/machine/move", json={"channel": 2, "angle": 180})
+    assert m._kit.servo[2].pulse == config.SERVO_PULSE_WIDE == (500, 2500)   # on until saved off
+    s = client.post("/api/machine/save", json={"wide_travel": False}).get_json()
+    assert s["wide_travel"] is False
+    client.post("/api/machine/move", json={"channel": 2, "angle": 180})
     assert m._kit.servo[2].pulse == config.SERVO_PULSE
     s = client.post("/api/machine/save", json={"wide_travel": True}).get_json()
     assert s["wide_travel"] is True
     client.post("/api/machine/move", json={"channel": 2, "angle": 180})
-    assert m._kit.servo[2].pulse == config.SERVO_PULSE_WIDE == (500, 2500)
+    assert m._kit.servo[2].pulse == config.SERVO_PULSE_WIDE
+
+
+# --- calibration kept, and home at startup -----------------------------------------
+
+def test_home_uses_the_saved_angles(db, data):  # noqa: F811
+    m = pi_machine()
+    client = create_app(Scanner(db, None, source=None), m).test_client()
+    client.post("/api/machine/save", json={"part": "pins", "position": "up", "angle": 117})
+    s = client.post("/api/machine/home", json={}).get_json()
+    assert m._kit.servo[0].angle == 117
+    for part, position in config.SERVO_HOME.items():
+        assert s["parts"][part]["angle"] == s["parts"][part]["positions"][position]
+
+
+def test_home_at_startup_can_be_turned_off(db, data, monkeypatch):  # noqa: F811
+    from mtgscanner.machine import home_at_startup
+    m = pi_machine()
+    client = create_app(Scanner(db, None, source=None), m).test_client()
+    assert client.get("/api/machine").get_json()["home_at_startup"] is True
+    home_at_startup(m)
+    assert m._kit.servo[0].angle == config.SERVOS["pins"][1]["up"]
+    m._kit.servo[0].angle = None
+    s = client.post("/api/machine/save", json={"home_at_startup": False}).get_json()
+    assert s["home_at_startup"] is False
+    home_at_startup(m)
+    assert m._kit.servo[0].angle is None
+
+
+def test_home_at_startup_waits_for_the_servo_board(data, monkeypatch):
+    from mtgscanner.machine import home_at_startup
+    m = pi_machine()
+    kit, m._kit = m._kit, None
+    finds = []
+    def board():
+        finds.append(1)
+        m._kit = kit if len(finds) > 1 else None
+        m.servo_error = None if m._kit else "Servo board not found"
+        return m._kit
+    monkeypatch.setattr(m, "_servos", board)
+    monkeypatch.setattr(m, "home", lambda pause=0: Machine.home(m, 0))
+    home_at_startup(m, wait=0)
+    assert kit.servo[0].angle == config.SERVOS["pins"][1]["up"]
+
+
+def test_reset_keeps_a_copy_of_the_calibration(db, data):  # noqa: F811
+    m = pi_machine()
+    client = create_app(Scanner(db, None, source=None), m).test_client()
+    client.post("/api/machine/save", json={"part": "chute", "position": "left", "angle": 71})
+    s = client.post("/api/machine/reset", json={}).get_json()
+    assert s["customized"] is False
+    assert '"left": 71' in (data / "machine_settings.json.bak").read_text()
