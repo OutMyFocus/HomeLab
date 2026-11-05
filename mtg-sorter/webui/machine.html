@@ -90,7 +90,8 @@
       (for a motor fitted the other way round)</label>
     <p class="sub" id="feedResult"></p>
     <p class="sub"><b>Feed one card</b> runs the motor at the speed above while watching the Pi camera, and stops
-      the moment a card lands just above the stop teeth (or after 3 seconds). Start with the bed empty.
+      the moment a card lands just above the stop teeth (or after 3 seconds), then turns the wheels backwards for a
+      moment so the next card, which followed it out of the slot, goes back into the hopper. Start with the bed empty.
       <b>Timed push</b> runs it for the seconds above, whatever happens.</p>
     <div class="row">
       <label class="inline">Landing zone <input id="feedZone" size="22" title="x0, y0, x1, y1 as shares of the camera picture: a band across the bed just above the stop teeth"></label>

@@ -208,6 +208,7 @@ class FakeCamera:
 @pytest.fixture
 def watched(db, machine, monkeypatch):  # noqa: F811
     monkeypatch.setattr(config, "FEED_SETTLE_SECONDS", 0.2)
+    monkeypatch.setattr(config, "FEED_BACKOFF_SECONDS", 0.05)
     monkeypatch.setattr(config, "FEED_ZONE", (0.2, 0.62, 0.8, 0.70))
     scanner = Scanner(db, None, source=None)
     app = create_app(scanner, machine)
@@ -224,7 +225,10 @@ def test_feed_one_stops_the_motor_when_a_card_lands(watched):
     assert out["result"] == "landed", out
     assert out["landed_ms"] is not None and out["motor_ms"] < 1500
     assert machine._motor.calls[0][0] == "forward"
-    assert machine._motor.calls[-1] == ("stop",)
+    # then a short turn backwards, so the next card goes back into the hopper
+    kinds = [c[0] for c in machine._motor.calls]
+    assert kinds[:3] == ["forward", "stop", "backward"] and kinds[-1] == "stop"
+    assert out["backoff_ms"] == 50
     assert not machine.feeding
 
 
@@ -235,6 +239,7 @@ def test_feed_one_gives_up_when_no_card_comes(watched):
     assert out["result"] == "none"
     assert out["landed_ms"] is None
     assert machine._motor.calls[-1] == ("stop",)
+    assert "backward" not in [c[0] for c in machine._motor.calls]   # nothing landed: no back-off
 
 
 def test_feed_one_sees_a_card_that_went_over_the_teeth(watched):
