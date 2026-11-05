@@ -18,6 +18,7 @@
     maintenance: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
     settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
     sets: '<rect x="4" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="13" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M13 16.5h7M16.5 13v7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    news: '<path d="M5 5.5h11.5V18a2 2 0 0 0 2 2H6.5A1.5 1.5 0 0 1 5 18.5v-13Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M16.5 9H19v9a2 2 0 0 1-2.5 2M8 9h5.5M8 12.5h5.5M8 16h3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
     more: '<circle cx="6" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18" cy="12" r="1.6" fill="currentColor"/>',
   };
   // Every page, then the few groups the menu shows them in. Home and Scanner are links of
@@ -28,6 +29,7 @@
     { key: "collection", href: "/collection", label: "Collection", desc: "Every card you've saved, stats and exports" },
     { key: "sets", href: "/sets", label: "Sets", desc: "How complete each set is, and spares to trade" },
     { key: "wishlist", href: "/wishlist", label: "Wishlist", desc: "Cards you want, and your trade binder" },
+    { key: "news", href: "/news", label: "News", desc: "New sets, previews and ban announcements" },
     { key: "cards", href: "/cards", label: "Card lookup", desc: "Any Commander card, with Canadian prices" },
     { key: "history", href: "/history", label: "Scan history", desc: "Past scanning sessions" },
     { key: "decks", href: "/decks", label: "Decks", desc: "Build decks, check them and find upgrades" },
@@ -40,7 +42,7 @@
   ];
   const LINKS = ["home", "scan"];
   const GROUPS = [
-    { key: "g-cards", label: "Cards", icon: "collection", pages: ["collection", "sets", "wishlist", "cards", "history"] },
+    { key: "g-cards", label: "Cards", icon: "collection", pages: ["collection", "sets", "wishlist", "news", "cards", "history"] },
     { key: "g-decks", label: "Decks", icon: "decks", pages: ["decks", "play"] },
     { key: "g-machine", label: "Machine", icon: "machine", pages: ["machine", "bins", "lights"] },
     { key: "g-system", label: "Settings", icon: "settings", pages: ["settings", "maintenance"], iconOnly: true },
