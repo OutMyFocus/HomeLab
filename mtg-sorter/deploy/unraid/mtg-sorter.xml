@@ -9,6 +9,7 @@
   <Network>bridge</Network>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
   <Support>https://github.com/OutMyFocus/HomeLab</Support>
   <Project>https://github.com/OutMyFocus/HomeLab/tree/main/mtg-sorter</Project>
   <Overview>Scans Magic: The Gathering cards with your phone's or computer's camera (or from photos), looks each one up, and keeps your collection, decks, bins, wishlist and prices in one place. Open it from any device on your network. For the phone camera, turn on Tailscale Serve on this container so it has an https address.</Overview>

@@ -692,6 +692,17 @@ def restore_backup(stream) -> dict:
 
 # --- The Maintenance page and its API ---------------------------------------------------
 
+def restart_in_place():
+    """Replaces the running app with a fresh copy of itself: the same command line, the same
+    process id, so the container (or whatever runs it) sees nothing stop."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    try:
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+    except OSError:
+        os._exit(0)   # the last resort: exit, and let a restart policy bring the app back
+
+
 def add_system_routes(app, scanner, machine, web_dir):
     if IN_DOCKER and not HOST_BRIDGE:
         keep_logs_in_memory()
@@ -736,8 +747,10 @@ def add_system_routes(app, scanner, machine, web_dir):
         return answer(go, message)
 
     def docker_restart():
-        # Docker restarts the container when the app exits (restart: unless-stopped).
-        threading.Timer(1.0, lambda: os._exit(0)).start()
+        # The app starts itself over in place (same process, same container), so it doesn't
+        # depend on a Docker restart policy: Unraid's templates set none, and a container
+        # whose only process exits just stays stopped.
+        threading.Timer(1.0, restart_in_place).start()
 
     @app.post("/api/system/restart")
     def restart():
