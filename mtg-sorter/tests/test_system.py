@@ -151,11 +151,13 @@ def test_in_docker_the_server_has_no_camera_or_self_updates(client, monkeypatch)
     assert updates["state"] == "off" and "Docker" in updates["summary"]
     assert client.get("/api/health").get_json()["overall"] != "bad" or \
         all(p["label"] != "Camera" for p in client.get("/api/health").get_json()["problems"])
-    # Restart works without the Pi's helper: the app exits and Docker starts it again.
-    exits = []
-    monkeypatch.setattr(system.threading, "Timer", lambda delay, fn: type("T", (), {"start": lambda self: exits.append(delay)})())
+    # Restart works without the Pi's helper: the app starts itself over in place, so the
+    # container keeps running even with no Docker restart policy (Unraid sets none).
+    timers, execs = [], []
+    monkeypatch.setattr(system.threading, "Timer", lambda delay, fn: type("T", (), {"start": lambda self: (timers.append(delay), fn())})())
+    monkeypatch.setattr(system.os, "execv", lambda exe, argv: execs.append((exe, argv)))
     assert client.post("/api/system/restart").get_json()["ok"]
-    assert exits == [1.0]
+    assert timers == [1.0] and execs == [(system.sys.executable, [system.sys.executable, *system.sys.argv])]
 
 
 def test_data_folder_can_be_moved_with_an_environment_variable(tmp_path, monkeypatch):

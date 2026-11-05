@@ -761,7 +761,8 @@
     camIndex = cur?.index;
   }
   $("camSelect").onchange = async e => {
-    const sel = e.target, index = +sel.value, name = sel.selectedOptions[0].textContent;
+    const sel = e.target, name = sel.selectedOptions[0].textContent;
+    const index = /^-?\d+$/.test(sel.value) ? +sel.value : sel.value;   // "pi" is the sorter Pi's camera
     if (sel.value === "browser") {
       $("camPick").classList.add("busy");
       if (!await startDeviceCamera()) sel.value = camIndex ?? "";

@@ -39,6 +39,14 @@ Unraid's Docker tab: **Check for updates**, then **Update** next to mtg-sorter. 
 stays in `/mnt/user/appdata/mtg-sorter` and is never touched by an update. (The app's own
 Maintenance page says the same; it can't update itself inside Docker.)
 
+### If the container stops and stays stopped
+
+Unraid's form sets no Docker restart policy, so a container whose app exits (a crash, or an
+older version's Restart button) stays stopped until you press Start. Give it one: **Docker →
+mtg-sorter → Edit**, switch to **Advanced view** (top right), and put `--restart=unless-stopped`
+in **Extra Parameters**, then Apply. The template in this folder already has it. Also turn the
+**Autostart** toggle on next to the container, so it comes back after a server reboot.
+
 ### Without Unraid's form
 
 Any Docker host works the same way:
@@ -102,6 +110,22 @@ the server (merging the two automatically is a later step).
 To make the server know every card: **Maintenance → Card database → Download every card**
 (30-60 minutes; scanning keeps working). From the server's terminal it's
 `docker exec mtg-sorter python build_db.py --all` (stop and resume it any time).
+
+## The sorter's own camera and machine, from the server
+
+Give the container the Pi's address (the **Sorter's Pi** field, `MTG_MACHINE_URL`, e.g.
+`http://10.0.0.247:5000`) and the server's pages reach the machine:
+
+- **Scan:** the camera menu gains **Sorter's Pi camera**. The server watches the Pi's live
+  stream and recognizes the cards on the scan bed itself, so what you scan on the machine lands
+  in the server's collection. With no camera of its own, the server starts on the Pi's camera.
+  (The Pi's own page keeps scanning too; turn its Auto-save off if you don't want the Pi's
+  separate collection to fill up as well.)
+- **Machine** and **Lights:** the servos, feeder and light bars are the Pi's, driven over the
+  network.
+
+If the Pi has a PIN or accounts on, also set `MTG_MACHINE_KEY` to the Pi's `data/machine_key`
+(`mtg machine-key` on the Pi prints it).
 
 ## How scanning from a phone works
 
