@@ -126,6 +126,7 @@
   const STATUS = { starting: "Starting camera…", waiting: "No camera connected", paused: "Camera paused", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
   let selected = null;     // the card shown big: its track id
   let editing = false, drag = null;   // Slots mode: drawing boxes on the picture, and the box being dragged
+  let cropping = false;               // drawing the crop box (the part of the picture to keep)
 
   function selectedCard(s) {
     const cards = s.cards;
@@ -190,12 +191,13 @@
     $("modeBtn").setAttribute("aria-pressed", slotsOn);
     $("modeText").textContent = slotsOn ? "Slots" : "Auto";
     renderFocus(s.camera?.focus);
+    renderView(s);
     $("editSlotsBtn").hidden = !slotsOn;
     $("editSlotsBtn").textContent = editing ? "Done" : "Edit slots";
     $("editSlotsBtn").setAttribute("aria-pressed", editing);
     $("clearSlotsBtn").hidden = !editing || !s.slots.length;
     $("slotHint").hidden = !editing;
-    $("overlay").classList.toggle("editing", editing);
+    $("overlay").classList.toggle("editing", editing || cropping);
 
     const sel = selectedCard(s), c = sel?.card;
     drawOutlines(s);
@@ -542,8 +544,27 @@
     if (state) renderFocus(state.camera?.focus);
   };
 
+  // ---------- rotate and crop the machine camera's picture (kept on the scanner) ----------
+  function renderView(s) {
+    const machineCam = !!s.camera && !s.camera.browser, v = s.view || {};
+    if (!machineCam) cropping = false;
+    $("rotateBtn").hidden = $("cropBtn").hidden = !machineCam;
+    $("uncropBtn").hidden = !machineCam || !v.crop || cropping;
+    $("cropBtn").setAttribute("aria-pressed", cropping);
+    $("cropBtn").querySelector("span").textContent = cropping ? "Cancel" : "Crop";
+    $("cropHint").hidden = !cropping;
+  }
+  function setCropping(on) { cropping = on; if (on) editing = false; drag = null; if (state) render(state); }
+  $("cropBtn").onclick = () => setCropping(!cropping);
+  $("uncropBtn").onclick = async () => { render(await api("/api/settings", { crop: null })); toast("Showing the whole picture"); };
+  $("rotateBtn").onclick = async () => {
+    const r = ((state?.view?.rotate || 0) + 90) % 360;
+    render(await api("/api/settings", { rotate: r }));
+    toast(r ? `Turned ${r}°` : "Not turned");
+  };
+
   // ---------- slots: boxes you draw on the picture, one per card position ----------
-  function setEditing(on) { editing = on; drag = null; if (state) render(state); }
+  function setEditing(on) { editing = on; if (on) cropping = false; drag = null; if (state) render(state); }
   $("modeBtn").onclick = async () => {
     const mode = state?.mode === "slots" ? "auto" : "slots";
     render(await api("/api/settings", { mode }));
@@ -559,8 +580,8 @@
   }
   const overlay = $("overlay");
   overlay.onpointerdown = async e => {
-    if (!editing || !state || e.button) return;
-    const del = e.target.closest("[data-del]");
+    if (!(editing || cropping) || !state || e.button) return;
+    const del = editing && e.target.closest("[data-del]");
     if (del) { render(await api("/api/settings", { slots: state.slots.filter((_, i) => i !== +del.dataset.del) })); return; }
     drag = { from: framePoint(e), to: framePoint(e) };
     overlay.setPointerCapture(e.pointerId); e.preventDefault();
@@ -571,6 +592,12 @@
     if (!drag) return;
     const [ax, ay] = drag.from, [bx, by] = framePoint(e); drag = null;
     const slot = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
+    if (cropping) {
+      if (slot[2] - slot[0] < 0.05 || slot[3] - slot[1] < 0.05) return drawOutlines(state);   // a click, not a box
+      cropping = false;
+      render(await api("/api/settings", { crop: slot }));
+      return toast("Cropped. Full view brings back the whole picture");
+    }
     if (slot[2] - slot[0] < 0.02 || slot[3] - slot[1] < 0.02) return drawOutlines(state);   // a click, not a box
     render(await api("/api/settings", { slots: [...state.slots, slot] }));
   };
@@ -592,6 +619,7 @@
     if (e.key === "Escape" && !$("pick").hidden) return closePicker();
     if (e.key === "Escape" && drawerOpen()) return setDrawer(false);
     if (e.key === "Escape" && editing) return setEditing(false);
+    if (e.key === "Escape" && cropping) return setCropping(false);
     if (e.target.matches("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey || drawerOpen() || !$("pick").hidden || window.MTGMenu?.isOpen()) return;
     if (e.key === "c" || e.key === "C") return setDrawer(true);
     if (e.key === "m" || e.key === "M") return window.MTGMenu?.toggle();
