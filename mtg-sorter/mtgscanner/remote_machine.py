@@ -15,8 +15,11 @@ of the app use it without knowing the difference. Saved angles stay on the Pi.
 import copy
 import hmac
 import os
+import threading
 import time
 
+import cv2
+import numpy as np
 import requests
 from flask import request
 
@@ -144,10 +147,15 @@ def key_file():
     return config.DATA_DIR / "machine_key"
 
 
+# What the server may ask of a locked Pi with the machine key: the moving parts, the light
+# bars, the camera's focus, and the camera's live stream (RemoteCameraSource).
+SERVER_PATHS = ("/api/machine", "/api/lights", "/api/camera/focus", "/stream.mjpg")
+
+
 def server_allowed() -> bool:
-    """True for a request to /api/machine that carries this Pi's machine key, so the server
-    can drive the machine even with a PIN or accounts on. No key file: no way in."""
-    if not request.path.startswith("/api/machine"):
+    """True for a request to the machine, lights or camera that carries this Pi's machine key,
+    so the server can use them even with a PIN or accounts on. No key file: no way in."""
+    if not request.path.startswith(SERVER_PATHS):
         return False
     given = request.headers.get(KEY_HEADER, "")
     try:
@@ -207,4 +215,126 @@ class RemoteLights:
 
     def spi_on(self) -> str:
         return str(self.link._call("/api/lights/spi-on", {}).get("message") or "")
+
+
+class RemoteCameraSource:
+    """The sorter Pi's camera, watched from the server: the Pi's live stream (/stream.mjpg)
+    becomes the server scanner's pictures, so the server's Scan page shows and recognizes
+    what the machine sees. The same read()/info()/release() as CameraSource."""
+    index = "pi"
+    format = "MJPG"
+    RETRY = 2.0        # seconds between attempts when the Pi can't be reached
+
+    def __init__(self, url: str, key: str | None = None, name: str | None = None, http=None):
+        self.url = url.rstrip("/")
+        self.key = key if key is not None else (os.environ.get("MTG_MACHINE_KEY") or "").strip()
+        self.name = name or "Sorter's Pi camera"
+        self.http = http or requests.Session()
+        self.size = None
+        self.camera_fps = None
+        self.error: str | None = "Connecting to the sorter's Pi…"
+        self._cond = threading.Condition()
+        self._frame, self._seq, self._given, self._stop = None, 0, 0, False
+        self._count, self._since = 0, time.monotonic()
+        self._resp = None
+        self._thread = threading.Thread(target=self._pump, name="pi-camera", daemon=True)
+        self._thread.start()
+
+    # --- pulling the stream --------------------------------------------------------
+
+    def _pump(self):
+        while not self._stop:
+            try:
+                self._watch()
+            except requests.RequestException:
+                self.error = f"Can't reach the sorter's Pi at {self.url}. Is it on, and is the app running there?"
+            except Exception as e:   # a bad chunk mustn't kill the thread
+                self.error = str(e) or "The Pi's stream broke off"
+            with self._cond:
+                self._cond.wait_for(lambda: self._stop, self.RETRY)
+
+    def _watch(self):
+        headers = {KEY_HEADER: self.key} if self.key else {}
+        with self.http.get(self.url + "/stream.mjpg", headers=headers, stream=True, timeout=(2, 15)) as r:
+            self._resp = r
+            if r.status_code in (401, 403):
+                self.error = ("The sorter's Pi has a PIN or accounts on, so it refused. Put the Pi's "
+                              "data/machine_key in MTG_MACHINE_KEY on this server (deploy/PI_DOCKER.md).")
+                return
+            if r.status_code != 200:
+                self.error = f"The sorter's Pi answered {r.status_code} for its camera stream."
+                return
+            buf = b""
+            for chunk in r.iter_content(chunk_size=65536):
+                if self._stop:
+                    return
+                buf += chunk
+                # One JPEG per frame, from its start marker to its end marker.
+                while True:
+                    start = buf.find(b"\xff\xd8")
+                    if start < 0:
+                        buf = buf[-1:]
+                        break
+                    end = buf.find(b"\xff\xd9", start + 2)
+                    if end < 0:
+                        buf = buf[start:]
+                        break
+                    jpeg, buf = buf[start:end + 2], buf[end + 2:]
+                    self._push(jpeg)
+            self.error = "The Pi's stream ended."
+
+    def _push(self, jpeg: bytes):
+        frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return
+        now = time.monotonic()
+        self._count += 1
+        if now - self._since >= 2.0:
+            self.camera_fps, self._count, self._since = self._count / (now - self._since), 0, now
+        with self._cond:
+            self._frame, self._seq = frame, self._seq + 1
+            self.size = (frame.shape[1], frame.shape[0])
+            self.error = None
+            self._cond.notify_all()
+
+    # --- the same face as CameraSource ---------------------------------------------
+
+    def read(self, timeout: float = 2.0):
+        """The newest picture not handed out yet (None while the Pi sends nothing)."""
+        with self._cond:
+            seq = self._given
+            if not self._cond.wait_for(lambda: self._seq > seq or self._stop, timeout) or self._stop:
+                return None
+            self._given = self._seq
+            return self._frame
+
+    def info(self) -> dict:
+        out = {"index": self.index, "name": self.name, "format": self.format,
+               "size": list(self.size) if self.size else None, "remote": self.url, "pi": True}
+        if self.camera_fps is not None:
+            out["fps"] = round(self.camera_fps, 1)
+        if self.error:
+            out["error"] = self.error
+        return out
+
+    def set_focus(self, cm: float | None) -> bool:
+        """Focus is the Pi camera's: the ask goes to the Pi's own /api/camera/focus."""
+        link = RemoteMachine(self.url, self.key)
+        link.http = self.http
+        try:
+            link._call("/api/camera/focus", {"cm": cm})
+        except (RuntimeError, ValueError):
+            return False
+        return True
+
+    def release(self):
+        self._stop = True
+        with self._cond:
+            self._cond.notify_all()
+        resp, self._resp = self._resp, None
+        if resp is not None:
+            try:
+                resp.close()
+            except Exception:
+                pass
 

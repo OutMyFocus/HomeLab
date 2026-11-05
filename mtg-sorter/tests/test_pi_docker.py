@@ -312,3 +312,104 @@ def test_the_servers_lights_page_without_the_pi(db, data):  # noqa: F811
     assert not s["ok"] and "Can't reach the sorter's Pi" in s["error"] and "settings" in s
     assert remote.preview() == []
     remote.event("saved")   # never raises
+
+
+# --- the Pi's camera, watched from the server --------------------------------------
+
+def _jpeg(color):
+    import cv2
+    import numpy as np
+    img = np.full((48, 64, 3), color, np.uint8)
+    return cv2.imencode(".jpg", img)[1].tobytes()
+
+
+class StreamWire:
+    """Stands in for the network: a GET of /stream.mjpg answers with a few MJPEG frames, the
+    way app.py's stream() writes them; everything else goes to the Pi's test client."""
+
+    def __init__(self, pi_client, frames):
+        self.pi, self.frames, self.gets = pi_client, frames, []
+
+    def get(self, url, headers=None, stream=False, timeout=None):
+        self.gets.append(url)
+        if url.endswith("/stream.mjpg"):
+            frames = self.frames
+
+            class R:
+                status_code = 200
+                def __enter__(self): return self
+                def __exit__(self, *a): pass
+                def close(self): pass
+                def iter_content(self, chunk_size=65536):
+                    body = b"".join(b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + f + b"\r\n" for f in frames)
+                    for i in range(0, len(body), 1000):   # small chunks: frames arrive in pieces
+                        yield body[i:i + 1000]
+            return R()
+        res = self.pi.get(url.split("5000", 1)[1], headers=headers, environ_base=TOWER)
+
+        class R2:
+            status_code = res.status_code
+            def json(self): return res.get_json()
+        return R2()
+
+    def post(self, url, json=None, headers=None, timeout=None):
+        res = self.pi.post(url.split("5000", 1)[1], json=json, headers=headers, environ_base=TOWER)
+
+        class R:
+            status_code = res.status_code
+            def json(self): return res.get_json()
+        return R()
+
+
+def test_the_server_watches_the_pis_camera(db, pi, data, monkeypatch):  # noqa: F811
+    import time
+    from mtgscanner.remote_machine import RemoteCameraSource
+    _, pi_client = pi
+    monkeypatch.setenv("MTG_MACHINE_URL", "http://10.0.0.247:5000")
+    wire = StreamWire(pi_client, [_jpeg((0, 0, 255)), _jpeg((0, 255, 0))])
+    source = RemoteCameraSource("http://10.0.0.247:5000", http=wire)
+    source.RETRY = 0.05
+    frames = [f for f in (source.read(timeout=1.0) for _ in range(3)) if f is not None]
+    assert frames and frames[0].shape == (48, 64, 3) and frames[0][0, 0][2] > 250   # a red JPEG, give or take
+    info = source.info()
+    assert info["index"] == "pi" and info["remote"] == "http://10.0.0.247:5000" and info["size"] == [64, 48]
+    # Focus goes to the Pi's own camera (the test Pi has a webcam stand-in, which can't focus).
+    assert source.set_focus(12) is False
+    source.release()
+    assert source.read(timeout=0.2) is None
+
+    # On the server's Scan page the Pi's camera is in the menu, and picking it switches the scanner.
+    class PiCam(RemoteCameraSource):   # the same source, with the fake network
+        def __init__(self, url, key=None, name=None, http=None):
+            super().__init__(url, key, name, http=StreamWire(pi_client, [_jpeg((9, 9, 9))]))
+    monkeypatch.setattr("app.RemoteCameraSource", PiCam)
+    monkeypatch.setattr("app.SETTINGS_FILE", data / "app_settings.json")
+    server = create_app(Scanner(db, None, source=None), RemoteMachine("http://10.0.0.247:5000")).test_client()
+    cams = server.get("/api/cameras").get_json()
+    assert cams[-1]["index"] == "pi" and cams[-1]["name"] == "Sorter's Pi camera"
+    s = server.post("/api/camera", json={"index": "pi", "name": "Sorter's Pi camera"}).get_json()
+    assert s["camera"]["index"] == "pi" and s["camera"]["pi"] is True
+    assert server.post("/api/camera", json={"index": "pi"}).get_json()["camera"]["index"] == "pi"   # already on it
+    assert "pi" == __import__("json").loads((data / "app_settings.json").read_text())["camera"]["index"]
+    time.sleep(0.1)
+
+
+def test_without_a_pi_the_menu_has_no_pi_camera(db, data, monkeypatch):  # noqa: F811
+    monkeypatch.delenv("MTG_MACHINE_URL", raising=False)
+    client = create_app(Scanner(db, None, source=None), pi_machine()).test_client()
+    assert all(c["index"] != "pi" for c in client.get("/api/cameras").get_json())
+    assert client.post("/api/camera", json={"index": "pi"}).status_code == 400
+
+
+def test_a_locked_pi_lets_the_server_see_its_camera_and_lights(db, pi, data):  # noqa: F811
+    from mtgscanner.remote_machine import key_file
+    _, pi_client = pi
+    key_file().write_text("secret-key\n")
+    pi_client.post("/api/lock/set", json={"pin": "1234"})   # PIN on: everything needs the PIN or the key
+    pi_client.delete_cookie("mtg_unlocked")                   # ...and this client hasn't typed it
+    assert pi_client.get("/api/lights", environ_base=TOWER).status_code == 401
+    assert pi_client.get("/api/lights", headers={"X-Machine-Key": "secret-key"}, environ_base=TOWER).status_code == 200
+    from mtgscanner.remote_machine import server_allowed
+    with pi_client.application.test_request_context("/stream.mjpg", headers={"X-Machine-Key": "secret-key"}, environ_base=TOWER):
+        assert server_allowed()                                # the live stream the server's camera watches
+    assert pi_client.get("/api/collection", headers={"X-Machine-Key": "secret-key"}, environ_base=TOWER).status_code == 401
