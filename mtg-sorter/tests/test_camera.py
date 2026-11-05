@@ -18,6 +18,44 @@ def test_pi_camera_opens_through_picamera2(monkeypatch):
     assert camera.open_camera(camera.PI_CAMERA) == "pi capture"
 
 
+def test_a_pi_camera_that_fails_to_start_is_let_go(monkeypatch):
+    # If configure/start fails, the camera must be closed, or every later try fails with
+    # "Camera in Configured state trying acquire()" until the app restarts.
+    import sys
+    import types
+
+    import pytest
+
+    made = []
+
+    class FakePicamera2:
+        def __init__(self):
+            self.closed = False
+            made.append(self)
+
+        def create_video_configuration(self, **kw):
+            return kw
+
+        def configure(self, cfg):
+            raise OSError(12, "Cannot allocate memory")
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setitem(sys.modules, "picamera2", types.SimpleNamespace(Picamera2=FakePicamera2))
+    with pytest.raises(RuntimeError, match="Cannot allocate memory"):
+        camera.CameraSource(camera.PI_CAMERA, "Pi camera")
+    assert made and made[0].closed
+
+
+def test_the_pi_container_gets_the_camera_memory():
+    # Without the Pi's /dev/dma_heap (and its vidbuf_cached link) picamera2 runs out of memory.
+    from pathlib import Path
+
+    unit = (Path(__file__).parents[1] / "deploy" / "mtg-sorter-docker.service").read_text()
+    assert "-v /dev/dma_heap:/dev/dma_heap" in unit
+
+
 def test_browser_source_hands_out_the_newest_picture():
     import numpy as np
 
