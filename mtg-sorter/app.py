@@ -28,7 +28,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from flask import Flask, Response, abort, jsonify, make_response, request, send_file, send_from_directory
-from mtgscanner import camera as cameras_mod, config
+from mtgscanner import camera as cameras_mod, config, view
 from mtgscanner.camera import BrowserSource, CameraSource, list_cameras  # noqa: F401  (tests patch these here)
 from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
@@ -152,6 +152,8 @@ class Scanner:
         self.slots: list[
             list[float]
         ] = []  # each [x0, y0, x1, y1], as shares of the picture's width and height
+        self.rotate = 0  # the camera picture turned clockwise this many degrees (view.py)
+        self.crop: list[float] | None = None  # then cropped to this part of it; None = all of it
         self.outline = (
             46,
             119,
@@ -206,6 +208,28 @@ class Scanner:
         )
         self.mode = saved["mode"] if saved.get("mode") in ("auto", "slots") else "auto"
         self.slots = clean_slots(saved.get("slots") or []) or []
+        self.rotate = view.clean_rotation(saved.get("rotate", 0)) or 0
+        self.crop = view.clean_box(saved["crop"]) if saved.get("crop") else None
+
+    def set_view(self, rotate: int | None = None, crop=False):
+        """Turn the picture to `rotate` degrees and/or crop it. `crop` is a box drawn on
+        the picture as it shows now (so it zooms in further), None for the whole picture,
+        False to leave it. Slots stay on the same spots of the table. Call with the lock held."""
+        if rotate is not None and rotate != self.rotate:
+            turns = (rotate - self.rotate) // 90
+            if self.crop:
+                self.crop = view.turn_box(self.crop, turns)
+            self.slots = [view.turn_box(sl, turns) for sl in self.slots]
+            self.rotate = rotate
+        if crop is not False:
+            old = self.crop
+            new = None if crop is None else view.inside(crop, old)
+            if new is not None and view.is_whole(new):
+                new = None
+            full = [view.inside(sl, old) for sl in self.slots]
+            self.crop = [round(v, 4) for v in new] if new else None
+            self.slots = clean_slots([view.relative(sl, self.crop) for sl in full]) or []
+        self.forget_tracks()  # outlines and numbers belong to the old picture
 
     def _find(self, frame):
         """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
@@ -254,6 +278,8 @@ class Scanner:
                     self.stopped = True
             time.sleep(0.2)
             return
+        if self.rotate or self.crop:
+            frame = view.apply(frame, self.rotate, self.crop)
         self.process(frame)
 
     def process(self, frame):
@@ -529,6 +555,7 @@ class Scanner:
                 "auto": self.auto,
                 "mode": self.mode,
                 "slots": self.slots,
+                "view": {"rotate": self.rotate, "crop": self.crop},
                 "camera": camera_info(self._next_source or self.source),
                 "owner": self.owner,
                 "account": self.account,
@@ -781,6 +808,18 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 sc.forget_tracks()  # the cards on the table get their numbers afresh
                 if remember:
                     save_settings(mode=sc.mode, slots=sc.slots)
+            if "rotate" in body or "crop" in body:
+                rotate = view.clean_rotation(body["rotate"]) if "rotate" in body else None
+                crop = body.get("crop", False)
+                if crop not in (None, False):
+                    crop = view.clean_box(crop)
+                    if crop is None:
+                        return jsonify({"error": "Crop must be [x0, y0, x1, y1] as shares of the picture"}), 400
+                if "rotate" in body and rotate is None:
+                    return jsonify({"error": "Rotate must be 0, 90, 180 or 270"}), 400
+                sc.set_view(rotate, crop)
+                if remember:
+                    save_settings(rotate=sc.rotate, crop=sc.crop, slots=sc.slots)
             outline = str(body.get("outline", ""))
             if len(outline) == 7 and outline[0] == "#":
                 try:
