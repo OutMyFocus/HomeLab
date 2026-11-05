@@ -68,7 +68,8 @@
     <label class="switch"><input type="checkbox" id="wideTravel"><span></span>Wider servo travel: 0-180 on the
       slider turns about the full 180&deg; (normally only about 135&deg;). Saved angles other than 90 move, so check them after.</label>
     <label class="switch"><input type="checkbox" id="homeStartup"><span></span>Go home when the sorter starts:
-      doors closed, tray level, stop pins up, using the saved angles (the <b>Home</b> button does the same)</label>
+      each part sweeps slowly to doors closed, tray level and stop pins up, using the saved angles (the <b>Home</b>
+      button does the same). Any servo that's still holding lets go after 30 seconds without a move, so a jam can't burn it out.</label>
   </section>
 
   <section class="panel">
