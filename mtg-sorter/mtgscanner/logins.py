@@ -14,7 +14,7 @@ from . import accounts, config, security, system
 from .remote_machine import server_allowed
 
 OPEN_PATHS = {"/login", "/api/login", "/api/logout", "/api/me", "/api/health", "/favicon.ico",
-              "/lock", "/api/lock"}
+              "/lock", "/api/lock", "/join", "/api/join"}
 
 # Looking at these needs a permission (path, or path prefix ending in /).
 GET_NEEDS = [
@@ -170,7 +170,51 @@ def install(app, web_dir):
     @app.get("/api/accounts")
     def accounts_list():
         return jsonify({"accounts": accounts.enabled(), "users": accounts.everyone(), "me": accounts.current(),
-                        "perms": list(accounts.PERMS), "roles": accounts.ROLES})
+                        "perms": list(accounts.PERMS), "roles": accounts.ROLES, "invites": accounts.invites()})
+
+    # --- Invite links: an admin makes one, the person signs themselves up ---
+
+    @app.post("/api/accounts/invite")
+    def invite_make():
+        js = body()
+        try:
+            code = accounts.create_invite(accounts.current() or accounts.owner(), js.get("role") or "member",
+                                          js.get("uses", 1), js.get("days", 7), js.get("note") or "")
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"code": code, "path": "/join#" + code, "invites": accounts.invites()})
+
+    @app.post("/api/accounts/invite/cancel")
+    def invite_cancel():
+        try:
+            accounts.cancel_invite(body().get("id"))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"invites": accounts.invites()})
+
+    @app.get("/join")
+    def join_page():
+        return send_from_directory(web_dir, "join.html")
+
+    @app.post("/api/join")
+    def join():
+        """{code} checks a link; {code, username, password, name} makes the account and
+        logs it in."""
+        where = request.remote_addr or "?"
+        if accounts.too_many_tries(where):
+            return jsonify({"error": f"Too many tries. Wait {accounts.PAUSE} seconds and try again"}), 429
+        js = body()
+        invite = accounts.check_invite(js.get("code"))
+        if invite is None:
+            accounts.note_try(where, False)
+            return jsonify({"error": "This invite link is used up, ran out or was cancelled. Ask for a new one"}), 404
+        if "username" not in js:
+            return jsonify({"invite": invite})
+        try:
+            username = accounts.join(js.get("code"), js.get("username"), js.get("password"), js.get("name") or "")
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        return signed_in(username)
 
     @app.post("/api/accounts/setup")
     def accounts_setup():
