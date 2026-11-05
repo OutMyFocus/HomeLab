@@ -48,6 +48,63 @@ def test_a_pi_camera_that_fails_to_start_is_let_go(monkeypatch):
     assert made and made[0].closed
 
 
+def fake_picamera2(monkeypatch, autofocus=True):
+    import sys
+    import types
+
+    made = []
+
+    class FakePicamera2:
+        camera_controls = {"AfMode": (0, 2, 0)} if autofocus else {}
+
+        def __init__(self):
+            self.controls = []
+            made.append(self)
+
+        def create_video_configuration(self, **kw):
+            return kw
+
+        def configure(self, cfg):
+            pass
+
+        def start(self):
+            pass
+
+        def set_controls(self, c):
+            self.controls.append(c)
+
+    monkeypatch.setitem(sys.modules, "picamera2", types.SimpleNamespace(Picamera2=FakePicamera2))
+    return made
+
+
+def test_pi_camera_autofocus_reaches_close_up_cards(monkeypatch):
+    # Auto must use the Full range: the default Normal range skips the closest distances,
+    # so a card 12 cm under the lens stayed blurry.
+    made = fake_picamera2(monkeypatch)
+    monkeypatch.setattr(camera, "focus_cm", None)
+    cap = camera.PiCapture()
+    assert made[0].controls[-1] == {"AfMode": 2, "AfRange": 2, "AfSpeed": 1}
+    assert cap.has_focus and cap.focus_cm is None
+
+
+def test_pi_camera_focus_can_be_locked_at_the_scan_bed(monkeypatch):
+    made = fake_picamera2(monkeypatch)
+    monkeypatch.setattr(camera, "focus_cm", 12)
+    cap = camera.PiCapture()                     # opens with the focus picked last time
+    assert made[0].controls[-1] == {"AfMode": 0, "LensPosition": 100 / 12}
+    cap.set_focus(None)
+    assert made[0].controls[-1]["AfMode"] == 2 and cap.focus_cm is None
+
+
+def test_a_camera_without_autofocus_is_left_alone(monkeypatch):
+    made = fake_picamera2(monkeypatch, autofocus=False)
+    cap = camera.PiCapture()
+    assert not cap.has_focus and made[0].controls == []
+    src = camera.CameraSource.__new__(camera.CameraSource)
+    src.cap = cap
+    assert src.set_focus(12) is False
+
+
 def test_the_pi_container_gets_the_camera_memory():
     # Without the Pi's /dev/dma_heap (and its vidbuf_cached link) picamera2 runs out of memory.
     from pathlib import Path
