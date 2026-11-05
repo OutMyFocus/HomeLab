@@ -49,7 +49,7 @@ from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
 from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
-from mtgscanner.remote_machine import RemoteLights, RemoteMachine, remote_url
+from mtgscanner.remote_machine import RemoteCameraSource, RemoteLights, RemoteMachine, remote_url
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.system import ON_PI, add_system_routes
@@ -591,7 +591,7 @@ def clean_slots(raw) -> list[list[float]] | None:
 
 
 def camera_info(source) -> dict | None:
-    if not isinstance(source, (CameraSource, BrowserSource)):
+    if not isinstance(source, (CameraSource, BrowserSource, RemoteCameraSource)):
         return None
     if hasattr(source, "info"):
         return source.info()
@@ -831,7 +831,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
 
     @app.get("/api/cameras")
     def cameras():
-        return jsonify(list_cameras())
+        cams = list_cameras()
+        if remote_url():   # the server: the sorter Pi's camera, over the network
+            cams.append({"index": RemoteCameraSource.index, "name": "Sorter's Pi camera", "remote": remote_url()})
+        return jsonify(cams)
 
     @app.post("/api/camera")
     def camera():
@@ -840,8 +843,17 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             return browser_camera(body)
         if not accounts.can("machine"):
             refuse("Only people with the machine permission can switch the machine's camera")
-        index, name = int(body["index"]), body.get("name")
         current = camera_info(scanner._next_source or scanner.source)
+        if body.get("index") == RemoteCameraSource.index:
+            if not remote_url():
+                return jsonify({"error": "No sorter Pi is set up here (MTG_MACHINE_URL)."}), 400
+            if current and current["index"] == RemoteCameraSource.index:
+                return state()
+            source = RemoteCameraSource(remote_url())
+            scanner.use_source(source)
+            save_settings(camera={"index": source.index, "name": source.name})
+            return state()
+        index, name = int(body["index"]), body.get("name")
         if current and current["index"] == index:
             return state()
         try:
@@ -1223,8 +1235,12 @@ def main():
         try:
             source = startup_camera(args.camera)
         except RuntimeError as e:
-            print(f"{e} Starting anyway; trying again every few seconds.")
-            source = WaitingForCamera(args.camera)
+            if remote_url():   # the server: no camera of its own, so watch the sorter Pi's
+                source = RemoteCameraSource(remote_url())
+                print(f"Camera: the sorter's Pi camera, over the network from {remote_url()}")
+            else:
+                print(f"{e} Starting anyway; trying again every few seconds.")
+                source = WaitingForCamera(args.camera)
     if isinstance(source, CameraSource):
         print(
             f"Camera: {source.name}, {source.size[0]}x{source.size[1]} {source.format}"
