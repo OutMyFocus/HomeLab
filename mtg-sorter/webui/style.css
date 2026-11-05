@@ -164,6 +164,11 @@ main { max-width: 1320px; margin: 0 auto; padding: calc(var(--gap) + 4px) 24px 6
 .cam-btn svg { width: 16px; height: 16px; opacity: .85; }
 .cam-btn[aria-pressed="true"] { border-color: color-mix(in oklab, var(--accent) 80%, transparent); color: var(--accent); }
 .cam-btn[aria-pressed="true"] svg { opacity: 1; }
+.cam-focus { cursor: pointer; }
+.cam-focus span { opacity: .75; }
+.cam-focus select { appearance: none; -webkit-appearance: none; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; padding: 0; }
+.cam-focus select option { background: #1b1e23; color: #eef0f3; }
+.cam-focus.busy { opacity: .7; pointer-events: none; }
 .cam-hint { color: #fff; font-size: .8rem; opacity: .85; text-shadow: 0 1px 2px rgba(0, 0, 0, .7); }
 .camera.slots .finder { display: none; }
 .overlay.editing { pointer-events: all; cursor: crosshair; touch-action: none; }

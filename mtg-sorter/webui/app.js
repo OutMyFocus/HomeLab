@@ -189,6 +189,7 @@
     document.querySelector(".camera").classList.toggle("slots", slotsOn);
     $("modeBtn").setAttribute("aria-pressed", slotsOn);
     $("modeText").textContent = slotsOn ? "Slots" : "Auto";
+    renderFocus(s.camera?.focus);
     $("editSlotsBtn").hidden = !slotsOn;
     $("editSlotsBtn").textContent = editing ? "Done" : "Edit slots";
     $("editSlotsBtn").setAttribute("aria-pressed", editing);
@@ -515,6 +516,31 @@
     selected = track; render(state);
     if (state.cards.find(c => c.track === selected)?.status === "unknown") openPicker({ live: true, track: selected });
   }
+
+  // ---------- focus (Pi camera with autofocus): Auto, or locked at a distance ----------
+  function renderFocus(f) {
+    const pick = $("focusPick"), sel = $("focusSelect");
+    pick.hidden = !f;
+    if (!f || pick.classList.contains("busy")) return;
+    const key = f.choices.join();
+    if (sel.dataset.key !== key) {
+      sel.innerHTML = '<option value="auto">Auto</option>' + f.choices.map(c => `<option value="${c}">${c} cm</option>`).join("");
+      sel.dataset.key = key;
+    }
+    const want = f.cm == null ? "auto" : String(f.cm);
+    if (![...sel.options].some(o => o.value === want)) sel.add(new Option(`${f.cm} cm`, want));
+    if (document.activeElement !== sel) sel.value = want;
+  }
+  $("focusSelect").onchange = async e => {
+    const v = e.target.value, pick = $("focusPick");
+    pick.classList.add("busy");
+    try {
+      render(await api("/api/camera/focus", { cm: v === "auto" ? null : +v }));
+      toast(v === "auto" ? "Focus: auto" : `Focus locked at ${v} cm`);
+    } catch (err) { toast("Couldn't change the focus"); }
+    pick.classList.remove("busy");
+    if (state) renderFocus(state.camera?.focus);
+  };
 
   // ---------- slots: boxes you draw on the picture, one per card position ----------
   function setEditing(on) { editing = on; drag = null; if (state) render(state); }
