@@ -5,6 +5,10 @@
 #
 # --privileged and /run/udev: the container needs the Pi camera, the servo board (I2C),
 #   the feeder (GPIO), the light bars (SPI) and vcgencmd (power readings).
+# /dev/dma_heap: the Pi camera's picture memory. --privileged copies the device files but
+#   not the vidbuf_cached link udev adds on the Pi, and without it picamera2 falls back to
+#   the small CMA pool (64 MB, mostly used by the display) and fails with "Cannot allocate
+#   memory". Mounting the Pi's own folder brings the link along.
 # --network host: same addresses as before (port 5000, Tailscale Serve), and requests
 #   from the Pi itself still count as local for the PIN lock.
 # The data folder is the same one the old app used, so cards and settings carry over.
@@ -19,6 +23,7 @@ Wants=network-online.target
 ExecStartPre=-/usr/bin/docker rm -f mtg-sorter
 ExecStart=/usr/bin/docker run --rm --name mtg-sorter --privileged --network host \
     -v /home/nic/HomeLab/mtg-sorter/data:/data -v /run/udev:/run/udev:ro \
+    -v /dev/dma_heap:/dev/dma_heap \
     -e TZ=America/Toronto -e MTG_HOST_BRIDGE=1 \
     mtg-sorter:run
 ExecStop=/usr/bin/docker stop -t 10 mtg-sorter

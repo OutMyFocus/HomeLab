@@ -62,10 +62,16 @@ class PiCapture:
         from picamera2 import Picamera2
         self.cam = Picamera2()
         size = config.CAMERA_SIZE
-        # picamera2's "RGB888" is laid out blue-green-red in memory, which is what OpenCV expects.
-        self.cam.configure(self.cam.create_video_configuration(
-            main={"size": size, "format": "RGB888"}, controls={"FrameRate": 30}))
-        self.cam.start()
+        try:
+            # picamera2's "RGB888" is laid out blue-green-red in memory, which is what OpenCV expects.
+            self.cam.configure(self.cam.create_video_configuration(
+                main={"size": size, "format": "RGB888"}, controls={"FrameRate": 30}))
+            self.cam.start()
+        except Exception:
+            # Let go of the camera, or every later try fails with "Camera in Configured
+            # state trying acquire()" and the app never gets it back without a restart.
+            self.cam.close()
+            raise
         try:
             self.cam.set_controls({"AfMode": 2})   # keep refocusing (Camera Module 3 has autofocus)
         except Exception:
@@ -119,8 +125,10 @@ class CameraSource:
         self.index, self.name = index, name or f"Camera {index}"
         try:
             self.cap = open_camera(index)
-        except RuntimeError:
-            raise RuntimeError(f"Could not open {self.name}.") from None
+        except RuntimeError as e:
+            # Keep the reason (e.g. "Cannot allocate memory") so the log says what went wrong.
+            reason = str(e).partition("(")[2].rstrip(".)")
+            raise RuntimeError(f"Could not open {self.name}" + (f" ({reason})." if reason else ".")) from None
         self.format, self.size = describe(self.cap)
         self._cond = threading.Condition()
         self._frame, self._seq, self._given, self._stop = None, 0, 0, False
