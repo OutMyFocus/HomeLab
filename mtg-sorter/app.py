@@ -49,7 +49,7 @@ from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
 from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
-from mtgscanner.remote_machine import RemoteMachine, remote_url
+from mtgscanner.remote_machine import RemoteLights, RemoteMachine, remote_url
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.system import ON_PI, add_system_routes
@@ -604,11 +604,17 @@ def candidate_info(card: Card, distance: int, foil: bool, vault, live=None) -> d
 # --- Web server ----------------------------------------------------------------------
 
 
+def make_lights():
+    """The light bars: the Pi's own on the Pi, and on the server (MTG_MACHINE_URL) the Pi's,
+    reached over the network."""
+    return RemoteLights(remote_url()) if remote_url() else Lights()
+
+
 def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
     # On the server, MTG_MACHINE_URL points at the sorter's Pi, which does the moving.
     machine = machine or (RemoteMachine(remote_url()) if remote_url() else Machine())
-    scanner.lights = lights or scanner.lights or Lights()
+    scanner.lights = lights or scanner.lights or make_lights()
     logins.install(app, WEB)  # user accounts, once they're on: logging in, and who may do what
     security.install(app, WEB)  # the optional PIN lock, checked before every page (without accounts)
     add_machine_routes(app, machine, WEB)  # the /machine test page
@@ -1164,7 +1170,7 @@ def main():
     if isinstance(source, WaitingForCamera):
         source.on_found = scanner.use_source
     scanner.restore(load_settings())
-    scanner.lights = Lights()
+    scanner.lights = make_lights()
     scanner.lights.start()  # shows the saved color (nothing happens without light bars)
     threading.Thread(target=scanner.run, daemon=True).start()
 

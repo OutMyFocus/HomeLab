@@ -23,6 +23,8 @@ import sys
 import threading
 import time
 import zipfile
+import logging
+from collections import deque
 from pathlib import Path
 
 from . import config
@@ -34,6 +36,10 @@ UPDATE_STATUS = config.DATA_DIR / "update_status.json"   # written by deploy/upd
 BACKUP_DIR = config.DATA_DIR / "backups"                 # copies made before a restore
 SETUP_HINT = ("The maintenance helper isn't installed yet. It installs itself within 5 minutes of an "
               "update, or run: bash ~/HomeLab/mtg-sorter/deploy/setup.sh")
+DOCKER_HINT = ("This copy runs as a Docker container on the server, so it has no Pi to reboot, shut down "
+               "or update from here. Updates arrive as a new image: on Unraid's Docker tab press Check for "
+               "updates, then Update next to mtg-sorter (your data stays). The sorter's own Pi has its own "
+               "Maintenance page.")
 ON_PI = sys.platform.startswith("linux") and Path("/proc/device-tree/model").exists()
 # The Docker image (see ../Dockerfile and deploy/UNRAID.md): no hardware, and updates come as a new image.
 IN_DOCKER = bool(os.environ.get("MTG_IN_DOCKER")) or Path("/.dockerenv").exists()
@@ -402,13 +408,15 @@ def lights_check(scanner) -> dict | None:
     if lights is None:
         return None
     s = lights.state()
+    where = "On the sorter's Pi: " if s.get("remote") else ""
     if s["ok"]:
         return check("lights", "Light bars", "ok",
-                     "SPI is on, so the Pi can send colors to the light bars on GPIO10 (pin 19). "
+                     where + "SPI is on, so the Pi can send colors to the light bars on GPIO10 (pin 19). "
                      "It can't tell whether they're plugged in.")
     return check("lights", "Light bars", "off",
-                 "Optional. " + (s["error"] or "Not available."),
-                 "Only needed with RGB light bars: open the Lights page and press Turn SPI on." if ON_PI else None)
+                 where + "Optional. " + (s["error"] or "Not available."),
+                 "Only needed with RGB light bars: open the Lights page and press Turn SPI on."
+                 if ON_PI or s.get("remote") else None)
 
 
 def database_check(scanner) -> dict:
@@ -525,10 +533,46 @@ def summary(scanner, machine) -> dict:
 LOGS = {"app": "mtg-sorter", "updates": "mtg-sorter-update", "system": None}
 
 
+class RingLog(logging.Handler):
+    """The last few thousand log lines, kept in memory: in Docker the container's output goes
+    to Unraid, not to journalctl, so the Maintenance page's App log reads from here."""
+    def __init__(self, keep: int = 3000):
+        super().__init__(level=logging.INFO)
+        self.lines: deque[str] = deque(maxlen=keep)
+        self.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%b %d %H:%M:%S"))
+
+    def emit(self, record):
+        try:
+            self.lines.append(ANSI.sub("", self.format(record)))   # werkzeug colours its banner
+        except Exception:
+            pass
+
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+RING = RingLog()
+
+
+def keep_logs_in_memory():
+    """Docker only: the request log and any warnings end up in RING for the Maintenance page."""
+    root = logging.getLogger()
+    if RING not in root.handlers:
+        root.addHandler(RING)
+    if root.level == logging.NOTSET or root.level > logging.INFO:
+        root.setLevel(logging.INFO)
+    werkzeug = logging.getLogger("werkzeug")   # the request log; it reaches the root handler too
+    if werkzeug.level == logging.NOTSET or werkzeug.level > logging.INFO:
+        werkzeug.setLevel(logging.INFO)
+
+
 def logs(which: str, lines: int = 200) -> str:
     if which not in LOGS:
         raise ValueError("Pick app, updates or system")
     lines = max(10, min(2000, int(lines)))
+    if IN_DOCKER and not HOST_BRIDGE:
+        if which != "app":
+            raise RuntimeError("Only the app's log is kept here. The container's whole log is on Unraid's "
+                               "Docker tab: the mtg-sorter icon, then Logs.")
+        return "\n".join(list(RING.lines)[-lines:]) or "(nothing logged since the app started)"
     if admin_installed():
         try:
             return admin("logs", which, str(lines))
@@ -649,6 +693,8 @@ def restore_backup(stream) -> dict:
 # --- The Maintenance page and its API ---------------------------------------------------
 
 def add_system_routes(app, scanner, machine, web_dir):
+    if IN_DOCKER and not HOST_BRIDGE:
+        keep_logs_in_memory()
     from flask import Response, jsonify, request, send_file, send_from_directory
 
     def answer(action, then=None):
@@ -661,6 +707,8 @@ def add_system_routes(app, scanner, machine, web_dir):
         return jsonify(result if isinstance(result, dict) else {"ok": True, "message": then})
 
     def need_helper():
+        if IN_DOCKER and not HOST_BRIDGE:
+            raise RuntimeError(DOCKER_HINT)
         if not admin_installed():
             raise RuntimeError(SETUP_HINT)
 
@@ -746,6 +794,8 @@ def add_system_routes(app, scanner, machine, web_dir):
     @app.post("/api/system/autoupdate")
     def autoupdate():
         on = bool((request.get_json(silent=True) or {}).get("on"))
+        if IN_DOCKER and not HOST_BRIDGE:
+            return jsonify(error=DOCKER_HINT), 400
         _autoupdate["at"] = -1e9   # read it fresh next time
         return answer(lambda: admin("autoupdate", "on" if on else "off"),
                       "Automatic updates are " + ("on." if on else "off."))

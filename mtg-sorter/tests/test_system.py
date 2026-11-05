@@ -170,3 +170,27 @@ def test_data_folder_can_be_moved_with_an_environment_variable(tmp_path, monkeyp
         monkeypatch.delenv("MTG_DATA_DIR")
         importlib.reload(config)
     assert config.DATA_DIR.name == "data"
+
+
+def test_in_docker_the_pi_only_buttons_say_so_and_the_app_log_is_kept_in_memory(client, monkeypatch):
+    import logging
+    from mtgscanner import system
+    monkeypatch.setattr(system, "IN_DOCKER", True)
+    monkeypatch.setattr(system, "HOST_BRIDGE", False)
+    # Reboot, shut down, update and automatic updates are the Pi's: the server says where to go instead.
+    for path in ("/api/system/reboot", "/api/system/poweroff", "/api/system/update"):
+        r = client.post(path, json={})
+        assert r.status_code == 503 and "Docker" in r.get_json()["error"] and "Unraid" in r.get_json()["error"]
+        assert "maintenance helper" not in r.get_json()["error"]
+    r = client.post("/api/system/autoupdate", json={"on": True})
+    assert r.status_code == 400 and "Docker" in r.get_json()["error"]
+    # The app log comes from memory (Docker keeps the container's output, not journalctl).
+    system.keep_logs_in_memory()
+    logging.getLogger("werkzeug").info("GET /scan 200")
+    logging.getLogger("mtgscanner.test").warning("something to look at")
+    text = client.get("/api/system/logs?which=app&lines=50").get_json()["text"]
+    assert "GET /scan 200" in text and "something to look at" in text
+    r = client.get("/api/system/logs?which=system")
+    assert r.status_code == 503 and "Unraid" in r.get_json()["error"]
+    s = client.get("/api/system").get_json()
+    assert s["docker"] is True and s["pi_docker"] is False

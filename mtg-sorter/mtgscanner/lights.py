@@ -363,6 +363,11 @@ class Lights:
             self.settings = load_settings()
         self._wake.set()
 
+    def spi_on(self) -> str:
+        """Turns the Pi's SPI bus on through the maintenance helper (needs a reboot after)."""
+        from . import system
+        return system.admin("spi-on") or "SPI is on. Reboot the Pi to finish."
+
     # --- for the page -------------------------------------------------------
 
     def state(self) -> dict:
@@ -428,9 +433,8 @@ def add_lights_routes(app, lights: Lights, web_dir):
 
     @app.post("/api/lights/spi-on")
     def lights_spi_on():
-        from . import system
         try:
-            out = system.admin("spi-on")
+            out = lights.spi_on()
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
-        return jsonify(lights.state() | {"message": out or "SPI is on. Reboot the Pi to finish."})
+        return jsonify(lights.state() | {"message": out})

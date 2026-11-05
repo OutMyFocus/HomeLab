@@ -275,3 +275,40 @@ def test_reset_keeps_a_copy_of_the_calibration(db, data):  # noqa: F811
     s = client.post("/api/machine/reset", json={}).get_json()
     assert s["customized"] is False
     assert '"left": 71' in (data / "machine_settings.json.bak").read_text()
+
+
+def test_the_servers_lights_page_drives_the_pis_light_bars(db, pi, monkeypatch):  # noqa: F811
+    from mtgscanner.remote_machine import RemoteLights
+    _, pi_client = pi
+    remote = RemoteLights("http://10.0.0.247:5000")
+    remote.http = Wire(pi_client)
+    server = create_app(Scanner(db, None, source=None), RemoteMachine("http://10.0.0.247:5000"), remote).test_client()
+    s = server.get("/api/lights").get_json()
+    assert s["remote"] == "http://10.0.0.247:5000" and "settings" in s and "effects" in s
+    # A change made on the server lands in the Pi's settings file.
+    s = server.post("/api/lights", json={"on": True, "count": 14, "color": "#ff8800"}).get_json()
+    assert s["settings"]["count"] == 14 and s["settings"]["color"] == "#ff8800"
+    assert pi_client.get("/api/lights").get_json()["settings"]["count"] == 14
+    assert server.post("/api/lights/flash", json={"event": "saved"}).status_code == 200
+    assert isinstance(server.get("/api/lights/preview").get_json()["colors"], list)
+    assert server.post("/api/lights", json={"count": "lots"}).status_code == 400   # the Pi's complaint comes through
+    # Turning SPI on asks the Pi's helper, which this test machine doesn't have.
+    r = server.post("/api/lights/spi-on", json={})
+    assert r.status_code == 503 and "helper" in r.get_json()["error"].lower()
+    assert "sorter's Pi" in next(c for c in server.get("/api/system").get_json()["checks"] if c["id"] == "lights")["summary"]
+
+
+def test_the_servers_lights_page_without_the_pi(db, data):  # noqa: F811
+    from mtgscanner.remote_machine import RemoteLights
+    remote = RemoteLights("http://10.0.0.247:5000")
+
+    class Down:
+        def get(self, *a, **k):
+            import requests
+            raise requests.ConnectionError("no route")
+        post = get
+    remote.http = Down()
+    s = remote.state()
+    assert not s["ok"] and "Can't reach the sorter's Pi" in s["error"] and "settings" in s
+    assert remote.preview() == []
+    remote.event("saved")   # never raises
