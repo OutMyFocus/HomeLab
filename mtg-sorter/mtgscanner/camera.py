@@ -55,6 +55,22 @@ def list_cameras() -> list[dict]:
     return pi + unique
 
 
+# Focus for the Pi camera (Camera Module 3 has autofocus). None keeps refocusing on its
+# own; a number locks the lens at that many cm, e.g. 12 for the scan bed (the lens sits
+# 120 mm above the card). Picked on the scanner page and kept in app_settings.json; the
+# app sets this at startup so a camera opened later starts with it.
+focus_cm: float | None = None
+FOCUS_CHOICES_CM = (8, 10, 12, 14, 16, 18, 20, 25, 30, 40, 60)
+
+
+def focus_controls(cm: float | None) -> dict:
+    """libcamera controls for a focus setting. Auto uses the FULL range: the default
+    ("Normal") range skips the closest distances, which is where cards are."""
+    if cm is None:
+        return {"AfMode": 2, "AfRange": 2, "AfSpeed": 1}   # Continuous, Full range, Fast
+    return {"AfMode": 0, "LensPosition": 100.0 / float(cm)}  # Manual; the lens takes 1/metres
+
+
 class PiCapture:
     """The Pi camera, behaving like the bits of cv2.VideoCapture this module uses."""
 
@@ -62,15 +78,30 @@ class PiCapture:
         from picamera2 import Picamera2
         self.cam = Picamera2()
         size = config.CAMERA_SIZE
-        # picamera2's "RGB888" is laid out blue-green-red in memory, which is what OpenCV expects.
-        self.cam.configure(self.cam.create_video_configuration(
-            main={"size": size, "format": "RGB888"}, controls={"FrameRate": 30}))
-        self.cam.start()
         try:
-            self.cam.set_controls({"AfMode": 2})   # keep refocusing (Camera Module 3 has autofocus)
+            # picamera2's "RGB888" is laid out blue-green-red in memory, which is what OpenCV expects.
+            self.cam.configure(self.cam.create_video_configuration(
+                main={"size": size, "format": "RGB888"}, controls={"FrameRate": 30}))
+            self.cam.start()
         except Exception:
-            pass                                    # cameras without autofocus
+            # Let go of the camera, or every later try fails with "Camera in Configured
+            # state trying acquire()" and the app never gets it back without a restart.
+            self.cam.close()
+            raise
         self.size = size
+        # Cameras without autofocus (Camera Module 2, HQ) have no AfMode control.
+        self.has_focus = "AfMode" in getattr(self.cam, "camera_controls", {})
+        self.focus_cm = None
+        self.set_focus(focus_cm)
+
+    def set_focus(self, cm: float | None):
+        if not self.has_focus:
+            return
+        try:
+            self.cam.set_controls(focus_controls(cm))
+            self.focus_cm = cm
+        except Exception as e:
+            print(f"Couldn't set the Pi camera's focus: {e}")
 
     def read(self):
         try:
@@ -119,8 +150,10 @@ class CameraSource:
         self.index, self.name = index, name or f"Camera {index}"
         try:
             self.cap = open_camera(index)
-        except RuntimeError:
-            raise RuntimeError(f"Could not open {self.name}.") from None
+        except RuntimeError as e:
+            # Keep the reason (e.g. "Cannot allocate memory") so the log says what went wrong.
+            reason = str(e).partition("(")[2].rstrip(".)")
+            raise RuntimeError(f"Could not open {self.name}" + (f" ({reason})." if reason else ".")) from None
         self.format, self.size = describe(self.cap)
         self._cond = threading.Condition()
         self._frame, self._seq, self._given, self._stop = None, 0, 0, False
@@ -161,7 +194,16 @@ class CameraSource:
         out = {"index": self.index, "name": self.name, "format": self.format, "size": list(self.size)}
         if self.camera_fps is not None:
             out["fps"] = round(self.camera_fps, 1)
+        if getattr(self.cap, "has_focus", False):
+            out["focus"] = {"cm": self.cap.focus_cm, "choices": list(FOCUS_CHOICES_CM)}
         return out
+
+    def set_focus(self, cm: float | None) -> bool:
+        """Change the focus now (Pi camera with autofocus only). False if it has none."""
+        if not getattr(self.cap, "has_focus", False):
+            return False
+        self.cap.set_focus(cm)
+        return True
 
     def release(self):
         self._stop = True
