@@ -54,15 +54,22 @@
   <section class="panel" id="servoPanel">
     <h2><span class="dot" id="servoDot"></span>Servos</h2>
     <p class="err" id="servoErr" hidden></p>
+    <p class="sub" id="remoteNote" hidden></p>
     <p class="sub">The buttons go to each part's saved angles. To change one, move the slider until the part sits right,
       then press that position under <b>Save the slider's angle as</b>. It's kept on the Pi, so there's no file to edit.
       Centre each servo at 90 before pressing its horn on.</p>
     <div id="parts"></div>
     <div class="row">
+      <button class="btn primary" id="homeAll">Home</button>
       <button class="btn" id="centreAll">Centre all at 90</button>
       <button class="btn ghost" id="relaxAll">Relax all</button>
       <button class="btn ghost" id="resetAll" hidden>Back to the original angles</button>
     </div>
+    <label class="switch"><input type="checkbox" id="wideTravel"><span></span>Wider servo travel: 0-180 on the
+      slider turns about the full 180&deg; (normally only about 135&deg;). Saved angles other than 90 move, so check them after.</label>
+    <label class="switch"><input type="checkbox" id="homeStartup"><span></span>Go home when the sorter starts:
+      each part sweeps slowly to doors closed, tray level and stop pins up, using the saved angles (the <b>Home</b>
+      button does the same). Any servo that's still holding lets go after 30 seconds without a move, so a jam can't burn it out.</label>
   </section>
 
   <section class="panel">
@@ -78,6 +85,8 @@
       <button class="btn ghost" id="feedStop">Stop</button>
       <button class="btn ghost" id="feedSave">Save as the usual push</button>
     </div>
+    <label class="switch"><input type="checkbox" id="feedReverse"><span></span>Feeder turns the other way
+      (for a motor fitted the other way round)</label>
   </section>
 </div>
 <div id="toast" hidden></div>
@@ -115,6 +124,10 @@ function show(s) {
     $("r-" + part).value = p.angle; $("o-" + part).value = Math.round(p.angle);
   }
   $("resetAll").hidden = !s.customized;
+  $("wideTravel").checked = !!s.wide_travel;
+  $("homeStartup").checked = s.home_at_startup !== false;
+  $("remoteNote").hidden = !s.remote;
+  if (s.remote) $("remoteNote").textContent = `This page drives the sorter's Pi at ${s.remote}: moves and saved angles happen there.`;
 }
 function build(s) {
   const box = $("parts");
@@ -155,8 +168,24 @@ function build(s) {
   };
   $("feedSecs").value = s.feeder_defaults.seconds;
   $("feedSpeed").value = s.feeder_defaults.speed;
+  $("feedReverse").checked = !!s.feeder_defaults.reverse;
 }
+$("wideTravel").onchange = async (e) => {
+  if (await call("/api/machine/save", { wide_travel: e.target.checked }))
+    toast(e.target.checked ? "Saved: servos now turn about the full 180°. Check each part's positions." : "Saved: normal servo travel.");
+};
+$("feedReverse").onchange = async (e) => {
+  if (await call("/api/machine/save", { reverse: e.target.checked }))
+    toast(e.target.checked ? "Saved: Feed one card now turns the motor the other way." : "Saved: the feeder turns the normal way.");
+};
 $("relaxAll").onclick = () => call("/api/machine/relax", {});
+$("homeAll").onclick = async () => {
+  if (await call("/api/machine/home", {})) toast("Every part is at its home position.");
+};
+$("homeStartup").onchange = async (e) => {
+  if (await call("/api/machine/save", { home_at_startup: e.target.checked }))
+    toast(e.target.checked ? "Saved: the sorter goes home every time it starts." : "Saved: the sorter stays put when it starts.");
+};
 $("resetAll").onclick = async () => {
   if (confirm("Forget the angles and feeder settings saved here, and go back to the ones in config.py?")
       && await call("/api/machine/reset", {})) toast("Back to the original angles.");

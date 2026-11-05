@@ -301,6 +301,6 @@ def test_new_pages_load(db):  # noqa: F811
     _, client = make(db)
     for page, script in (("/cards", "cards.js"), ("/play", "play.js"), ("/decks", "builder.js")):
         html = client.get(page).get_data(as_text=True)
-        assert f'src="/static/{script}"' in html, page
+        assert f'src="/static/{script}?v=' in html, page
         assert client.get(f"/static/{script}").status_code == 200
     assert client.get("/api/carddb").status_code == 404     # not built yet: says how to get it

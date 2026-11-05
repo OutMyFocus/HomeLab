@@ -220,7 +220,7 @@ def test_offline_never_fetches(web):
 def test_page_follows_the_shared_layout(client):
     import re
     html = client.get("/news").get_data(as_text=True)
-    assert 'src="/static/shell.js"' in html and 'src="/static/look.js"' in html
+    assert 'src="/static/shell.js?v=' in html and 'src="/static/look.js?v=' in html
     assert html.count('class="brand"') == 1
     ids = re.findall(r'\sid="([^"]+)"', html)
     assert len(ids) == len(set(ids))

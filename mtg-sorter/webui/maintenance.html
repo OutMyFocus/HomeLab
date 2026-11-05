@@ -93,25 +93,43 @@
   <div class="grid2">
     <section class="panel">
       <h2>Restart and power</h2>
-      <p class="sub">Restart the app if the page misbehaves. Reboot if the camera or Wi-Fi went missing.
+      <p class="sub" id="powerSub">Restart the app if the page misbehaves. Reboot if the camera or Wi-Fi went missing.
         Always shut down before unplugging, so the SD card isn't damaged.</p>
       <div class="row">
         <button class="btn" data-do="restart">Restart app</button>
-        <button class="btn" data-do="reboot">Reboot Pi</button>
-        <button class="btn danger" data-do="poweroff">Shut down</button>
+        <button class="btn pi-only" data-do="reboot">Reboot Pi</button>
+        <button class="btn danger pi-only" data-do="poweroff">Shut down</button>
       </div>
     </section>
 
     <section class="panel">
       <h2>Updates</h2>
       <dl class="facts" id="versionFacts"></dl>
-      <label class="switch"><input type="checkbox" id="autoUpdate"><span></span>Update automatically (checks GitHub every 5 minutes)</label>
+      <p class="sub" id="dockerUpdates" hidden>This copy runs as a Docker image on the server. Updates arrive as a new image:
+        on Unraid's Docker tab press <b>Check for updates</b>, then <b>Update</b> next to mtg-sorter. Your cards and settings stay.</p>
+      <label class="switch pi-only"><input type="checkbox" id="autoUpdate"><span></span>Update automatically (checks GitHub every 5 minutes)</label>
       <div class="row">
-        <button class="btn" data-do="update">Update now</button>
-        <button class="btn ghost" data-do="update_force" title="Sets aside edits made on the Pi (nothing is deleted), then updates">Fix updates</button>
+        <button class="btn pi-only" data-do="update">Update now</button>
+        <button class="btn ghost pi-only" data-do="update_force" title="Sets aside edits made on the Pi (nothing is deleted), then updates">Fix updates</button>
+      </div>
+      <div class="row" id="dockerRow" hidden>
+        <button class="btn ghost" id="dockerBtn"></button>
+        <span class="sub" id="dockerSub"></span>
       </div>
     </section>
   </div>
+
+  <section class="panel">
+    <h2>Card database</h2>
+    <p class="sub">The scanner can only recognize cards it has a picture fingerprint for. Download every card
+      gets all of them from Scryfall (about 108,000 printings, 30-60 minutes) and refreshes their prices.
+      Scanning keeps working while it runs, and new cards are recognized as they arrive. Run it again after a new set comes out.</p>
+    <p class="sub" id="cardsMsg"></p>
+    <div class="row">
+      <button class="btn primary" data-do="cards_build" id="cardsBuild">Download every card</button>
+      <button class="btn ghost" id="cardsStop" hidden>Stop</button>
+    </div>
+  </section>
 
   <section class="panel">
     <h2>Test the moving parts</h2>
@@ -122,7 +140,7 @@
   </section>
 
   <div class="grid2">
-    <section class="panel">
+    <section class="panel pi-only">
       <h2>Wi-Fi</h2>
       <dl class="facts" id="netFacts"></dl>
       <p class="sub">Saved networks. The Pi joins any of these by itself, so add your other home's or your phone's hotspot before you move the sorter.</p>
@@ -152,8 +170,8 @@
       <div class="row">
         <div class="seg" id="logPick">
           <button aria-pressed="true" data-log="app">App</button>
-          <button aria-pressed="false" data-log="updates">Updates</button>
-          <button aria-pressed="false" data-log="system">System warnings</button>
+          <button class="pi-only" aria-pressed="false" data-log="updates">Updates</button>
+          <button class="pi-only" aria-pressed="false" data-log="system">System warnings</button>
         </div>
         <button class="btn ghost" id="logRefresh">Refresh</button>
         <a class="btn ghost" id="logDownload" href="/api/system/logs?which=app&lines=2000&download=1">Download</a>
@@ -200,17 +218,25 @@ function duration(s) {
 }
 
 // ---------- the check-up ----------
-const ACTION_LABEL = { restart: "Restart app", update: "Update now", update_force: "Fix updates", autoupdate_on: "Turn on" };
+const ACTION_LABEL = { restart: "Restart app", update: "Update now", update_force: "Fix updates", autoupdate_on: "Turn on",
+  cards_build: "Download every card" };
+let cardsT;
 async function load() {
   try { sys = await api("/api/system"); } catch (e) { $("heroTitle").textContent = "Couldn't reach the app"; return; }
   const live = sys.checks.filter((c) => c.state !== "off");
+  const serverDocker = !!sys.docker && !sys.pi_docker;
   const bad = live.filter((c) => c.state === "bad"), warn = live.filter((c) => c.state === "warn");
   $("heroDot").className = "dot big " + sys.overall;
   $("heroTitle").textContent = bad.length ? (bad.length === 1 ? bad[0].label + ": " + bad[0].summary : `${bad.length} problems need fixing`)
     : warn.length ? (warn.length === 1 ? warn[0].label + ": " + warn[0].summary : `${warn.length} things to look at`)
     : "Everything looks good";
   $("heroSub").textContent = [sys.hostname, sys.model, sys.uptime_s != null && "on for " + duration(sys.uptime_s),
-    !sys.on_pi && "on this computer, Pi-only checks are greyed out"].filter(Boolean).join(" · ");
+    serverDocker ? "the server's Docker container · the sorter's Pi has its own Maintenance page"
+      : !sys.on_pi && "on this computer, Pi-only checks are greyed out"].filter(Boolean).join(" · ");
+  // On the server there is no Pi to reboot, update or read system logs from: those buttons go.
+  for (const el of document.querySelectorAll(".pi-only")) el.hidden = serverDocker;
+  $("dockerUpdates").hidden = !serverDocker;
+  if (serverDocker) $("powerSub").textContent = "Restart the app if the page misbehaves. The server itself is managed from Unraid.";
   const order = { bad: 0, warn: 1, ok: 2, off: 3 };
   $("checks").innerHTML = [...sys.checks].sort((a, b) => order[a.state] - order[b.state]).map((c) => `
     <div class="check ${c.state}">
@@ -225,7 +251,19 @@ async function load() {
     <dt>Version</dt><dd>${esc(v.commit)}, ${esc(new Date(v.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }))}</dd>
     <dt>Latest change</dt><dd>${esc(v.subject)}</dd>
     <dt>Last check</dt><dd>${u ? esc(u.message) + " <span class='sub'>(" + ago(u.time) + ")</span>" : "not yet"}</dd>`
+    : v.docker ? `<dt>Version</dt><dd>Docker image ${esc(v.commit)}</dd>
+    <dt>Last check</dt><dd>${u ? esc(u.message) + " <span class='sub'>(" + ago(u.time) + ")</span>" : "not yet"}</dd>`
     : `<dt>Version</dt><dd>Not a git copy</dd>`;
+  const cb = sys.cards || {};
+  $("cardsMsg").textContent = cb.running ? cb.message : cb.error || cb.message || "";
+  $("cardsBuild").disabled = !!cb.running;
+  $("cardsStop").hidden = !cb.running;
+  clearTimeout(cardsT);
+  if (cb.running) cardsT = setTimeout(load, 4000);
+  $("dockerRow").hidden = !sys.on_pi || (sys.docker && !sys.pi_docker);
+  $("dockerBtn").textContent = sys.pi_docker ? "Back to the git copy" : "Use the server's Docker image";
+  $("dockerSub").textContent = sys.pi_docker ? "Runs the same image as the server, so both have the same version."
+    : "Runs the same image as the server (tower), so both always have the same version. Your cards stay here.";
   $("autoUpdate").checked = !!sys.auto_updates;
   $("autoUpdate").disabled = sys.auto_updates == null;
 
@@ -248,6 +286,10 @@ const CONFIRM = {
 async function act(what) {
   if (CONFIRM[what] && !confirm(CONFIRM[what])) return;
   if (what === "autoupdate_on") return setAuto(true);
+  if (what === "cards_build") {
+    try { toast((await api("/api/system/cards", {})).message, 7000); } catch (e) { toast(e.message, 9000); }
+    return load();
+  }
   const path = { restart: "restart", reboot: "reboot", poweroff: "poweroff", update: "update", update_force: "update" }[what];
   try {
     const r = await api("/api/system/" + path, { force: what === "update_force" });
@@ -286,8 +328,23 @@ document.addEventListener("click", (e) => {
     api("/api/system/wifi/forget", { name: f.dataset.forget }).then((r) => { toast(r.message); load(); }, (err) => toast(err.message, 9000));
   }
 });
+$("cardsStop").onclick = async () => {
+  try { toast((await api("/api/system/cards/stop", {})).message, 7000); } catch (e) { toast(e.message, 9000); }
+  load();
+};
 $("recheck").onclick = () => { $("heroTitle").textContent = "Checking…"; load(); };
 $("autoUpdate").onchange = (e) => setAuto(e.target.checked);
+$("dockerBtn").onclick = async () => {
+  const on = !sys.pi_docker;
+  if (!confirm(on ? "Switch the Pi to the server's Docker image? The app is off for 5-10 minutes the first time while it downloads."
+    : "Go back to running the app from the Pi's git copy?")) return;
+  try {
+    const r = await api("/api/system/docker", { on });
+    toast(r.message, 9000);
+    $("dockerBtn").disabled = true;
+    $("dockerSub").textContent = r.message + " Reload this page then: the Version line says Docker image.";
+  } catch (e) { toast(e.message, 9000); }
+};
 
 // ---------- moving parts ----------
 const PART_NAMES = { pins: "Stop pins", chute: "Chute tilt", door_r: "Right trapdoor", door_l: "Left trapdoor", feeder: "Feeder" };

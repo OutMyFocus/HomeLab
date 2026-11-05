@@ -39,17 +39,17 @@ def write_csv(rows):
 
 def test_home_is_the_dashboard_and_the_scanner_moved(client):
     home = client.get("/").get_data(as_text=True)
-    assert 'src="/static/home.js"' in home
+    assert 'src="/static/home.js?v=' in home
     scan = client.get("/scan").get_data(as_text=True)
-    assert 'src="/static/app.js"' in scan
+    assert 'src="/static/app.js?v=' in scan
 
 
 def test_every_page_has_the_shared_menu(client):
     for page in ["/", "/scan", "/collection", "/decks", "/wishlist", "/history", "/bins", "/machine",
                  "/maintenance", "/settings", "/lights", "/cards", "/play", "/sets"]:
         html = client.get(page).get_data(as_text=True)
-        assert 'src="/static/shell.js"' in html, page
-        assert 'src="/static/look.js"' in html or "mtg-scanner-look" in html, page   # the saved theme
+        assert 'src="/static/shell.js?v=' in html, page
+        assert 'src="/static/look.js?v=' in html or "mtg-scanner-look" in html, page   # the saved theme
 
 
 def test_menu_links_go_to_real_pages(client):
@@ -112,3 +112,13 @@ def test_pages_have_one_header_and_no_old_menus(client):
         assert 'class="pages"' not in html and 'id="menuBtn"' not in html, page
         ids = re.findall(r'\sid="([^"]+)"', html)
         assert len(ids) == len(set(ids)), (page, sorted({i for i in ids if ids.count(i) > 1}))
+
+
+def test_menu_is_short_and_has_every_page_once():
+    js = (WEB / "shell.js").read_text()
+    keys = re.findall(r'\{ key: "([a-z]+)", href:', js)
+    links = re.findall(r'const LINKS = \[(.*?)\]', js)[0]
+    groups = re.findall(r'pages: \[(.*?)\]', js)[:4]
+    placed = re.findall(r'"([a-z]+)"', links) + [k for g in groups for k in re.findall(r'"([a-z]+)"', g)]
+    assert sorted(placed) == sorted(keys)               # every page in exactly one spot
+    assert len(re.findall(r'"([a-z]+)"', links)) + len(groups) <= 6   # the header: 2 links and 4 menus

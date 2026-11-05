@@ -1,0 +1,42 @@
+/* Logging in, and the accounts on the Settings page (accounts.js). */
+.login-box .field, .acct-grid .field { border: 1px solid var(--line); background: var(--raised); color: var(--text);
+  border-radius: calc(var(--radius) * .6); font: inherit; padding: 9px 10px; width: 100%; }
+.login-fields { display: grid; gap: 12px; width: 100%; text-align: left; }
+.login-fields label, .acct-grid label { display: grid; gap: 5px; font-size: .85rem; font-weight: 600; color: var(--muted); }
+.login-fields .btn { justify-content: center; width: 100%; }
+.acct-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 12px; width: 100%; }
+.acct-people { max-width: 900px; }
+.acct-people h4 { margin: 8px 0 0; font-size: .95rem; }
+.perm-key { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 14px; margin: 0; width: 100%; }
+.perm-key div { font-size: .82rem; }
+.perm-key dt { font-weight: 700; }
+.perm-key dd { margin: 2px 0 0; color: var(--muted); }
+.people { display: grid; gap: 8px; width: 100%; }
+.person { display: grid; grid-template-columns: minmax(150px, 1fr) auto auto; align-items: center; gap: 10px 16px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: calc(var(--radius) * .7); background: var(--raised); }
+.person-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.person-perms { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.person-perms .role { width: auto; padding: 6px 8px; }
+.person-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.acct-tag { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--accent); }
+.perm { position: relative; cursor: pointer; }
+.perm input { position: absolute; opacity: 0; pointer-events: none; }
+.perm span { display: inline-block; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); font-size: .8rem;
+  font-weight: 600; color: var(--muted); transition: background var(--speed), color var(--speed); }
+.perm input:checked + span { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+.perm input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.perm input:disabled + span { opacity: .6; cursor: default; }
+@media (max-width: 760px) {
+  .person { grid-template-columns: 1fr; }
+  .person-actions { justify-content: flex-start; }
+}
+.invite-made { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; padding: 12px;
+  border-radius: calc(var(--radius) * .7); background: color-mix(in oklab, var(--accent) 10%, var(--raised)); }
+.invite-made .field { flex: 1 1 260px; min-width: 0; border: 1px solid var(--line); background: var(--bg, var(--raised)); color: var(--text);
+  border-radius: calc(var(--radius) * .6); font: inherit; font-size: .85rem; padding: 9px 10px; }
+.invite-made p { flex-basis: 100%; margin: 0; }
+.invites { display: grid; gap: 6px; width: 100%; }
+.invite { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: calc(var(--radius) * .7); }
+.invite span { display: grid; gap: 2px; min-width: 0; }
+.acct-grid select.field { padding: 8px 10px; }

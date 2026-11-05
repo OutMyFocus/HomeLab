@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/collection.css">
   <link rel="stylesheet" href="/static/decks.css">
   <link rel="stylesheet" href="/static/extras.css">
+  <link rel="stylesheet" href="/static/accounts.css">
   <link rel="stylesheet" href="/static/vault.css">
   <script src="/static/look.js"></script>
 </head>
@@ -32,10 +33,90 @@
   <script src="/static/shell.js"></script>
 
   <main class="coll">
-    <section class="panel setting vault">
+    <section class="panel setting" id="acctSetup" hidden>
+      <h3>Accounts</h3>
+      <p class="sub">Give everyone who uses the sorter their own login, with their own collection, decks, wishlist, trade
+        binder and games, and pick what each person is allowed to do. You become the owner: an admin with every permission,
+        and every card already here stays yours. A backup is saved first. The login replaces the PIN lock.</p>
+      <div class="acct-grid">
+        <label>Your name<input class="field" id="suName" autocomplete="name" placeholder="Nic"></label>
+        <label>Username<input class="field" id="suUser" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="nic"></label>
+        <label>Password<input class="field" id="suPass" type="password" autocomplete="new-password" placeholder="At least 6 characters"></label>
+        <label>Password again<input class="field" id="suPass2" type="password" autocomplete="new-password"></label>
+      </div>
+      <div class="row"><button class="btn primary" id="suGo">Turn on accounts</button><span class="sub" id="suMsg"></span></div>
+    </section>
+    <section class="panel setting" id="acctMe" hidden>
+      <h3>Your account</h3>
+      <p class="sub" id="meLine"></p>
+      <div class="acct-grid">
+        <label>Current password<input class="field" id="pwOld" type="password" autocomplete="current-password"></label>
+        <label>New password<input class="field" id="pwNew" type="password" autocomplete="new-password" placeholder="At least 6 characters"></label>
+        <label>New password again<input class="field" id="pwNew2" type="password" autocomplete="new-password"></label>
+      </div>
+      <div class="row">
+        <button class="btn ghost" id="pwGo">Change password</button>
+        <button class="btn ghost" id="outHere">Log out</button>
+        <button class="btn ghost" id="outAll">Log out my other devices</button>
+      </div>
+    </section>
+    <section class="panel setting acct-people" id="acctPeople" hidden>
+      <h3>People and permissions</h3>
+      <p class="sub">Everyone here has their own cards. Pick a role, or tick the exact permissions. Taking someone away keeps
+        their cards on the server: add the same username again to bring them back.</p>
+      <dl class="perm-key">
+        <div><dt>Scan</dt><dd>Scan into their own collection with their phone or photos</dd></div>
+        <div><dt>Edit</dt><dd>Change their own collection, decks, wishlist, trades and games</dd></div>
+        <div><dt>Machine</dt><dd>Run the sorting machine, Lights and Bins, and train the scanner</dd></div>
+        <div><dt>Admin</dt><dd>Everything, plus Maintenance, price checks and these accounts</dd></div>
+      </dl>
+      <div class="people" id="people"></div>
+      <h4>Invite someone with a link</h4>
+      <p class="sub">Make a link and text it to them. They open it, pick their own username and password, and they're in.
+        Each link works for the number of people you pick, until it runs out.</p>
+      <div class="acct-grid">
+        <label>Joins as<select class="field" id="invRole">
+          <option value="member" selected>Member: scan and keep their own cards</option>
+          <option value="viewer">Viewer: look only</option>
+        </select></label>
+        <label>Works for<select class="field" id="invUses">
+          <option value="1" selected>One person</option>
+          <option value="5">Up to 5 people</option>
+          <option value="20">Up to 20 people</option>
+        </select></label>
+        <label>Runs out after<select class="field" id="invDays">
+          <option value="1">1 day</option>
+          <option value="7" selected>7 days</option>
+          <option value="30">30 days</option>
+        </select></label>
+        <label>Note (for you)<input class="field" id="invNote" maxlength="40" placeholder="Game night crew"></label>
+      </div>
+      <div class="row"><button class="btn primary" id="invGo">Make invite link</button></div>
+      <div class="invite-made" id="invMade" hidden>
+        <input class="field" id="invLink" readonly aria-label="Invite link">
+        <button class="btn primary" id="invCopy">Copy</button>
+        <button class="btn ghost" id="invShare" hidden>Share</button>
+        <p class="sub">Copy it now: for safety the link is only shown once. Anyone with it can join, so send it only to who you mean to.</p>
+      </div>
+      <div class="invites" id="invites"></div>
+      <h4>Or add someone yourself</h4>
+      <div class="acct-grid">
+        <label>Name<input class="field" id="addName" placeholder="Alex"></label>
+        <label>Username<input class="field" id="addUser" autocapitalize="none" spellcheck="false" placeholder="alex"></label>
+        <label>Password<input class="field" id="addPass" type="password" autocomplete="new-password" placeholder="At least 6 characters"></label>
+        <label>Role<select class="field" id="addRole">
+          <option value="member" selected>Member: scan and keep their own cards</option>
+          <option value="viewer">Viewer: look only</option>
+          <option value="admin">Admin: everything</option>
+        </select></label>
+      </div>
+      <div class="row"><button class="btn primary" id="addGo">Add person</button><span class="sub">Send them the address, their username and password. They can change the password themselves.</span></div>
+    </section>
+    <section class="panel setting vault" id="pricesPanel">
       <h3>Prices and card data</h3>
       <p class="sub">Once a week the Pi checks the Near Mint price of every card in your collection, decks, wishlist and
-        trade binder at Face to Face Games (the main price), 401 Games, The Mythic Store and Hobbiesville, and updates
+        trade binder at Face to Face Games (the main price), 401 Games, The Mythic Store, Hobbiesville, and the Montreal
+        stores Card Brawlers and L'Univers de la Carte, and updates
         its list of every Commander card for Card lookup and the deck builder. You can run either one now.</p>
       <div class="vault-jobs">
         <div class="vault-job"><div><b>Canadian prices</b><small class="sub" id="vPrices" style="display:block">Checking…</small></div><button class="btn ghost" id="vRunPrices">Check prices now</button></div>
@@ -43,7 +124,7 @@
       </div>
       <p class="sub" id="vJob"></p>
     </section>
-    <section class="panel setting vault">
+    <section class="panel setting vault" id="vaultPanel">
       <h3>Bring in Commander Vault</h3>
       <p class="sub">Commander Vault is part of this app now. Pick the export file from Commander Vault and everything comes in:
         each collection source (as its own source on the Collection page), your decks with their guides, your wishlist,
@@ -59,7 +140,7 @@
       <label class="switch"><input type="checkbox" id="aSound"><span></span>Play a chime</label>
       <div class="row"><button class="btn ghost" id="aTest">Try it</button><span class="sub" id="aSaved"></span></div>
     </section>
-    <section class="panel setting">
+    <section class="panel setting" id="pinPanel">
       <h3>PIN lock</h3>
       <p class="sub" id="pinState">Checking…</p>
       <p class="sub">With a PIN, every page asks for it before anyone can see or change anything, so other people on your
@@ -87,5 +168,6 @@
   <script src="/static/common.js"></script>
   <script src="/static/chime.js"></script>
   <script src="/static/settings.js"></script>
+  <script src="/static/accounts.js"></script>
 </body>
 </html>

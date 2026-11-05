@@ -12,7 +12,7 @@ from pathlib import Path
 
 from flask import jsonify, request, send_from_directory
 
-from . import config
+from . import accounts, config
 from .database import Card
 from .sorting import card_price
 
@@ -21,11 +21,11 @@ MAX_BINDER = 1000
 
 
 def games_file() -> Path:
-    return config.DATA_DIR / "games.json"
+    return accounts.user_file("games.json")
 
 
 def trades_file() -> Path:
-    return config.DATA_DIR / "trades.json"
+    return accounts.user_file("trades.json")
 
 
 def _read(path: Path, key: str) -> list[dict]:
