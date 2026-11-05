@@ -83,7 +83,8 @@ class RemoteMachine:
                     "feeder": {"ok": False, "error": str(e), "running": False},
                     "parts": parts, "customized": False, "remote": self.url,
                     "feeder_defaults": {"seconds": config.FEEDER_SECONDS, "speed": config.FEEDER_SPEED,
-                                        "reverse": False}}
+                                        "reverse": False},
+                    "wide_travel": config.SERVO_WIDE_TRAVEL, "home_at_startup": config.HOME_AT_STARTUP}
         self._down_until = 0.0
         s["remote"] = self.url
         return s
@@ -102,6 +103,12 @@ class RemoteMachine:
 
     def relax_all(self):
         self._call("/api/machine/relax", {})
+
+    def home(self):
+        self._call("/api/machine/home", {}, timeout=(2, 15))
+
+    def set_home_at_startup(self, on: bool):
+        self._call("/api/machine/save", {"home_at_startup": bool(on)})
 
     def feed(self, seconds: float = None, speed: float = None, backward: bool = False):
         self._call("/api/machine/feed", {"seconds": seconds, "speed": speed, "backward": backward})
