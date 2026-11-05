@@ -28,7 +28,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from flask import Flask, Response, abort, jsonify, make_response, request, send_file, send_from_directory
-from mtgscanner import config
+from mtgscanner import camera as cameras_mod, config
 from mtgscanner.camera import BrowserSource, CameraSource, list_cameras  # noqa: F401  (tests patch these here)
 from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
@@ -860,6 +860,27 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         sc.source.push(img)
         return "", 204
 
+    @app.post("/api/camera/focus")
+    def camera_focus():
+        """Focus for the Pi camera: {"cm": null} keeps refocusing by itself, {"cm": 12}
+        locks the lens 12 cm away (the scan bed). Kept for next time."""
+        if not accounts.can("machine"):
+            refuse("Only people with the machine permission can change the machine's camera")
+        cm = (request.get_json(force=True, silent=True) or {}).get("cm")
+        if cm is not None:
+            try:
+                cm = float(cm)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Focus distance must be a number of cm"}), 400
+            if not 3 <= cm <= 1000:
+                return jsonify({"error": "Focus distance must be between 3 and 1000 cm"}), 400
+        source = scanner._next_source or scanner.source
+        if not (hasattr(source, "set_focus") and source.set_focus(cm)):   # webcams, demo photos, phones
+            return jsonify({"error": "This camera can't change its focus"}), 409
+        cameras_mod.focus_cm = cm
+        save_settings(focus_cm=cm)
+        return state()
+
     @app.post("/api/camera/release")
     def release_camera():
         """The device stopped scanning: its scanner goes away (its cards are saved already)."""
@@ -1116,10 +1137,17 @@ def startup_camera(index: int | None) -> CameraSource:
             index = next(c["index"] for c in cams if c["name"] == last["name"])
         except (KeyError, TypeError, StopIteration):
             pass
+    cameras_mod.focus_cm = saved_focus()  # the Pi camera opens with the focus picked last time
     try:
         return CameraSource(index, names.get(index))
     except RuntimeError as e:
         raise RuntimeError(f"{e} Try --camera 1, or --demo <folder> to test without one.")
+
+
+def saved_focus() -> float | None:
+    """The Pi camera focus picked on the page: None for auto, else a distance in cm."""
+    cm = load_settings().get("focus_cm")
+    return float(cm) if isinstance(cm, (int, float)) and 3 <= cm <= 1000 else None
 
 
 def main():
