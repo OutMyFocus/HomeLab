@@ -93,22 +93,24 @@
   <div class="grid2">
     <section class="panel">
       <h2>Restart and power</h2>
-      <p class="sub">Restart the app if the page misbehaves. Reboot if the camera or Wi-Fi went missing.
+      <p class="sub" id="powerSub">Restart the app if the page misbehaves. Reboot if the camera or Wi-Fi went missing.
         Always shut down before unplugging, so the SD card isn't damaged.</p>
       <div class="row">
         <button class="btn" data-do="restart">Restart app</button>
-        <button class="btn" data-do="reboot">Reboot Pi</button>
-        <button class="btn danger" data-do="poweroff">Shut down</button>
+        <button class="btn pi-only" data-do="reboot">Reboot Pi</button>
+        <button class="btn danger pi-only" data-do="poweroff">Shut down</button>
       </div>
     </section>
 
     <section class="panel">
       <h2>Updates</h2>
       <dl class="facts" id="versionFacts"></dl>
-      <label class="switch"><input type="checkbox" id="autoUpdate"><span></span>Update automatically (checks GitHub every 5 minutes)</label>
+      <p class="sub" id="dockerUpdates" hidden>This copy runs as a Docker image on the server. Updates arrive as a new image:
+        on Unraid's Docker tab press <b>Check for updates</b>, then <b>Update</b> next to mtg-sorter. Your cards and settings stay.</p>
+      <label class="switch pi-only"><input type="checkbox" id="autoUpdate"><span></span>Update automatically (checks GitHub every 5 minutes)</label>
       <div class="row">
-        <button class="btn" data-do="update">Update now</button>
-        <button class="btn ghost" data-do="update_force" title="Sets aside edits made on the Pi (nothing is deleted), then updates">Fix updates</button>
+        <button class="btn pi-only" data-do="update">Update now</button>
+        <button class="btn ghost pi-only" data-do="update_force" title="Sets aside edits made on the Pi (nothing is deleted), then updates">Fix updates</button>
       </div>
       <div class="row" id="dockerRow" hidden>
         <button class="btn ghost" id="dockerBtn"></button>
@@ -138,7 +140,7 @@
   </section>
 
   <div class="grid2">
-    <section class="panel">
+    <section class="panel pi-only">
       <h2>Wi-Fi</h2>
       <dl class="facts" id="netFacts"></dl>
       <p class="sub">Saved networks. The Pi joins any of these by itself, so add your other home's or your phone's hotspot before you move the sorter.</p>
@@ -168,8 +170,8 @@
       <div class="row">
         <div class="seg" id="logPick">
           <button aria-pressed="true" data-log="app">App</button>
-          <button aria-pressed="false" data-log="updates">Updates</button>
-          <button aria-pressed="false" data-log="system">System warnings</button>
+          <button class="pi-only" aria-pressed="false" data-log="updates">Updates</button>
+          <button class="pi-only" aria-pressed="false" data-log="system">System warnings</button>
         </div>
         <button class="btn ghost" id="logRefresh">Refresh</button>
         <a class="btn ghost" id="logDownload" href="/api/system/logs?which=app&lines=2000&download=1">Download</a>
@@ -222,13 +224,19 @@ let cardsT;
 async function load() {
   try { sys = await api("/api/system"); } catch (e) { $("heroTitle").textContent = "Couldn't reach the app"; return; }
   const live = sys.checks.filter((c) => c.state !== "off");
+  const serverDocker = !!sys.docker && !sys.pi_docker;
   const bad = live.filter((c) => c.state === "bad"), warn = live.filter((c) => c.state === "warn");
   $("heroDot").className = "dot big " + sys.overall;
   $("heroTitle").textContent = bad.length ? (bad.length === 1 ? bad[0].label + ": " + bad[0].summary : `${bad.length} problems need fixing`)
     : warn.length ? (warn.length === 1 ? warn[0].label + ": " + warn[0].summary : `${warn.length} things to look at`)
     : "Everything looks good";
   $("heroSub").textContent = [sys.hostname, sys.model, sys.uptime_s != null && "on for " + duration(sys.uptime_s),
-    !sys.on_pi && "on this computer, Pi-only checks are greyed out"].filter(Boolean).join(" · ");
+    serverDocker ? "the server's Docker container · the sorter's Pi has its own Maintenance page"
+      : !sys.on_pi && "on this computer, Pi-only checks are greyed out"].filter(Boolean).join(" · ");
+  // On the server there is no Pi to reboot, update or read system logs from: those buttons go.
+  for (const el of document.querySelectorAll(".pi-only")) el.hidden = serverDocker;
+  $("dockerUpdates").hidden = !serverDocker;
+  if (serverDocker) $("powerSub").textContent = "Restart the app if the page misbehaves. The server itself is managed from Unraid.";
   const order = { bad: 0, warn: 1, ok: 2, off: 3 };
   $("checks").innerHTML = [...sys.checks].sort((a, b) => order[a.state] - order[b.state]).map((c) => `
     <div class="check ${c.state}">
