@@ -174,3 +174,44 @@ def test_pages_that_were_not_listed_need_admin_to_change():
     assert needed("POST", "/api/wishlist/add") == "edit"
     assert needed("GET", "/api/collection") == ""
     assert needed("GET", "/maintenance") == "admin"
+
+
+def test_invite_links(app, tmp_path):
+    nic, sam = turn_on(app, tmp_path)
+    # Only admins make invites, and an invite can't make an admin.
+    assert sam.post("/api/accounts/invite", json={}).status_code == 403
+    assert nic.post("/api/accounts/invite", json={"role": "admin"}).status_code == 400
+    made = nic.post("/api/accounts/invite", json={"role": "member", "uses": 1, "note": "Alex"}).get_json()
+    code = made["code"]
+    assert made["path"] == "/join#" + code
+    assert code not in (tmp_path / "users.json").read_text()   # only its hash is kept
+    friend = device(app)
+    assert friend.get("/join").status_code == 200                  # no login needed
+    check = friend.post("/api/join", json={"code": code}).get_json()
+    assert check["invite"]["role"] == "member" and check["invite"]["by"] == "Nic"
+    assert friend.post("/api/join", json={"code": "wrong"}).status_code == 404
+    # The username of someone removed (whose cards are still kept) can't be taken.
+    sam.post("/api/collection/add", json={"id": "id2"})
+    nic.post("/api/accounts/remove", json={"username": "sam"})
+    assert friend.post("/api/join", json={"code": code, "username": "sam", "password": "alex-pass"}).status_code == 400
+    assert friend.post("/api/join", json={"code": code, "username": "nic", "password": "alex-pass"}).status_code == 400
+    r = friend.post("/api/join", json={"code": code, "username": "Alex", "password": "alex-pass", "name": "Alex"})
+    assert r.status_code == 200, r.get_json()
+    me = friend.get("/api/me").get_json()
+    assert me["me"]["username"] == "alex" and me["perms"] == {"scan": True, "edit": True, "machine": False, "admin": False}
+    assert friend.get("/api/collection").get_json()["cards"] == []
+    # Used up: the next person can't use it, and it's gone from the list.
+    assert device(app).post("/api/join", json={"code": code, "username": "jo", "password": "jo-pass1"}).status_code == 404
+    assert nic.get("/api/accounts").get_json()["invites"] == []
+
+
+def test_invites_for_several_people_and_cancelling(app, tmp_path):
+    nic, _ = turn_on(app, tmp_path)
+    code = nic.post("/api/accounts/invite", json={"role": "viewer", "uses": 5}).get_json()["code"]
+    for name in ("ann", "bob"):
+        assert device(app).post("/api/join", json={"code": code, "username": name, "password": "pass-123"}).status_code == 200
+    [inv] = nic.get("/api/accounts").get_json()["invites"]
+    assert inv["used"] == ["ann", "bob"] and inv["uses"] == 5
+    assert accounts.get("ann")["perms"] == []
+    assert nic.post("/api/accounts/invite/cancel", json={"id": inv["id"]}).status_code == 200
+    assert device(app).post("/api/join", json={"code": code, "username": "cy", "password": "pass-123"}).status_code == 404
