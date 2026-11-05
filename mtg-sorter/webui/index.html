@@ -220,6 +220,12 @@
           stroke-width="1.8"
           stroke-linecap="round" />
       </symbol>
+      <symbol id="i-rotate" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-crop" viewBox="0 0 24 24">
+        <path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
       <symbol id="i-slots" viewBox="0 0 24 24">
         <rect
           x="3.5"
@@ -372,6 +378,14 @@
                 Edit slots
               </button>
               <button class="cam-btn" id="clearSlotsBtn" hidden>Clear</button>
+              <button class="cam-btn" id="rotateBtn" title="Turn the picture a quarter turn clockwise" hidden>
+                <svg><use href="#i-rotate" /></svg><span>Rotate</span>
+              </button>
+              <button class="cam-btn" id="cropBtn" aria-pressed="false" title="Drag a box around the scan bed to show only that" hidden>
+                <svg><use href="#i-crop" /></svg><span>Crop</span>
+              </button>
+              <button class="cam-btn" id="uncropBtn" title="Show the whole camera picture again" hidden>Full view</button>
+              <span class="cam-hint" id="cropHint" hidden>Drag a box around the scan bed</span>
               <label
                 class="cam-btn cam-focus"
                 id="focusPick"

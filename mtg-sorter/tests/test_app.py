@@ -1,6 +1,7 @@
 """The browser app's API, using fake cards and Flask's test client (no camera needed)."""
 
 import csv
+import json
 
 import cv2
 import numpy as np
@@ -126,6 +127,41 @@ def test_set_pi_camera_focus(db, tmp_path, monkeypatch):  # noqa: F811
     # A webcam can't: say so instead of pretending.
     client = create_app(Scanner(db, None, source=FakeCamera(0))).test_client()
     assert client.post("/api/camera/focus", json={"cm": 12}).status_code == 409
+
+
+def test_rotate_and_crop_the_picture(db, tmp_path, monkeypatch):  # noqa: F811
+    import app
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    client = create_app(scanner).test_client()
+    client.post("/api/settings", json={"slots": [[0.5, 0.5, 1, 1]]})
+
+    state = client.post("/api/settings", json={"crop": [0.5, 0.5, 1, 1]}).get_json()
+    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1]}
+    assert state["slots"] == [[0, 0, 1, 1]]                      # same spot, now the whole picture
+    state = client.post("/api/settings", json={"crop": [0, 0, 0.5, 0.5]}).get_json()
+    assert state["view"]["crop"] == [0.5, 0.5, 0.75, 0.75]       # a crop of the crop
+    state = client.post("/api/settings", json={"rotate": 90}).get_json()
+    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75]}
+    saved = json.loads((tmp_path / "settings.json").read_text())
+    assert saved["rotate"] == 90 and saved["crop"] == [0.25, 0.5, 0.5, 0.75]
+
+    fresh = Scanner(db, None, source=FakeCamera(0))              # kept for next time
+    fresh.restore(saved)
+    assert fresh.rotate == 90 and fresh.crop == [0.25, 0.5, 0.5, 0.75]
+
+    state = client.post("/api/settings", json={"crop": None}).get_json()
+    assert state["view"]["crop"] is None
+    assert client.post("/api/settings", json={"rotate": 45}).status_code == 400
+    assert client.post("/api/settings", json={"crop": [0, 0, 0.01, 0.01]}).status_code == 400
+
+    # The scanner sees the turned, cropped picture.
+    client.post("/api/settings", json={"rotate": 0, "crop": [0, 0, 0.5, 1]})
+    scanner.source = type("Cam", (), {"read": lambda self: np.zeros((100, 200, 3), np.uint8)})()
+    seen = []
+    monkeypatch.setattr(scanner, "process", lambda f: seen.append(f.shape))
+    scanner.turn()
+    assert seen == [(100, 100, 3)]
 
 
 def show(scanner, frame, times):
