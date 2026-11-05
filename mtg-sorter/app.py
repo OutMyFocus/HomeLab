@@ -282,8 +282,17 @@ class Scanner:
             return
         if self.rotate or self.crop:
             frame = view.apply(frame, self.rotate, self.crop)
-        if self.tap is not None:
+        if self.tap is not None and self.tap.watching:
+            # A feed is watching for its card to land (feed_watch.py): hand it every
+            # picture straight away and skip finding and recognizing cards until it's done,
+            # which can take a few hundred ms a picture and made it see the card late.
             self.tap.put(frame)
+            jpeg = self._encode(frame)
+            with self.lock:
+                self.started = True
+                self.frame_size = (frame.shape[1], frame.shape[0])
+                self.jpeg = jpeg
+            return
         self.process(frame)
 
     def process(self, frame):
