@@ -104,6 +104,9 @@ CAMERA_SIZE = (1920, 1080)
 # Seconds a servo keeps holding after a move before it lets go (0 = hold until told).
 # Holding against something it can't push past makes a servo hot.
 SERVO_HOLD_SECONDS = 1.5
+# The parts in SERVO_KEEP_HOLDING (below) keep holding, but even they let go after this many seconds with no new
+# move, so a part jammed against a stop can't burn out its servo (0 = hold forever).
+SERVO_HOLD_LIMIT = 30
 # Parts that keep holding after a move, because they fall back on their own if let go:
 # the stop gate drops under its own weight, and it has to stand firm against the card the
 # feeder pushes into it. The chute v3 trapdoors hang from hinges at their outer edges, so
@@ -124,6 +127,7 @@ SERVOS = {
 # card. Saved angles are used. Turn it off on the Machine page.
 SERVO_HOME = {"door_r": "closed", "door_l": "closed", "chute": "centre", "pins": "up"}
 HOME_AT_STARTUP = True
+SERVO_HOME_SPEED = 60          # degrees a second when homing: a slow sweep, not a jump
 # Servo pulse widths in microseconds for 0 and 180 degrees. The first is ServoKit's
 # default, which turns an MG90S only about 130-140 real degrees. "Wider servo travel" on
 # the Machine page switches to the second for about the full 180 (some cheap servos buzz

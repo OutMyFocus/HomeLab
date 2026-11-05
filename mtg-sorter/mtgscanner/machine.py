@@ -24,6 +24,10 @@ def settings_file():
     return config.DATA_DIR / "machine_settings.json"
 
 
+def last_angles_file():
+    return config.DATA_DIR / "servo_last.json"
+
+
 def load_saved() -> dict:
     try:
         saved = json.loads(settings_file().read_text())
@@ -163,21 +167,48 @@ class Machine:
                 self._kit = None   # board unplugged or lost: find it again next time
                 raise
             self.angles[channel] = angle
+            if angle is not None:
+                self._remember(channel, angle)
             old = self._relax_timers.pop(channel, None)
             if old:
                 old.cancel()
-            hold = getattr(config, "SERVO_HOLD_SECONDS", 0)
             keep = {config.SERVOS[p][0] for p in getattr(config, "SERVO_KEEP_HOLDING", ())
                     if p in config.SERVOS}
-            if angle is not None and hold > 0 and channel not in keep:
-                # Let go once it has had time to get there. A servo held against
-                # something it can't push past draws full current and gets hot.
+            # Let go once it has had time to get there. A servo held against something it
+            # can't push past draws full current and gets hot. Parts that have to keep
+            # holding (the gate, the doors) still let go after SERVO_HOLD_LIMIT with no new
+            # move, so one jammed at a stop can't cook its servo.
+            hold = (getattr(config, "SERVO_HOLD_LIMIT", 0) if channel in keep
+                    else getattr(config, "SERVO_HOLD_SECONDS", 0))
+            if angle is not None and hold > 0:
                 token = object()
                 t = threading.Timer(hold, self._relax_after_move, (channel, token))
                 t.daemon = True
                 t.token = token
                 self._relax_timers[channel] = t
                 t.start()
+
+    def _remember(self, channel: int, angle: float):
+        """Keep the last angle sent to each servo in data/servo_last.json, so homing after
+        a restart can sweep from where the part was instead of jumping."""
+        last = self.last_angles()
+        if last.get(str(channel)) == angle:
+            return
+        last[str(channel)] = angle
+        try:
+            config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = last_angles_file().with_suffix(".tmp")
+            tmp.write_text(json.dumps(last))
+            tmp.replace(last_angles_file())
+        except OSError:
+            pass   # only a nicety: homing then just goes straight there
+
+    def last_angles(self) -> dict:
+        try:
+            last = json.loads(last_angles_file().read_text())
+            return last if isinstance(last, dict) else {}
+        except (OSError, ValueError):
+            return {}
 
     def _relax_after_move(self, channel, token):
         with self.lock:
@@ -222,13 +253,25 @@ class Machine:
         for channel, _ in config.SERVOS.values():
             self.set_angle(channel, None)
 
-    def home(self, pause: float = 0.4):
+    def home(self, pause: float = 0.4, speed: float | None = None):
         """Every part to its home position (config.SERVO_HOME), with the saved angles, one
-        at a time so they don't all draw current at once."""
+        at a time so they don't all draw current at once. Each one sweeps there slowly
+        (config.SERVO_HOME_SPEED degrees a second) from the last angle it was sent, so
+        nothing slams into a stop; a part with no last angle goes straight there."""
+        speed = speed or config.SERVO_HOME_SPEED
+        servos, last = self.servos(), self.last_angles()
         for part, position in config.SERVO_HOME.items():
-            if part in config.SERVOS:
-                self.move(part, position)
-                time.sleep(pause)
+            if part not in servos or position not in servos[part][1]:
+                continue
+            channel, target = servos[part][0], float(servos[part][1][position])
+            start = last.get(str(channel))
+            if isinstance(start, (int, float)) and speed > 0:
+                steps = int(abs(target - start) // 2)            # 2 degree steps
+                for i in range(1, steps + 1):
+                    self.set_angle(channel, start + (target - start) * i / (steps + 1))
+                    time.sleep(2 / speed)
+            self.set_angle(channel, target)
+            time.sleep(pause)
 
     def self_test(self, pause: float = 0.6) -> list[dict]:
         """Moves every servo through its positions and back, then nudges the feeder.
