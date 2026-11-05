@@ -140,6 +140,15 @@ FEEDER_PINS = (17, 27)
 # How fast the feeder turns (0-1) and how long one push lasts (seconds).
 FEEDER_SPEED = 1.0
 FEEDER_SECONDS = 1.2
+# "Feed one card" on the Machine page runs the motor while watching the camera, and stops
+# it the moment a card lands in this box: [x0, y0, x1, y1] as shares of the camera picture
+# (after Rotate and Crop), a band across the bed just above the stop teeth. Set it on the
+# Machine page; this is only the starting guess. See mtgscanner/feed_watch.py.
+FEED_ZONE = (0.2, 0.62, 0.8, 0.70)
+FEED_LAND_SHARE = 0.25       # this much of the box looking different = a card is there
+FEED_DIFF_LEVEL = 30         # grey levels (0-255) a pixel must change by to count
+FEED_MAX_SECONDS = 3.0       # give up (motor off) if no card has landed by then
+FEED_SETTLE_SECONDS = 0.8    # then wait this long to see where it came to rest
 
 # --- The light bars (lights.py) --------------------------------------------
 # 5 V addressable RGB bars (WS2812, "3-pin ARGB"). Their data wire goes to GPIO10 (pin 19),
