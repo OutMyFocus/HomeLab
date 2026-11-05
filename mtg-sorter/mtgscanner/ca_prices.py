@@ -1,8 +1,9 @@
 """The weekly Canadian price check (what Commander Vault's weekly check-in did, now on the Pi).
 
 For every card in your collection, your decks, your wishlist and your trade binder it
-looks up the Near Mint price at four Canadian stores: Face to Face Games (the main
-price), 401 Games, The Mythic Store and Hobbiesville. Valuable, foil and special
+looks up the Near Mint price at Canadian stores: Face to Face Games (the main price,
+a Montreal store), 401 Games, The Mythic Store, Hobbiesville, and two more Montreal
+stores, Card Brawlers and L'Univers de la Carte (see montreal.py). Valuable, foil and special
 printings in the collection also get a price for that exact printing. Everything is
 saved to data/vault_prices.json, which the scanner, the bins and every page use (see
 vault_prices.py). Last week's main prices are kept as "prev" for the price trends.
@@ -30,7 +31,13 @@ STORES = {
     "401": ("401 Games", "https://store.401games.ca"),
     "myth": ("The Mythic Store", "https://themythicstore.com"),
     "hob": ("Hobbiesville", "https://www.hobbiesville.com"),
+    "cb": ("Card Brawlers", "https://cardbrawlers.com"),                 # Montreal, avenue du Parc
+    "udc": ("L'Univers de la Carte", "https://luniversdelacarte.ca"),     # Montreal area, online
 }
+# Stores that list one product per printing and put Foil / Non-foil inside it as a variant.
+VARIANT_FOIL = {"myth", "cb", "udc"}
+# Variants in another language (L'Univers de la Carte sells French copies too).
+OTHER_LANGUAGE = re.compile(r"french|fran[cç]ais|japanese|german|italian|spanish|chinese|korean|russian|portuguese", re.I)
 HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux aarch64) mtg-sorter-price-check", "Accept": "application/json"}
 SKIP = re.compile(r"art series|art card|oversized|token|displayed|proxy|playmat|sleeve|signed|deck box|booster|"
                   r"bundle|\bdeck\b|japanese|jp\b|\bjpn\b|german|french|italian|spanish|chinese|korean|russian|"
@@ -86,6 +93,8 @@ def _base(store: str, title: str) -> str:
         return title.split(" [")[0]
     if store == "myth":
         return re.split(r" \(| \[", title)[0]
+    if store in ("cb", "udc"):
+        return re.split(r" \(| \[| - ", title)[0]
     return re.split(r" \(| - ", title)[0]
 
 
@@ -96,7 +105,7 @@ def _title_foil(store: str, title: str) -> bool:
         return bool(re.search(r"\(Foil\)|\bFoil\b", title))
     if store == "hob":
         return bool(re.search(r"\bFoil\s*$|\) Foil", title))
-    return False   # The Mythic Store: foil is a variant inside the product
+    return False   # The Mythic Store, Card Brawlers, L'Univers de la Carte: foil is a variant inside the product
 
 
 def _near_mint(variant_title: str) -> bool:
@@ -127,14 +136,14 @@ def store_price(shop: Shop, store: str, name: str) -> list | None:
     cands.sort()
     regular = [c for c in cands if not c[2]][:3]
     foils = [c for c in cands if c[2]][:2]
-    if store == "myth":
+    if store in VARIANT_FOIL:
         regular, foils = cands[:3], []
     opts, foil_opts = [], []
     for _, handle, is_foil in regular + foils:
         for title, price, available in shop.variants(host, handle):
-            if not _near_mint(title):
+            if not _near_mint(title) or OTHER_LANGUAGE.search(title):
                 continue
-            foil = is_foil or (store == "myth" and "foil" in title.lower())
+            foil = is_foil or (store in VARIANT_FOIL and "foil" in title.lower())
             (foil_opts if foil else opts).append((not available, price))
     if not opts and not foil_opts:
         return None

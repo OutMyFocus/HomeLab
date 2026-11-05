@@ -19,12 +19,19 @@ A roller with rubber O-rings sits under the stack and pokes 0.8 mm up through th
 When it turns, it drags the bottom card forward under the **gate**: a plate whose bottom
 edge sits just over one card's thickness above the floor. One card fits under it, two don't.
 
+**v2 (feeder.scad):** the wheels now ride on a spring-loaded arm, the gate has a rubber pad
+and a thumb screw, and a weight sits on the stack. See [MECHANISM_V2.md](MECHANISM_V2.md);
+everything prints from `bambu/MTG_Sorter_Feeder_And_Bed_v2.3mf`. The STLs below are the v2
+parts. `feeder_test.scad` is the first test rig, kept for reference.
+
 | File | Print | Notes |
 |---|---|---|
-| `stl/feeder_stand_mid.stl` | as it opens, 15% infill | The box underneath, with the motor cradle. 92 mm: the height it needs on the enclosure's bridge |
-| `stl/feeder_hopper.stl` | as it opens, 15% infill | Floor and walls. Holds about 190 cards |
-| `stl/feeder_gate.stl` | flat | The adjustable gate |
-| `stl/feeder_roller.stl` | standing on its end, **100% infill** | Goes on the motor shaft |
+| `stl/feeder_stand_mid.stl` | as it opens, brim | The box underneath. The arm hinges inside it on two M3 screws, and the motor sticks out through the right wall. 96 mm, with its front cut away under the sloped bed |
+| `stl/feeder_arm.stl` | as it opens | Carries the motor and roller. A rubber band on its tail pushes the wheels up |
+| `stl/feeder_roller.stl` | standing on its end, **100% infill** | Two wheels 30 mm apart, each with a 3 mm O-ring (20x3 or 22x3), 2.5 mm above the floor at the stop |
+| `stl/feeder_hopper.stl` | as it opens, brim | Floor and walls. Holds about 180 cards under the weight |
+| `stl/feeder_gate.stl` | flat | Gate with a groove for a rubber pad (cut 1.9 mm O-ring); an M3 thumb screw sets its height |
+| `stl/feeder_weight.stl` | flat | Sits on the stack; coins or nuts go in its pockets |
 
 ### Parts to buy
 
@@ -90,15 +97,19 @@ the tray tilted both ways, the trapdoors open, and the pins up and down.
 
 | File | How many | Colour | Notes |
 |---|---|---|---|
-| `bed_plate` | 1 | **white** | The surface the camera looks at |
+| `bed_plate` | 1 | **white** | The surface the camera looks at. v2: 2.5 mm guide rails with a funnel at the top, four slots for the stop teeth |
 | `bed_side_left_enclosure`, `bed_side_right_enclosure` | 1 each | black | lie them flat. Right one has the camera socket; both have the foot flange that screws to the enclosure's bridge |
 | `tower_post`, `camera_head` | 1 each | black | |
-| `pin_rocker` | 1 | any | The two stop pins |
+| `stop_gate` | 1 | black | v2: four stop teeth, 8 mm tall, on a bar across the bed. Turned by the pin servo; replaces `pin_rocker` |
+| `gate_bearing` | 1 | black | v2: clips on the right end of the tilt bracket and holds the stop gate's right end |
 | `tilt_bracket` | 1 | black | |
-| `chute` | 1 | any | The tray |
-| `trapdoor`, `trapdoor_left` | 1 each | any | |
-| `trapdoor_mount`, `trapdoor_mount_left` | 1 each | any | |
-| `hinge_lug`, `hinge_lug_left` | 1 each | any | |
+| `chute3` | 1 | black | v3 (2026-11-04) tray: no screws through the floor, door servos in pockets in its 8 mm front wall. See [CHUTE_V3.md](CHUTE_V3.md) |
+| `door3`, `door3_left` | 1 each | black | v3 doors, on round journals at both ends |
+| `hinge_frame3` | 1 | black | screws up under the tray and clamps the door journals (7 × M3 × 12) |
+| `door_crank3`, `door_crank3_left`, `servo_crank3`, `servo_crank3_left`, `door_link3` ×2 | | black | the crank-and-link drive from each servo to its door (95°) |
+
+The v1/v2 `chute`, `trapdoor`s, `hinge_pin`s, `trapdoor_mount`s, `hinge_lug`s and `door_carrier`s are retired
+(the carrier snapped in testing, and their screws stood in the card's path).
 
 All print flat, as they open, with no supports. 15–20% infill is fine. The open frame and
 the three bins the bed first sat in (`frame_side`, `front_bar`, `bin`) are gone: the
@@ -113,7 +124,7 @@ the three bins the bed first sat in (`frame_side`, `front_bar`, `bin`) are gone:
 | Trapdoors | 2× SG90 servos, under the front of the tray |
 
 A PCA9685 servo board connects all four servos to the Raspberry Pi. The feeder rig sits
-behind the bed on its stand (`feeder_stand_mid`, 92 mm, on the enclosure's bridge), so cards
+behind the bed on its stand (`feeder_stand_mid`, 96 mm, on the enclosure's bridge), so cards
 come off its exit shelf straight onto the bed.
 
 # Enclosure
@@ -193,7 +204,8 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 
 | File | How many | Colour | Notes |
 |---|---|---|---|
-| `post_front`, `post_back` | 2 each | black | print standing, pegs up, 204 mm tall |
+| `post_front`, `post_front_r` | 1 each | black | front-left and front-right corner posts. Mirror images: printing `post_front` twice gives two left posts. Print standing, pegs up, 204 mm tall |
+| `post_back` | 2 | black | same for both back corners |
 | `side` | 4 | black | two per side; flip the second one end for end |
 | `fascia_l`, `fascia_m`, `fascia_r` | 1 each | black (dark grey later, if you like) | the band across the front, left to right |
 | `light_bar` | 1 | **white** | behind the three slots, glued across the fascia seams |
@@ -201,9 +213,11 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `floor_fl`, `floor_fr`, `floor_bl`, `floor_br` | 1 each | black | the base plate; its edge shows |
 | `deck_fl`, `deck_fr`, `deck_bl`, `deck_br` | 1 each | black | print as they open (upside down) |
 | `divider` | 2 | any | |
-| `bridge_front`, `bridge_back` | 1 each | any | |
+| `bridge_front`, `bridge_back` | 1 each | any | `bridge_front` is v3 since 2026-11-04: a 10 mm bearing wall the tray's front axle drops into, closed by `bridge_cap` |
+| `bridge_cap` | 1 | any | the bearing cap on `bridge_front` (2 × M3 × 12) |
 | `leg` | 2 | any | |
-| `splice` | 10 | any | |
+| `leg_offset` | 0 or 1 | any | only for a floor printed with the Pi at x = 40: replaces the right rear `leg`, standing beside the Pi |
+| `splice` | 26 | any | 24 used (floor 6, bridge 2, deck 2, fascia 4, back 4, sides 6), 2 spare |
 | `tower`, `tower_lid` | 1 each | black | |
 | `post_sleeve`, `head_cover` | 1 each | black | |
 | Card Catalog v1.2 drawer + drawer top | 3 each | your choice | from the MakerWorld 3MF, not this repo |
@@ -218,10 +232,11 @@ flat parts (floor and deck tiles) are 146 × 240 mm, and the shell is 292 wide, 
 All flat parts print as they open, no supports, 0.2 mm, 15–20% infill. The posts stand up.
 **[`bambu/MTG_Sorter_Enclosure.3mf`](bambu/) is all of it as one Bambu Studio project (File → Open Project), every plate laid out and set up. [`PRINTING.md`](PRINTING.md) has the plate-by-plate print order, the slicer settings
 per part, colours, and the three fit-check plates to print first.**
+**[`ASSEMBLY_PICTURES.md`](ASSEMBLY_PICTURES.md) shows the build one picture per step.**
 Every seam between two tiles has a small V along it on the visible face, so the joints
 read as panel lines rather than cracks, and the deck has a 2 mm chamfer round its top
 edges and its openings.
 
 Other parts: 6 stick-on rubber feet (8 mm), about 20 M3 × 8 and 30 M2 × 6 self-tapping
-screws, 4 M2.5 × 6 for the Pi, CA glue for the splices in the thin panels (fascia, back,
+screws, 8 M2.5 × 6 for the Pi and the PCA9685, CA glue for the splices in the thin panels (fascia, back,
 sides: their pockets are too shallow for screws).

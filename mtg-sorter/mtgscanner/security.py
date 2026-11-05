@@ -22,6 +22,7 @@ from pathlib import Path
 from flask import jsonify, make_response, request, send_from_directory
 
 from . import accounts, config
+from .remote_machine import server_allowed
 
 COOKIE = "mtg_unlocked"
 DAYS = 30
@@ -122,6 +123,8 @@ def install(app, web_dir):
     def guard():
         path = request.path
         if accounts.enabled():   # logins (logins.py) do the PIN's job then
+            return None
+        if server_allowed():     # the server driving this Pi's machine (remote_machine.py)
             return None
         if path in OPEN_PATHS or path.startswith("/static/") or allowed():
             return None

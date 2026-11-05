@@ -15,8 +15,8 @@ It has three parts, built in this order:
 (Safari: the Share button). It gets its own icon and opens full screen like an app, with the
 page menu along the bottom.
 
-**Looking after it:** Maintenance, in the menu at the top of every page (under More on a
-phone), has the health check-up, updates, restart, backups and logs. It gets a yellow or red dot
+**Looking after it:** Maintenance, under the gear in the menu at the top of every page (under
+More on a phone), has the health check-up, updates, restart, backups and logs. It gets a yellow or red dot
 when something needs a look. What to do when something goes wrong:
 [MAINTENANCE.md](MAINTENANCE.md).
 
@@ -26,8 +26,10 @@ when something needs a look. What to do when something goes wrong:
    biggest 4-cornered shape shaped like a card.
 2. **Straighten it.** It stretches that shape into a flat, upright rectangle, as if
    the card had been scanned on a flatbed scanner.
-3. **Fingerprint it.** It shrinks the image and turns it into a 256-bit "perceptual
-   hash". Similar-looking images get similar fingerprints, even with blur or different lighting.
+3. **Fingerprint it.** It shrinks the image and turns it into two 256-bit "perceptual
+   hashes", one of the whole card and one of its art. Similar-looking images get similar
+   fingerprints, even with blur, glare or different lighting. The art one is what tells
+   apart two different cards with the same frame among the 108,000 printings there are.
 4. **Look it up.** `build_db.py` already downloaded every card image from
    [Scryfall](https://scryfall.com) and fingerprinted it. The scanner finds the closest
    fingerprint. That gives the card name, set, collector number and price.
@@ -45,21 +47,26 @@ pip install -r requirements.txt
 
 ## Build the card database
 
-Start small to try it out. This fetches two sets and takes under a minute:
+The scanner can only recognize cards that are in its database, so get every card. The
+easiest way is the **Download every card** button on the Maintenance page (it runs in the
+background, scanning keeps working, and new cards are recognized as they arrive). From a
+terminal it's:
+
+```bash
+python build_db.py --all       # every card: an 80 MB list, then 108,000 small pictures, 30-60 minutes
+```
+
+To try it out quickly, fetch a few sets, or just the sets of the cards in your collection:
 
 ```bash
 python build_db.py --sets dmu,one
+python build_db.py --mine
 ```
 
-Set codes are the 3-letter codes on Scryfall (for example `mkm`, `blb`, `fdn`, `cmm`). When
-you're happy, fetch every card. It takes a few hours, and you can stop it and run it again
-to resume:
-
-```bash
-python build_db.py --all
-```
-
-Run the same command again later to **refresh prices** for cards you already have.
+Set codes are the 3-letter codes on Scryfall (for example `mkm`, `blb`, `fdn`, `cmm`). You
+can stop any of these and run it again to resume. Run it again later to add new sets and
+**refresh prices** for cards you already have; cards fingerprinted by an older version get
+the newer fingerprint at the same time.
 
 ## Scan cards with the app (easiest)
 
@@ -93,9 +100,11 @@ Then open **http://localhost:5000** in your browser. You get:
   servo board, feeder and Pi are OK, the collection's value and a value chart, cards scanned in
   the last 14 days, the newest cards, the most valuable ones, the biggest price changes and how
   full each bin is. The scanner itself is at `/scan`.
-- **Page menu**: the same on every page. Links across the top on a computer (the rest under
-  **More** when the window is narrow, or press M on the scanner), and a bar along the bottom on
-  a phone. With no camera connected, the scanner says so and offers **Scan photos instead**.
+- **Page menu**: the same on every page, and short: **Home**, **Scanner**, then **Cards**
+  (Collection, Sets, Wishlist, Card lookup, Scan history), **Decks** (Decks, Play), **Machine**
+  (Machine, Bins, Lights) and the gear (Settings, Maintenance), each a small drop-down. Press M
+  on the scanner to see every page at once. On a phone it's a bar along the bottom: Home,
+  Scanner, Cards, Decks and More. With no camera connected, the scanner says so and offers **Scan photos instead**.
 - **Collection** (in the menu, or **Whole collection**): everything you've ever saved.
   Search and filter by color, rarity, set, bin, foil and price, sort it, and switch between
   pictures and a list. Tap a card to change how many you have, mark it foil, pick a different
@@ -123,6 +132,13 @@ Then open **http://localhost:5000** in your browser. You get:
   deck checks (size, singleton, color identity, lands, ramp, draw, removal), the mana curve,
   Canadian prices, which cards you own, need to buy or proxy, suggestions that fit, a playtest
   hand, a game guide when there is one, and **Copy shopping list**.
+  Its **Upgrade path** shows how to make the deck the best version of itself, in four steps
+  from the fewest swaps to the most (3, then 7, 10 and 20 more). Each swap names the card to
+  cut and the card to add, why, and its Canadian price; cards you already own are free and come
+  sooner. It compares the deck with what EDHREC's decks for the same commander play (kept on the
+  Pi for a week, in data/edhrec/), or with the most played Commander cards when EDHREC can't be
+  reached. Set a most-per-card budget, keep Game Changers out, and press **Swap** or **Make
+  these swaps** to change the deck.
 - **Card lookup**: search every Commander card (the whole database is on the Pi, so it's
   instant), by name, text, type, color or set and number. Filter by role (ramp, draw, removal…),
   see a card's prices at each Canadian store, every printing, how many you own, which of your
@@ -228,7 +244,7 @@ permission, and every card, deck, wishlist and trade already in the app stays yo
 (nothing is moved; a backup is saved in `data/backups/` first). From then on everyone
 logs in, and the login replaces the PIN lock.
 
-Add people under **People and permissions**. Each person gets their own collection,
+Add people under **People and permissions**, or make an **invite link** there (for one person, or up to 5 or 20; it runs out after 1, 7 or 30 days) and text it to them: they pick their own username and password and join as a member or viewer. Only a hash of each link is kept, so copy it when it's shown. Each person gets their own collection,
 decks, wishlist, alerts, trade binder, games and value history (in `data/users/<username>/`),
 and scans from their phone land in their own collection. Pick a role or tick permissions:
 
@@ -274,7 +290,7 @@ in `mtgscanner/config.py`. Defaults:
 
 Once a week the app checks the Near Mint price of every card in your collection, decks,
 wishlist and trade binder at Face to Face Games (the main price), then 401 Games, The Mythic
-Store and Hobbiesville, and saves them in `data/vault_prices.json`. Valuable cards (foils,
+Store, Hobbiesville, Card Brawlers and L'Univers de la Carte, and saves them in `data/vault_prices.json`. Valuable cards (foils,
 special numbers, $1.50 and up) also get their exact printing's price. The same week it
 updates the Commander card database (`data/carddb.json`, from Scryfall's bulk data) that Card
 lookup and the deck builder use. **Settings, Prices and card data** runs either one now. Cards
@@ -284,6 +300,19 @@ day. While the app runs it also checks Scryfall for today's price of each card i
 recognizes (start it with `--offline` to skip that and use the database's prices). The rate is fetched once a day and saved in `data/usd_cad.json`. Offline, it uses the
 last saved rate, or `USD_TO_CAD` in `config.py`. The `data/` folder is never committed, so
 your prices stay on your computer.
+
+### Montreal prices
+
+When the scanner recognizes a card, the card panel shows what it costs in Montreal today:
+Face to Face Games first, then Card Brawlers and L'Univers de la Carte. Each store's price
+is for that exact printing when the store has it ("this printing"), otherwise its cheapest
+copy ("cheapest"), and each one links to the store's page. Answers are kept for 12 hours.
+The Collection has a **Montreal** column (Face to Face Games' price, or the next Montreal
+store's) from the weekly price check, and each card's details list every Montreal store.
+
+Carta Magica and L'Expédition run on Crystal Commerce, which refuses automated requests, and
+Le Valet d'Coeur sits behind a bot check, so the app can't read their prices. The card panel
+links to a search for the card on each of those sites instead. See `mtgscanner/montreal.py`.
 
 ## Run the tests
 

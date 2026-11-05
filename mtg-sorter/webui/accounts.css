@@ -30,3 +30,13 @@
   .person { grid-template-columns: 1fr; }
   .person-actions { justify-content: flex-start; }
 }
+.invite-made { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; padding: 12px;
+  border-radius: calc(var(--radius) * .7); background: color-mix(in oklab, var(--accent) 10%, var(--raised)); }
+.invite-made .field { flex: 1 1 260px; min-width: 0; border: 1px solid var(--line); background: var(--bg, var(--raised)); color: var(--text);
+  border-radius: calc(var(--radius) * .6); font: inherit; font-size: .85rem; padding: 9px 10px; }
+.invite-made p { flex-basis: 100%; margin: 0; }
+.invites { display: grid; gap: 6px; width: 100%; }
+.invite { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: calc(var(--radius) * .7); }
+.invite span { display: grid; gap: 2px; min-width: 0; }
+.acct-grid select.field { padding: 8px 10px; }

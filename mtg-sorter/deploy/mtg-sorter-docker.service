@@ -1,0 +1,34 @@
+# The sorter app on the Pi, from the same Docker image as the server (tower), so both run
+# exactly the same version. install.sh puts this in place as mtg-sorter.service once the Pi
+# is switched to Docker (mtg docker on; see PI_DOCKER.md), so `systemctl restart mtg-sorter`,
+# the logs and the Maintenance page all work as before.
+#
+# --privileged and /run/udev: the container needs the Pi camera, the servo board (I2C),
+#   the feeder (GPIO), the light bars (SPI) and vcgencmd (power readings).
+# /dev/dma_heap: the Pi camera's picture memory. --privileged copies the device files but
+#   not the vidbuf_cached link udev adds on the Pi, and without it picamera2 falls back to
+#   the small CMA pool (64 MB, mostly used by the display) and fails with "Cannot allocate
+#   memory". Mounting the Pi's own folder brings the link along.
+# --network host: same addresses as before (port 5000, Tailscale Serve), and requests
+#   from the Pi itself still count as local for the PIN lock.
+# The data folder is the same one the old app used, so cards and settings carry over.
+# mtg-sorter:run is the image that last started fine; update-docker.sh moves it.
+[Unit]
+Description=MTG sorter web app (Docker)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f mtg-sorter
+ExecStart=/usr/bin/docker run --rm --name mtg-sorter --privileged --network host \
+    -v /home/nic/HomeLab/mtg-sorter/data:/data -v /run/udev:/run/udev:ro \
+    -v /dev/dma_heap:/dev/dma_heap \
+    -e TZ=America/Toronto -e MTG_HOST_BRIDGE=1 \
+    mtg-sorter:run
+ExecStop=/usr/bin/docker stop -t 10 mtg-sorter
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

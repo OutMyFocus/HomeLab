@@ -92,6 +92,19 @@ For a Commander deck, put the commander under a Commander line and the deck buil
         </div>
         <p class="sub" id="bNote" style="margin: 10px 0 0"></p>
       </div>
+      <div class="panel upg" id="upg" hidden>
+        <div class="panel-head"><h3>Upgrade path</h3><span class="sub" id="uSrc"></span></div>
+        <p class="sub upg-intro">How to make this the best version of the deck, a few swaps at a time. Step 1 is the few swaps that help the most; each step after adds more, up to the best version. Cards you already own are free, so they get picked sooner.</p>
+        <div class="toolbar">
+          <label class="sub">Most per card <select id="uBudget" aria-label="Most to spend per card">
+            <option value="">Any price</option><option value="1">$1</option><option value="3">$3</option><option value="5">$5</option><option value="10">$10</option><option value="25">$25</option><option value="50">$50</option>
+          </select></label>
+          <label class="switch" title="Game Changers push a deck to Bracket 3 or higher"><input type="checkbox" id="uNoGc" checked><span></span>No new Game Changers</label>
+        </div>
+        <div id="uFit"></div>
+        <div id="uNotes"></div>
+        <div id="uSteps"></div>
+      </div>
       <div class="groups" id="bGroups"></div>
       <div class="panel" style="padding: var(--pad)">
         <div class="panel-head"><h3>Playtest: draw a test hand</h3><span class="sub" id="ptOdds"></span></div>
@@ -135,5 +148,6 @@ For a Commander deck, put the commander under a Commander line and the deck buil
   <script src="/static/decks.js"></script>
   <script src="/static/vault.js"></script>
   <script src="/static/builder.js"></script>
+  <script src="/static/upgrades.js"></script>
 </body>
 </html>

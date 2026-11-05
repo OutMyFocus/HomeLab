@@ -38,6 +38,7 @@
     $("bGuide").hidden = !deck.guide; if (deck.guide) $("bGuide").href = deck.guide;
     $("bNote").textContent = S.cards ? "" : "Checks, the curve and card types need the card database. It downloads once, then stays in this browser.";
     groups(ch.bad); curve(); renderPt();
+    window.UPGRADES?.render(deck);
   }
 
   function groups(bad) {
@@ -97,6 +98,19 @@
   $("bProxy").onchange = async () => {
     try { await window.DECKS.save({ proxied: $("bProxy").checked }); toast($("bProxy").checked ? "Marked complete with proxies" : "Shows missing cards again"); render(); }
     catch (e) { toast(e.message); }
+  };
+
+  // For the upgrade path (upgrades.js): make swaps, each [card to cut, card to add].
+  window.BUILDER = {
+    apply(pairs, msg) {
+      read();
+      for (const [cut, add] of pairs) {
+        const i = deck.list.findIndex(x => norm(x[0]) === norm(cut)); if (i < 0) continue;
+        if (deck.list[i][1] > 1) deck.list[i][1]--; else deck.list.splice(i, 1);
+        const ex = deck.list.find(x => norm(x[0]) === norm(add)); if (ex) ex[1]++; else deck.list.push([add, 1]);
+      }
+      write(msg);
+    },
   };
 
   // ---------- suggestions while typing ----------

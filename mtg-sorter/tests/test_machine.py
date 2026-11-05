@@ -1,5 +1,7 @@
 """The Machine page's API, with fake hardware (no Pi needed)."""
 
+import time
+
 import pytest
 
 from app import Scanner, create_app
@@ -24,6 +26,12 @@ class FakeMotor:
     def forward(self, speed): self.calls.append(("forward", speed))
     def backward(self, speed): self.calls.append(("backward", speed))
     def stop(self): self.calls.append(("stop",))
+
+
+@pytest.fixture(autouse=True)
+def data(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)   # saved angles go here, not in data/
+    return tmp_path
 
 
 @pytest.fixture
@@ -105,3 +113,59 @@ def test_lost_board_is_looked_for_again(machine):
     with pytest.raises(OSError):
         machine.set_angle(2, 90)
     assert machine._kit is None
+
+
+def test_servo_lets_go_after_a_move(machine, monkeypatch):
+    monkeypatch.setattr(config, "SERVO_HOLD_SECONDS", 0.05)
+    machine.set_angle(1, 70)
+    assert machine._kit.servo[1].angle == 70
+    time.sleep(0.2)
+    assert machine._kit.servo[1].angle is None
+    assert machine.angles[1] is None
+
+
+def test_stop_pins_keep_holding(machine, monkeypatch):
+    # The gate drops under its own weight when let go, so the pins never go limp by themselves.
+    monkeypatch.setattr(config, "SERVO_HOLD_SECONDS", 0.05)
+    machine.move("pins", "up")
+    pins = config.SERVOS["pins"][0]
+    time.sleep(0.2)
+    assert machine._kit.servo[pins].angle == machine.servos()["pins"][1]["up"]
+    machine.relax_all()                 # Relax still lets them go
+    assert machine._kit.servo[pins].angle is None
+
+
+def test_a_new_move_keeps_holding(machine, monkeypatch):
+    monkeypatch.setattr(config, "SERVO_HOLD_SECONDS", 0.15)
+    machine.set_angle(1, 70)
+    time.sleep(0.1)
+    machine.set_angle(1, 80)      # restarts the hold
+    time.sleep(0.1)
+    assert machine._kit.servo[1].angle == 80
+
+
+def test_held_parts_still_let_go_after_the_hold_limit(machine, monkeypatch):
+    # A gate or door jammed at a stop mustn't cook its servo.
+    monkeypatch.setattr(config, "SERVO_HOLD_SECONDS", 0.01)
+    monkeypatch.setattr(config, "SERVO_HOLD_LIMIT", 0.1)
+    pins = config.SERVOS["pins"][0]
+    machine.move("pins", "up")
+    time.sleep(0.05)
+    assert machine._kit.servo[pins].angle is not None
+    time.sleep(0.2)
+    assert machine._kit.servo[pins].angle is None
+
+
+def test_home_sweeps_from_the_last_angle(machine, monkeypatch):
+    chute = config.SERVOS["chute"][0]
+    machine.set_angle(chute, 100)
+    fresh = Machine()                       # as after a restart: it remembers 100
+    fresh._kit = machine._kit
+    sent = []
+    real = fresh.set_angle
+    monkeypatch.setattr(fresh, "set_angle", lambda ch, a: (sent.append((ch, a)), real(ch, a)))
+    fresh.home(pause=0, speed=10_000)
+    path = [a for ch, a in sent if ch == chute]
+    target = fresh.servos()["chute"][1]["centre"]
+    assert path[-1] == target and len(path) > 10
+    assert all(abs(b - a) <= 2.01 for a, b in zip([100] + path, path))   # no jumps

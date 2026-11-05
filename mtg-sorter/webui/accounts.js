@@ -82,7 +82,36 @@
         </div>
       </div>`;
     }).join("");
+    renderInvites(s.invites || []);
   }
+
+  // ---------- invite links ----------
+  const until = t => new Date(t * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  function renderInvites(list) {
+    $("invites").innerHTML = list.length ? `<b class="sub">Open invites</b>` + list.map(i => `<div class="invite" data-id="${esc(i.id)}">
+        <span><b>${esc(i.note || (i.role === "member" ? "Member invite" : "Viewer invite"))}</b>
+        <small class="sub">${i.role} · ${i.used.length} of ${i.uses} used${i.used.length ? " (" + i.used.map(esc).join(", ") + ")" : ""} · runs out ${until(i.expires)}</small></span>
+        <button class="btn ghost danger" data-cancel>Cancel</button></div>`).join("") : "";
+  }
+  $("invGo").onclick = async () => {
+    try {
+      const r = await api("/api/accounts/invite", { role: $("invRole").value, uses: +$("invUses").value, days: +$("invDays").value, note: $("invNote").value.trim() });
+      $("invLink").value = location.origin + r.path;
+      $("invMade").hidden = false; $("invNote").value = "";
+      $("invShare").hidden = !navigator.share;
+      $("invLink").select();
+      renderInvites(r.invites);
+    } catch (e) { toast(e.message); }
+  };
+  $("invCopy").onclick = async () => { await MTG.copy($("invLink").value); toast("Invite link copied"); };
+  $("invShare").onclick = () => navigator.share?.({ title: "Join my MTG Sorter", text: "Here's your invite to my MTG card sorter:", url: $("invLink").value }).catch(() => {});
+  $("invites").addEventListener("click", async e => {
+    const b = e.target.closest("[data-cancel]"); if (!b) return;
+    if (!confirm("Cancel this invite? Nobody else can join with it.")) return;
+    try { renderInvites((await api("/api/accounts/invite/cancel", { id: b.closest(".invite").dataset.id })).invites); toast("Invite cancelled"); }
+    catch (err) { toast(err.message); }
+  });
+
   async function change(username, body, done) {
     try { await api("/api/accounts/update", { username, ...body }); toast(done); }
     catch (e) { toast(e.message); }
