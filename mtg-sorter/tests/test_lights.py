@@ -57,13 +57,13 @@ def test_brightness_and_power_limit(lights):
     lights.update({"color": "#ffffff", "brightness": 100, "count": 60})
     frame, _ = lights.render(0)
     assert L.amps(frame) <= config.LIGHTS_MAX_AMPS + 0.01      # 60 LEDs of white would be 3.6 A
-    lights.update({"brightness": 10, "count": 10})
+    lights.update({"brightness": 10, "count": 10, "card": {"count": 0}})
     frame, _ = lights.render(0)
     assert frame.shape == (10, 3) and frame.max() == round(255 * 0.1)
 
 
 def test_off_is_dark_and_effects_move(lights):
-    lights.update({"on": False})
+    lights.update({"on": False, "card": {"on": False}})
     assert lights.render(0)[0].max() == 0
     lights.update({"on": True, "effect": "rainbow"})
     a, moving = lights.render(1.0)
@@ -82,14 +82,15 @@ def test_settings_are_kept_and_checked(client):
 
 
 def test_preview_and_page(client):
-    client.post("/api/lights", json={"color": "#ff0000", "brightness": 50, "count": 5, "effect": "solid"})
+    client.post("/api/lights", json={"color": "#ff0000", "brightness": 50, "count": 5, "effect": "solid",
+                                     "card": {"count": 0}})
     colors = client.get("/api/lights/preview").get_json()["colors"]
     assert colors == ["#7f0000"] * 5 or colors == ["#800000"] * 5
     assert client.get("/lights").status_code == 200
 
 
 def test_flash_shows_then_fades(lights):
-    lights.update({"color": "#000000", "brightness": 100, "count": 4})
+    lights.update({"color": "#000000", "brightness": 100, "count": 4, "card": {"count": 0}})
     lights.flash("saved")
     green = L.to_rgb(lights.settings["events"]["saved"]["color"])
     frame, moving = lights.render(lights._flash[1] + 0.1)
@@ -123,3 +124,36 @@ def test_without_spi_it_says_why(db):  # noqa: F811
     assert not s["ok"] and s["error"]
     client = create_app(Scanner(db, None, source=None), lights=lights).test_client()
     assert client.post("/api/lights", json={"color": "#123456"}).status_code == 200
+
+
+def test_card_light_follows_the_status_lights_and_never_flashes(lights):
+    lights.update({"color": "#ff0000", "brightness": 50, "count": 14, "effect": "solid",
+                   "card": {"count": 10, "color": "#ffffff", "brightness": 40}})
+    frame, _ = lights.render(0)
+    assert frame.shape == (24, 3)
+    assert (frame[:14] == [round(255 * .5), 0, 0]).all() or (frame[:14] == [127, 0, 0]).all()
+    assert (frame[14:] == round(255 * .4)).all()
+    lights.flash("saved")
+    frame, _ = lights.render(lights._flash[1] + 0.1)
+    assert frame[0, 1] > 100 and (frame[14:] == round(255 * .4)).all()    # only the status lights flash
+    lights.update({"on": False})                                         # status off, card light stays
+    frame, _ = lights.render(0)
+    assert frame[:14].max() == 0 and frame[14:].min() > 0
+    lights.update({"card": {"on": False}})
+    assert lights.render(0)[0].max() == 0
+
+
+def test_card_light_only(lights):
+    lights.update({"count": 0, "card": {"count": 10, "brightness": 100, "color": "#ffffff"}})
+    frame, _ = lights.render(0)
+    assert frame.shape == (10, 3) and frame.min() > 0
+    assert L.amps(frame) <= config.LIGHTS_MAX_AMPS + 0.01
+
+
+def test_card_light_settings_are_checked(client):
+    s = client.post("/api/lights", json={"card": {"count": 6, "brightness": 300}}).get_json()["settings"]
+    assert s["card"]["count"] == 6 and s["card"]["brightness"] == 100 and s["card"]["on"]
+    assert client.post("/api/lights", json={"card": {"color": "white"}}).status_code == 400
+    assert client.post("/api/lights", json={"card": 5}).status_code == 400
+    assert client.post("/api/lights", json={"count": 100, "card": {"count": 100}}).status_code == 400
+    assert Lights().settings["card"]["count"] == 6                       # saved

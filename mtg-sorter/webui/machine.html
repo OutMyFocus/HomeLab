@@ -60,12 +60,16 @@
       Centre each servo at 90 before pressing its horn on.</p>
     <div id="parts"></div>
     <div class="row">
+      <button class="btn primary" id="homeAll">Home</button>
       <button class="btn" id="centreAll">Centre all at 90</button>
       <button class="btn ghost" id="relaxAll">Relax all</button>
       <button class="btn ghost" id="resetAll" hidden>Back to the original angles</button>
     </div>
     <label class="switch"><input type="checkbox" id="wideTravel"><span></span>Wider servo travel: 0-180 on the
       slider turns about the full 180&deg; (normally only about 135&deg;). Saved angles other than 90 move, so check them after.</label>
+    <label class="switch"><input type="checkbox" id="homeStartup"><span></span>Go home when the sorter starts:
+      each part sweeps slowly to doors closed, tray level and stop pins up, using the saved angles (the <b>Home</b>
+      button does the same). Any servo that's still holding lets go after 30 seconds without a move, so a jam can't burn it out.</label>
   </section>
 
   <section class="panel">
@@ -121,6 +125,7 @@ function show(s) {
   }
   $("resetAll").hidden = !s.customized;
   $("wideTravel").checked = !!s.wide_travel;
+  $("homeStartup").checked = s.home_at_startup !== false;
   $("remoteNote").hidden = !s.remote;
   if (s.remote) $("remoteNote").textContent = `This page drives the sorter's Pi at ${s.remote}: moves and saved angles happen there.`;
 }
@@ -174,6 +179,13 @@ $("feedReverse").onchange = async (e) => {
     toast(e.target.checked ? "Saved: Feed one card now turns the motor the other way." : "Saved: the feeder turns the normal way.");
 };
 $("relaxAll").onclick = () => call("/api/machine/relax", {});
+$("homeAll").onclick = async () => {
+  if (await call("/api/machine/home", {})) toast("Every part is at its home position.");
+};
+$("homeStartup").onchange = async (e) => {
+  if (await call("/api/machine/save", { home_at_startup: e.target.checked }))
+    toast(e.target.checked ? "Saved: the sorter goes home every time it starts." : "Saved: the sorter stays put when it starts.");
+};
 $("resetAll").onclick = async () => {
   if (confirm("Forget the angles and feeder settings saved here, and go back to the ones in config.py?")
       && await call("/api/machine/reset", {})) toast("Back to the original angles.");
