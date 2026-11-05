@@ -266,3 +266,23 @@ def test_a_shadow_over_the_zone_is_not_a_card():
     card = ref.copy()
     card[55:75, 15:85] = 230   # a card over the zone, the rest of the bed as it was
     assert feed_watch.changed_share(ref, card, zone) > 0.9
+
+
+def test_scanner_skips_recognizing_while_a_feed_watches(db, monkeypatch):  # noqa: F811
+    scanner = Scanner(db, None, source=None)
+    tap = feed_watch.FrameTap()
+    scanner.tap = tap
+
+    class OneFrame:
+        def read(self):
+            return np.full((200, 100, 3), 120, np.uint8)
+
+    scanner.source = OneFrame()
+    looked = []
+    monkeypatch.setattr(scanner, "process", lambda frame: looked.append(frame))
+    scanner.turn()
+    assert len(looked) == 1 and tap.seq == 0      # nobody watching: the normal loop
+    tap.watching = 1
+    scanner.turn()
+    assert len(looked) == 1 and tap.seq == 1      # watching: straight to the feed, no recognizing
+    assert scanner.jpeg is not None
