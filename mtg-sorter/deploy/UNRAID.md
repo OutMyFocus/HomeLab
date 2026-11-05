@@ -111,6 +111,22 @@ To make the server know every card: **Maintenance → Card database → Download
 (30-60 minutes; scanning keeps working). From the server's terminal it's
 `docker exec mtg-sorter python build_db.py --all` (stop and resume it any time).
 
+## The sorter's own camera and machine, from the server
+
+Give the container the Pi's address (the **Sorter's Pi** field, `MTG_MACHINE_URL`, e.g.
+`http://10.0.0.247:5000`) and the server's pages reach the machine:
+
+- **Scan:** the camera menu gains **Sorter's Pi camera**. The server watches the Pi's live
+  stream and recognizes the cards on the scan bed itself, so what you scan on the machine lands
+  in the server's collection. With no camera of its own, the server starts on the Pi's camera.
+  (The Pi's own page keeps scanning too; turn its Auto-save off if you don't want the Pi's
+  separate collection to fill up as well.)
+- **Machine** and **Lights:** the servos, feeder and light bars are the Pi's, driven over the
+  network.
+
+If the Pi has a PIN or accounts on, also set `MTG_MACHINE_KEY` to the Pi's `data/machine_key`
+(`mtg machine-key` on the Pi prints it).
+
 ## How scanning from a phone works
 
 The phone's browser opens its camera and sends a picture to the server about eight times a

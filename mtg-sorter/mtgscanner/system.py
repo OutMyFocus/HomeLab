@@ -367,6 +367,13 @@ def camera_check(scanner) -> dict:
                      "pressed down. Then turn the Pi back on. See MAINTENANCE.md, \"Camera not found\".")
     perf = scanner.perf or {}
     name = getattr(scanner.source, "name", None) or "Camera"
+    if src == "RemoteCameraSource":   # the server watching the sorter Pi's camera
+        error = getattr(scanner.source, "error", None)
+        if error:
+            return check("camera", "Camera", "warn", f"{name}: {error}",
+                         "The server shows the Pi's camera over the network. Check that the Pi is on and its "
+                         "app is running; its own Maintenance page says whether its camera works.")
+        return check("camera", "Camera", "ok", f"{name}, over the network from the sorter's Pi.")
     if not scanner.started:
         return check("camera", "Camera", "warn", f"{name} is starting…")
     age = perf.get("frame_age_ms")
