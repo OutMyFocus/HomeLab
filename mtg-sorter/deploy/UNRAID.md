@@ -39,6 +39,14 @@ Unraid's Docker tab: **Check for updates**, then **Update** next to mtg-sorter. 
 stays in `/mnt/user/appdata/mtg-sorter` and is never touched by an update. (The app's own
 Maintenance page says the same; it can't update itself inside Docker.)
 
+### If the container stops and stays stopped
+
+Unraid's form sets no Docker restart policy, so a container whose app exits (a crash, or an
+older version's Restart button) stays stopped until you press Start. Give it one: **Docker →
+mtg-sorter → Edit**, switch to **Advanced view** (top right), and put `--restart=unless-stopped`
+in **Extra Parameters**, then Apply. The template in this folder already has it. Also turn the
+**Autostart** toggle on next to the container, so it comes back after a server reboot.
+
 ### Without Unraid's form
 
 Any Docker host works the same way:
