@@ -95,6 +95,39 @@ def test_switch_camera(db, tmp_path, monkeypatch):  # noqa: F811
     assert res.status_code == 409 and "Could not open" in res.get_json()["error"]
 
 
+class FocusCamera(FakeCamera):
+    focus = None
+
+    def set_focus(self, cm):
+        self.focus = cm
+        return True
+
+    def info(self):
+        return {"index": self.index, "name": self.name, "focus": {"cm": self.focus, "choices": [12]}}
+
+
+def test_set_pi_camera_focus(db, tmp_path, monkeypatch):  # noqa: F811
+    import app
+    from mtgscanner import camera as cameras_mod
+    monkeypatch.setattr(app, "CameraSource", FakeCamera)
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(cameras_mod, "focus_cm", None)
+    cam = FocusCamera(-1, "Pi camera")
+    client = create_app(Scanner(db, None, source=cam)).test_client()
+
+    state = client.post("/api/camera/focus", json={"cm": 12}).get_json()
+    assert cam.focus == 12 and state["camera"]["focus"]["cm"] == 12
+    assert app.saved_focus() == 12 and cameras_mod.focus_cm == 12   # kept for next time
+    client.post("/api/camera/focus", json={"cm": None})
+    assert cam.focus is None and app.saved_focus() is None
+    assert client.post("/api/camera/focus", json={"cm": "close"}).status_code == 400
+    assert client.post("/api/camera/focus", json={"cm": 1}).status_code == 400
+
+    # A webcam can't: say so instead of pretending.
+    client = create_app(Scanner(db, None, source=FakeCamera(0))).test_client()
+    assert client.post("/api/camera/focus", json={"cm": 12}).status_code == 409
+
+
 def show(scanner, frame, times):
     """Put a picture in front of the scanner for a few frames, like the camera loop does."""
     for _ in range(times):
