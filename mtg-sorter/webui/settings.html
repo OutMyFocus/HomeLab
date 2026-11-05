@@ -71,7 +71,35 @@
         <div><dt>Admin</dt><dd>Everything, plus Maintenance, price checks and these accounts</dd></div>
       </dl>
       <div class="people" id="people"></div>
-      <h4>Add someone</h4>
+      <h4>Invite someone with a link</h4>
+      <p class="sub">Make a link and text it to them. They open it, pick their own username and password, and they're in.
+        Each link works for the number of people you pick, until it runs out.</p>
+      <div class="acct-grid">
+        <label>Joins as<select class="field" id="invRole">
+          <option value="member" selected>Member: scan and keep their own cards</option>
+          <option value="viewer">Viewer: look only</option>
+        </select></label>
+        <label>Works for<select class="field" id="invUses">
+          <option value="1" selected>One person</option>
+          <option value="5">Up to 5 people</option>
+          <option value="20">Up to 20 people</option>
+        </select></label>
+        <label>Runs out after<select class="field" id="invDays">
+          <option value="1">1 day</option>
+          <option value="7" selected>7 days</option>
+          <option value="30">30 days</option>
+        </select></label>
+        <label>Note (for you)<input class="field" id="invNote" maxlength="40" placeholder="Game night crew"></label>
+      </div>
+      <div class="row"><button class="btn primary" id="invGo">Make invite link</button></div>
+      <div class="invite-made" id="invMade" hidden>
+        <input class="field" id="invLink" readonly aria-label="Invite link">
+        <button class="btn primary" id="invCopy">Copy</button>
+        <button class="btn ghost" id="invShare" hidden>Share</button>
+        <p class="sub">Copy it now: for safety the link is only shown once. Anyone with it can join, so send it only to who you mean to.</p>
+      </div>
+      <div class="invites" id="invites"></div>
+      <h4>Or add someone yourself</h4>
       <div class="acct-grid">
         <label>Name<input class="field" id="addName" placeholder="Alex"></label>
         <label>Username<input class="field" id="addUser" autocapitalize="none" spellcheck="false" placeholder="alex"></label>
