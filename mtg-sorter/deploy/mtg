@@ -12,7 +12,11 @@ case "${1:-help}" in
     status|doctor|check)
         bold "MTG sorter on $(hostname)"
         if systemctl is-active -q mtg-sorter; then say "App" "running"; else say "App" "NOT running (try: mtg restart)"; fi
-        say "Version" "$(git -C "$APP/.." log -1 --format='%h, %cd' --date=format:'%b %-d %H:%M' 2>/dev/null)"
+        if [ -e /etc/mtg-sorter/docker ]; then
+            say "Version" "Docker image $(docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' mtg-sorter:run 2>/dev/null | sed -n 's/^MTG_VERSION=//p' | cut -c1-7) (same as the server)"
+        else
+            say "Version" "$(git -C "$APP/.." log -1 --format='%h, %cd' --date=format:'%b %-d %H:%M' 2>/dev/null)"
+        fi
         say "Updates" "$(systemctl is-enabled mtg-sorter-update.timer 2>/dev/null | sed 's/enabled/automatic/;s/disabled/off (mtg autoupdate on)/')"
         say "Address" "http://$(hostname -I | awk '{print $1}'):5000"
         echo
@@ -49,6 +53,20 @@ PY
     fix-updates) sudo "$ADMIN" update-force && echo "Setting aside edits made on the Pi and updating. See: mtg logs updates" ;;
     autoupdate) sudo "$ADMIN" autoupdate "${2:-on}" ;;
     reboot)     sudo "$ADMIN" reboot ;;
+    machine-key)
+        # The key a server (tower) needs to drive this Pi's machine while a PIN or accounts are on.
+        key=$APP/data/machine_key
+        if [ ! -s "$key" ]; then
+            ( umask 077; head -c 24 /dev/urandom | base64 | tr -d '/+=\n' > "$key" )
+            echo "Made a new machine key."
+        fi
+        echo "Put this in MTG_MACHINE_KEY on the server: $(cat "$key")" ;;
+    docker)
+        case "${2:-}" in
+            on|off) sudo "$ADMIN" docker "$2" && sleep 2 && journalctl -fu mtg-sorter-switch -o cat ;;
+            *)      if [ -e /etc/mtg-sorter/docker ]; then echo "The Pi runs the Docker image (mtg docker off to go back)."
+                    else echo "The Pi runs its git copy (mtg docker on to use the server's Docker image)."; fi ;;
+        esac ;;
     off|poweroff|shutdown) echo "Shutting down. Unplug once the green light stops flashing."; sudo "$ADMIN" poweroff ;;
     backup)
         out=~/mtg-sorter-backup-$(date +%Y-%m-%d-%H%M).zip
@@ -74,6 +92,8 @@ PY
         say "mtg repair"     "re-run the setup: fixes packages, services and settings"
         say "mtg camera"     "list the cameras the Pi can see"
         say "mtg i2c"        "check the Pi can see the servo board"
+        say "mtg docker"     "on / off: run the same Docker image as the server, or the git copy"
+        say "mtg machine-key" "the key a server needs to drive this machine while a PIN is on"
         say "mtg reboot"     "restart the Pi"
         say "mtg off"        "shut down safely before unplugging" ;;
 esac

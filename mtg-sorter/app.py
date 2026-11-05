@@ -34,20 +34,22 @@ from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.exchange import load_rate
-from mtgscanner import accounts, logins, security, sort_rules, wishlist
+from mtgscanner import accounts, assets, logins, security, sort_rules, wishlist
 from mtgscanner.decks import name_key
 from mtgscanner.history import add_history_routes
 from mtgscanner.home import add_home_routes
 from mtgscanner.sets import add_sets_routes
 from mtgscanner.bins import add_bins_routes
 from mtgscanner.decks import add_deck_routes
+from mtgscanner.upgrades import add_upgrade_routes
 from mtgscanner.library import add_collection_routes, lookup
 from mtgscanner.lights import Lights, add_lights_routes
 from mtgscanner.wishlist import add_wishlist_routes
 from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
-from mtgscanner.machine import Machine, add_machine_routes
+from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
+from mtgscanner.remote_machine import RemoteLights, RemoteMachine, remote_url
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.system import ON_PI, add_system_routes
@@ -602,10 +604,18 @@ def candidate_info(card: Card, distance: int, foil: bool, vault, live=None) -> d
 # --- Web server ----------------------------------------------------------------------
 
 
+def make_lights():
+    """The light bars: the Pi's own on the Pi, and on the server (MTG_MACHINE_URL) the Pi's,
+    reached over the network."""
+    return RemoteLights(remote_url()) if remote_url() else Lights()
+
+
 def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
-    machine = machine or Machine()
-    scanner.lights = lights or scanner.lights or Lights()
+    # On the server, MTG_MACHINE_URL points at the sorter's Pi, which does the moving.
+    machine = machine or (RemoteMachine(remote_url()) if remote_url() else Machine())
+    scanner.lights = lights or scanner.lights or make_lights()
+    assets.install(app, WEB)  # versioned script and style links, so caches never mix old and new
     logins.install(app, WEB)  # user accounts, once they're on: logging in, and who may do what
     security.install(app, WEB)  # the optional PIN lock, checked before every page (without accounts)
     add_machine_routes(app, machine, WEB)  # the /machine test page
@@ -613,6 +623,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
     add_collection_routes(app, scanner, WEB)  # the /collection page
     add_deck_routes(app, scanner, WEB)  # the /decks page
+    add_upgrade_routes(app, scanner)  # the deck builder's upgrade path (EDHREC)
     add_bins_routes(app, scanner, WEB)  # the /bins page
     add_history_routes(app, scanner, WEB)  # the /history page
     add_wishlist_routes(app, scanner, WEB)  # the /wishlist page and alerts
@@ -1160,7 +1171,7 @@ def main():
     if isinstance(source, WaitingForCamera):
         source.on_found = scanner.use_source
     scanner.restore(load_settings())
-    scanner.lights = Lights()
+    scanner.lights = make_lights()
     scanner.lights.start()  # shows the saved color (nothing happens without light bars)
     threading.Thread(target=scanner.run, daemon=True).start()
 
@@ -1170,9 +1181,14 @@ def main():
     if not matcher.card_count:
         print(
             "The card database is empty, so nothing can be recognized yet: restore a backup on the "
-            "Maintenance page, or run build_db.py (see README.md)."
+            "Maintenance page, or press Download every card there (see README.md)."
         )
-    app = create_app(scanner)
+    machine = RemoteMachine(remote_url()) if remote_url() else Machine()
+    app = create_app(scanner, machine)
+    if isinstance(machine, Machine) and ON_PI:
+        # The servos to their saved home positions (Machine page: Home), in the background
+        # so the page is up straight away.
+        threading.Thread(target=home_at_startup, args=(machine,), daemon=True).start()
     # The weekly Canadian price check and card database update (see mtgscanner/vault.py).
     threading.Thread(target=app.config["weekly"].loop, daemon=True).start()
     try:

@@ -6,8 +6,8 @@ window.VAULT = (() => {
   const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[’']/g, "'").trim();
   const front = k => k.split(" // ")[0];
   const BASICS = new Set(["plains", "island", "swamp", "mountain", "forest", "wastes", "snow-covered plains", "snow-covered island", "snow-covered swamp", "snow-covered mountain", "snow-covered forest"]);
-  const STORES = [["f2f", "Face to Face Games"], ["401", "401 Games"], ["myth", "The Mythic Store"], ["hob", "Hobbiesville"]];
-  const SHORT = { "Face to Face Games": "", "401 Games": "401", "The Mythic Store": "Mythic", "Hobbiesville": "Hobbiesville" };
+  const STORES = [["f2f", "Face to Face Games"], ["401", "401 Games"], ["myth", "The Mythic Store"], ["hob", "Hobbiesville"], ["cb", "Card Brawlers"], ["udc", "L'Univers de la Carte"]];
+  const SHORT = { "Face to Face Games": "", "401 Games": "401", "The Mythic Store": "Mythic", "Hobbiesville": "Hobbiesville", "Card Brawlers": "Card Brawlers", "L'Univers de la Carte": "L'Univers" };
   const S = { cards: null, byName: null, built: "", ca: null, caPr: null, caPrev: null, caDate: "", owned: new Map(), copies: new Map(), items: [], decks: [] };
   const cad = v => v == null || isNaN(v) ? "–" : "$" + (v >= 1000 ? Math.round(v).toLocaleString("en-CA") : Number(v).toFixed(2));
 

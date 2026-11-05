@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/app-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <meta name="theme-color" content="#0e1013">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="MTG Sorter">
+  <meta name="color-scheme" content="dark light">
+  <meta name="referrer" content="no-referrer">
+  <title>MTG Sorter · Join</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/extras.css">
+  <link rel="stylesheet" href="/static/accounts.css">
+  <script src="/static/look.js"></script>
+</head>
+<body class="lock-body">
+  <form class="panel lock-box login-box" id="form">
+    <svg class="lock-logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="currentColor" opacity=".18" />
+      <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z" fill="currentColor" />
+    </svg>
+    <h2 id="title">Join MTG Sorter</h2>
+    <p class="sub" id="sub">Checking your invite…</p>
+    <div id="fields" class="login-fields" hidden>
+      <label>Your name<input class="field" id="name" autocomplete="name" placeholder="What friends call you"></label>
+      <label>Username<input class="field" id="username" autocomplete="username" autocapitalize="none" spellcheck="false" required
+        placeholder="Letters and numbers, for logging in"></label>
+      <label>Password<input class="field" id="password" type="password" autocomplete="new-password" required placeholder="At least 6 characters"></label>
+      <label>Password again<input class="field" id="password2" type="password" autocomplete="new-password" required></label>
+      <button type="submit" class="btn primary">Make my account</button>
+    </div>
+    <p class="err" id="err" hidden></p>
+    <p class="sub small" id="foot">Already have an account? <a href="/login">Log in</a></p>
+  </form>
+  <script>
+    (() => {
+      const $ = id => document.getElementById(id), err = $("err");
+      // The code rides after the # so it never reaches server logs or other sites.
+      const code = (location.hash.slice(1) || new URLSearchParams(location.search).get("code") || "").trim();
+      const show = msg => { err.textContent = msg; err.hidden = false; };
+      const post = body => fetch("/api/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, ...body }) });
+      if (!code) { $("sub").textContent = "This link is missing its invite code. Ask for the link again."; return; }
+      post({}).then(async r => {
+        const js = await r.json().catch(() => ({}));
+        if (!r.ok) { $("title").textContent = "This invite doesn't work"; $("sub").textContent = js.error || "Ask for a new link."; return; }
+        const inv = js.invite;
+        $("sub").textContent = `${inv.by || "The owner"} invited you to keep your Magic cards here, as a ${inv.role}.` +
+          (inv.role === "member" ? " You'll have your own collection, decks and wishlist, and can scan with your phone." : " You'll be able to look around.");
+        $("fields").hidden = false; $("name").focus();
+      }).catch(() => { $("sub").textContent = "Couldn't reach the sorter. Try again in a moment."; });
+      $("form").onsubmit = async e => {
+        e.preventDefault(); err.hidden = true;
+        if ($("password").value !== $("password2").value) return show("The two passwords don't match");
+        const r = await post({ name: $("name").value.trim(), username: $("username").value.trim().toLowerCase(), password: $("password").value });
+        const js = await r.json().catch(() => ({}));
+        if (!r.ok) return show(js.error || "That didn't work");
+        history.replaceState(null, "", "/join");   // the code is spent: keep it out of the history
+        location.replace("/");
+      };
+    })();
+  </script>
+</body>
+</html>

@@ -99,9 +99,9 @@ From then on, scan on the server. The Pi keeps its own copy for the sorter; do t
 backup-and-restore the other way whenever the sorter should know about cards you added on
 the server (merging the two automatically is a later step).
 
-To add more cards to the database without the Pi, from the server's terminal:
-`docker exec mtg-sorter python build_db.py --sets dmu,one` (or `--all` for every set; that
-takes hours and you can stop and resume it).
+To make the server know every card: **Maintenance → Card database → Download every card**
+(30-60 minutes; scanning keeps working). From the server's terminal it's
+`docker exec mtg-sorter python build_db.py --all` (stop and resume it any time).
 
 ## How scanning from a phone works
 
@@ -120,3 +120,10 @@ background pauses and picks up again when it comes back. Everything else on the 
 code; see [REMOTE_ACCESS.md](REMOTE_ACCESS.md), step 3) is the easy one, since they install
 nothing. Set a PIN in Settings before sharing any link: without one, anyone with the link can
 scan into, delete from and download your collection.
+
+## The sorter machine
+
+The servos and feeder are wired to the sorter's Pi. To drive them from this server's Machine
+page, fill in **Sorter's Pi** (`MTG_MACHINE_URL`, e.g. `http://10.0.0.247:5000`) on the
+container. The Pi can also run this same image, so both have the same version: see
+[PI_DOCKER.md](PI_DOCKER.md).
