@@ -172,6 +172,104 @@ def add(username, password, name="", perms=None, role="member") -> str:
     return username
 
 
+# --- Invite links ----------------------------------------------------------------------------
+# An admin makes a link (Settings, People and permissions) and sends it. Whoever opens it
+# picks their own username and password and joins as a member (or viewer). Only a hash of
+# each link's code is kept, so the links can't be read back out of users.json or a backup.
+
+INVITE_ROLES = ("member", "viewer")
+INVITE_DAYS = (1, 7, 30)
+INVITE_USES = (1, 5, 20)
+
+
+def _code_id(code: str) -> str:
+    return hashlib.sha256(str(code or "").encode()).hexdigest()
+
+
+def create_invite(by: str, role="member", uses=1, days=7, note="") -> str:
+    """A new invite link's code (shown once)."""
+    data = _load()
+    if not data:
+        raise ValueError("Turn accounts on first")
+    if role not in INVITE_ROLES:
+        raise ValueError("An invite makes a member or a viewer. Make admins on the People list")
+    uses = int(uses) if str(uses).isdigit() and int(uses) in INVITE_USES else 1
+    days = int(days) if str(days).isdigit() and int(days) in INVITE_DAYS else 7
+    code = secrets.token_urlsafe(18)
+    with _lock:
+        invites = _live_invites(data)
+        invites[_code_id(code)] = {"role": role, "uses": uses, "used": [], "by": by or "",
+                                   "note": str(note or "").strip()[:40], "created": int(time.time()),
+                                   "expires": int(time.time()) + days * 86400}
+        data["invites"] = invites
+        _save(data)
+    return code
+
+
+def _live_invites(data) -> dict:
+    now = time.time()
+    return {k: v for k, v in (data.get("invites") or {}).items()
+            if isinstance(v, dict) and v.get("expires", 0) > now and len(v.get("used", [])) < v.get("uses", 1)}
+
+
+def invites() -> list[dict]:
+    data = _load()
+    if not data:
+        return []
+    return [{"id": k[:12], "role": v["role"], "uses": v["uses"], "used": v.get("used", []), "by": v.get("by", ""),
+             "note": v.get("note", ""), "created": v["created"], "expires": v["expires"]}
+            for k, v in sorted(_live_invites(data).items(), key=lambda kv: -kv[1]["created"])]
+
+
+def check_invite(code) -> dict | None:
+    data = _load()
+    invite = data and _live_invites(data).get(_code_id(code))
+    if not invite:
+        return None
+    by = get(invite.get("by")) or {}
+    return {"role": invite["role"], "by": by.get("name") or invite.get("by") or "", "expires": invite["expires"]}
+
+
+def cancel_invite(invite_id: str):
+    data = _load()
+    if not data:
+        return
+    with _lock:
+        invites = _live_invites(data)
+        gone = [k for k in invites if k[:12] == str(invite_id or "")]
+        if not gone:
+            raise ValueError("That invite is used up, ran out or was cancelled already")
+        for k in gone:
+            del invites[k]
+        data["invites"] = invites
+        _save(data)
+
+
+def join(code, username, password, name="") -> str:
+    """Make an account from an invite link. The username can't be one someone had before
+    (their cards are still kept under it)."""
+    with _lock:
+        data = _load()
+        if not data:
+            raise ValueError("This sorter doesn't use accounts")
+        invites = _live_invites(data)
+        key = _code_id(code)
+        invite = invites.get(key)
+        if not invite:
+            raise ValueError("This invite link is used up, ran out or was cancelled. Ask for a new one")
+        username = _clean_username(username)
+        folder = config.DATA_DIR / "users" / username
+        if username in data["users"] or (folder.is_dir() and any(folder.iterdir())):
+            raise ValueError("Someone already has that username: pick another")
+        data["users"][username] = _account(name or username, _clean_password(password), list(ROLES[invite["role"]])) \
+            | {"invited_by": invite.get("by", "")}
+        invite.setdefault("used", []).append(username)
+        data["invites"] = _live_invites(data)
+        _save(data)
+    home(username).mkdir(parents=True, exist_ok=True)
+    return username
+
+
 def update(username, name=None, perms=None, password=None):
     """Change someone's name, permissions or password. A new password logs them out
     everywhere else."""

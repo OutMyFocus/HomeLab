@@ -240,7 +240,7 @@ permission, and every card, deck, wishlist and trade already in the app stays yo
 (nothing is moved; a backup is saved in `data/backups/` first). From then on everyone
 logs in, and the login replaces the PIN lock.
 
-Add people under **People and permissions**. Each person gets their own collection,
+Add people under **People and permissions**, or make an **invite link** there (for one person, or up to 5 or 20; it runs out after 1, 7 or 30 days) and text it to them: they pick their own username and password and join as a member or viewer. Only a hash of each link is kept, so copy it when it's shown. Each person gets their own collection,
 decks, wishlist, alerts, trade binder, games and value history (in `data/users/<username>/`),
 and scans from their phone land in their own collection. Pick a role or tick permissions:
 
