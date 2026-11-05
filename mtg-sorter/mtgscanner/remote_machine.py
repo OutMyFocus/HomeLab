@@ -119,6 +119,17 @@ class RemoteMachine:
     def stop_feeder(self):
         self._call("/api/machine/stop", {})
 
+    def feed_one(self, speed=None, max_seconds=None, zone=None) -> dict:
+        """The Pi feeds a card watching its own camera (feed_watch.py) and says what happened."""
+        return self._call("/api/machine/feed_one", {"speed": speed, "max_seconds": max_seconds, "zone": zone},
+                          timeout=(2, 15))
+
+    def feed_zone(self) -> list:
+        return self._call("/api/machine/feed_zone")["zone"]
+
+    def save_feed_zone(self, zone):
+        self._call("/api/machine/feed_zone", {"zone": zone})
+
     def save_position(self, part: str, position: str, angle: float):
         self._call("/api/machine/save", {"part": part, "position": position, "angle": angle})
 
