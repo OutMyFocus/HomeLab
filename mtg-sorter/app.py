@@ -48,6 +48,7 @@ from mtgscanner.wishlist import add_wishlist_routes
 from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
+from mtgscanner.feed_watch import add_feed_watch_routes
 from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
 from mtgscanner.remote_machine import RemoteCameraSource, RemoteLights, RemoteMachine, remote_url
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
@@ -142,6 +143,7 @@ class Scanner:
         self.lights = None  # the RGB light bars (lights.py), which flash for saved, unsure and unknown cards
         self.lock = threading.Lock()
         self.jpeg = None  # latest camera picture for the page
+        self.tap = None  # feed_watch.FrameTap: "Feed one card" watches the pictures through it
         self.frame_size = None  # (width, height) of the camera picture
         self.started = False  # True once the first picture arrived
         self.tracks: list[Track] = []  # the cards in view (see tracking.py)
@@ -280,6 +282,8 @@ class Scanner:
             return
         if self.rotate or self.crop:
             frame = view.apply(frame, self.rotate, self.crop)
+        if self.tap is not None:
+            self.tap.put(frame)
         self.process(frame)
 
     def process(self, frame):
@@ -646,6 +650,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     logins.install(app, WEB)  # user accounts, once they're on: logging in, and who may do what
     security.install(app, WEB)  # the optional PIN lock, checked before every page (without accounts)
     add_machine_routes(app, machine, WEB)  # the /machine test page
+    add_feed_watch_routes(app, scanner, machine)  # Feed one card, watching the camera
     add_lights_routes(app, scanner.lights, WEB)  # the /lights page
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
     add_collection_routes(app, scanner, WEB)  # the /collection page
