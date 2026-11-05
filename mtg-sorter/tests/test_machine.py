@@ -169,3 +169,100 @@ def test_home_sweeps_from_the_last_angle(machine, monkeypatch):
     target = fresh.servos()["chute"][1]["centre"]
     assert path[-1] == target and len(path) > 10
     assert all(abs(b - a) <= 2.01 for a, b in zip([100] + path, path))   # no jumps
+
+
+# --- Feed one card, watching the camera (feed_watch.py) ---------------------------
+
+import threading  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+from mtgscanner import feed_watch  # noqa: E402
+
+
+class FakeCamera:
+    """Hands the tap an empty bed, then (once the motor has run `after` frames) a card in
+    the landing zone, from a thread like the Scanner's loop."""
+
+    def __init__(self, tap, machine, card_after=3, card_stays=True):
+        self.tap, self.machine = tap, machine
+        self.card_after, self.card_stays = card_after, card_stays
+        self.running = True
+        threading.Thread(target=self.loop, daemon=True).start()
+
+    def loop(self):
+        motor_frames = 0
+        landed = False
+        while self.running:
+            frame = np.full((400, 300, 3), 120, np.uint8)
+            if self.machine.feeding:
+                motor_frames += 1
+                if self.card_after is not None and motor_frames >= self.card_after:
+                    landed = True
+            if landed and (self.card_stays or self.machine.feeding):
+                frame[240:290, 40:260] = 230   # a white card across the zone (y 0.6-0.72)
+            self.tap.put(frame)
+            time.sleep(0.02)
+
+
+@pytest.fixture
+def watched(db, machine, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(config, "FEED_SETTLE_SECONDS", 0.2)
+    monkeypatch.setattr(config, "FEED_ZONE", (0.2, 0.62, 0.8, 0.70))
+    scanner = Scanner(db, None, source=None)
+    app = create_app(scanner, machine)
+    cams = []
+    yield app.test_client(), scanner, machine, cams
+    for c in cams:
+        c.running = False
+
+
+def test_feed_one_stops_the_motor_when_a_card_lands(watched):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3))
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2}).get_json()
+    assert out["result"] == "landed", out
+    assert out["landed_ms"] is not None and out["motor_ms"] < 1500
+    assert machine._motor.calls[0][0] == "forward"
+    assert machine._motor.calls[-1] == ("stop",)
+    assert not machine.feeding
+
+
+def test_feed_one_gives_up_when_no_card_comes(watched):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=None))
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 0.4}).get_json()
+    assert out["result"] == "none"
+    assert out["landed_ms"] is None
+    assert machine._motor.calls[-1] == ("stop",)
+
+
+def test_feed_one_sees_a_card_that_went_over_the_teeth(watched):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=2, card_stays=False))
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2}).get_json()
+    assert out["result"] == "over"
+
+
+def test_feed_one_needs_a_camera(watched):
+    client, *_ = watched
+    r = client.post("/api/machine/feed_one", json={"max_seconds": 0.3})
+    assert r.status_code == 503
+    assert "camera" in r.get_json()["error"]
+
+
+def test_landing_zone_is_saved_and_checked(watched):
+    client, *_ = watched
+    assert client.post("/api/machine/feed_zone", json={"zone": [0.1, 0.5, 0.9, 0.6]}).status_code == 200
+    assert client.get("/api/machine/feed_zone").get_json()["zone"] == [0.1, 0.5, 0.9, 0.6]
+    assert client.post("/api/machine/feed_zone", json={"zone": [0.5, 0.5, 0.4, 0.6]}).status_code == 400
+
+
+def test_a_shadow_over_the_zone_is_not_a_card():
+    ref = np.full((100, 100), 120, np.uint8)
+    zone = [0.2, 0.6, 0.8, 0.7]
+    darker = ref - 40   # the whole picture darker by the same amount: a hand's shadow
+    assert feed_watch.changed_share(ref, darker, zone) < 0.05
+    card = ref.copy()
+    card[55:75, 15:85] = 230   # a card over the zone, the rest of the bed as it was
+    assert feed_watch.changed_share(ref, card, zone) > 0.9
