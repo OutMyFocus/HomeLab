@@ -164,6 +164,8 @@ SORT_BINS = {1: "left", 2: "centre", 3: "right"}   # bin number: chute position
 SORT_DOOR_BIN = 2             # the bin under the trapdoors
 SORT_PINS_SECONDS = 3.0       # pins down at most this long before the doors open / the tilt goes on
 SORT_PINS_MIN_SECONDS = 0.5   # and at least this long; sort_one goes on as soon as the camera sees the card leave
+SORT_OVER_SECONDS = 0.3       # a card gone from the landing band sooner than this after pins down never rested
+                              # on the teeth: it went over them (the feed was too fast)
 SORT_DOORS_SECONDS = 2.5      # trapdoors open this long
 SORT_TILT_SECONDS = 2.0       # bins 1 and 3: tilted this long for the card to slide off
 SORT_RETRIES = 1              # drop again this many times if the camera still sees the card

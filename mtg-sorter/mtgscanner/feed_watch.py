@@ -126,10 +126,12 @@ class FeedWatcher:
         except Exception:
             pass
 
-    def feed_one(self, speed=None, max_seconds=None, zone=None, backoff=None) -> dict:
+    def feed_one(self, speed=None, max_seconds=None, zone=None, backoff=None, settle=None) -> dict:
         """Run the feeder until a card lands in the zone (or max_seconds pass), then stop,
         then turn the wheels backwards for `backoff` seconds (config.FEED_BACKOFF_SECONDS) so
-        the next card, which followed it out of the slot, goes back into the hopper.
+        the next card, which followed it out of the slot, goes back into the hopper. `settle`
+        (config.FEED_SETTLE_SECONDS) is how long to watch afterwards to see where the card
+        came to rest; sort_one passes 0 and drops the pins straight away instead.
         Returns what happened: result is "landed", "over" (it went past the zone, over the
         teeth), or "none" (nothing reached the zone: no grip, or a card hanging in the slot)."""
         zone = clean_zone(zone) if zone is not None else feed_zone()
@@ -170,8 +172,8 @@ class FeedWatcher:
                 time.sleep(backoff)
                 self.machine.stop_feeder()
             # Let it come to rest, then look again: still there, or did it go over the teeth?
-            share = 0.0
-            settle_end = time.monotonic() + config.FEED_SETTLE_SECONDS
+            share = trace[-1][1] if trace else 0.0
+            settle_end = time.monotonic() + float(config.FEED_SETTLE_SECONDS if settle is None else settle)
             while time.monotonic() < settle_end:
                 seq, now = self.tap.next(seq, timeout=0.5)
                 if now is not None:
@@ -205,10 +207,19 @@ class FeedWatcher:
         self._hold_lights(True)
         try:
             seq, empty = self.tap.next(self.tap.seq, timeout=2.0)   # the bed before the card
-            fed = self.feed_one(speed=speed, backoff=backoff)
+            # Feed without the settle wait or the back-off: the pins drop the moment the
+            # card lands, with the back-off turning at the same time (the machine's own
+            # timer stops it), so the card is on its way before the next one can follow
+            # it out of the slot. Measured 2026-11-06: the old order dropped the pins 1.4 s
+            # after landing, and the card behind caught the landed one meanwhile.
+            fed = self.feed_one(speed=speed, backoff=0, settle=0)
             out = fed | {"bin": bin_no, "dropped": None, "drop_tries": 0}
             if fed["result"] == "none":
                 return out
+            backoff = min(1.0, max(0.0, float(config.FEED_BACKOFF_SECONDS if backoff is None else backoff)))
+            if backoff:
+                self.machine.feed(seconds=backoff, speed=speed, backward=True)
+                out["backoff_ms"] = round(1000 * backoff)
             check = clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95]
             latest = {"seq": seq}
 
@@ -224,6 +235,11 @@ class FeedWatcher:
                 self.machine.drop(bin_no, card_gone=card_gone, **drop)
                 out["drop_tries"] = attempt + 1
                 out["pins_ms"] = round(1000 * getattr(self.machine, "last_pins_seconds", 0))
+                gone_at = getattr(self.machine, "last_gone_at", None)
+                if attempt == 0 and gone_at is not None and gone_at < getattr(config, "SORT_OVER_SECONDS", 0.3):
+                    # The band was empty before the pins could have let the card go: it
+                    # never rested on the teeth, it went over them (the feed was too fast).
+                    out["result"] = "over"
                 seq = max(seq, latest["seq"])
                 seq, now = self.tap.next(self.tap.seq, timeout=2.0)
                 if empty is None or now is None:

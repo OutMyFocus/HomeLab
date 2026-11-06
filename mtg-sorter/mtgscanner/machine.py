@@ -326,14 +326,18 @@ class Machine:
                 now = time.monotonic()
                 if now >= end:
                     return seconds
-                if until is not None and now >= least and until():
-                    time.sleep(min(0.3, max(0.0, end - now)))   # let it clear the teeth
-                    return round(time.monotonic() - start, 2)
+                if until is not None and until():
+                    if self.last_gone_at is None:
+                        self.last_gone_at = round(now - start, 2)
+                    if now >= least:
+                        time.sleep(min(0.3, max(0.0, end - now)))   # let it clear the teeth
+                        return round(time.monotonic() - start, 2)
                 if now >= resend:
                     self.move("chute", where)
                     resend = now + 1.0
                 time.sleep(min(0.1 if until is not None else 1.0, max(0.0, end - time.monotonic())))
 
+        self.last_gone_at = None     # when card_gone first said so, seconds after pins down
         try:
             self.move("chute", "centre")
             self.move("pins", "down")
