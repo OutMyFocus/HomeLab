@@ -29,6 +29,7 @@ from flask import jsonify, request
 from . import config, sort_rules
 
 RECOGNIZE_SECONDS = 6.0     # how long to give the scanner to make its mind up
+LANDED_FROM = 0.45          # a landed card's middle is below this share of the picture's height
 MAX_CARDS = 1000
 
 
@@ -86,6 +87,7 @@ class SortRun:
                     return
                 card = {"n": len(self.state["cards"]) + 1, "status": "none", "bin": None, "name": None}
                 t0 = time.monotonic()
+                card["fed_at"] = t0
                 try:
                     out = self.watcher.sort_one(None, speed=speed, choose=lambda fed, c=card: self._choose(c))
                 except (RuntimeError, ValueError) as e:
@@ -123,14 +125,22 @@ class SortRun:
         fallback = self.real_bin(rules["fallback"])
         deadline = time.monotonic() + RECOGNIZE_SECONDS
         track = None
+        fed_at = card.get("fed_at", 0.0)
         while time.monotonic() < deadline and not self.stop_asked:
             with self.scanner.lock:
-                tracks = [t for t in self.scanner.tracks if t.status in ("locked", "unsure", "unknown")]
-                # cards come in at the top of the picture and stop at the teeth at the
-                # bottom: the one lowest down is the one that just landed
+                height = (self.scanner.frame_size or (0, 0))[1] or 1
+                # Only a card recognized since this feed began, in the lower half of the
+                # picture (cards come in at the top and stop at the teeth at the bottom):
+                # the scanner keeps a dropped card's track, and the next card hanging out
+                # of the slot shows at the top, and either would end the wait at once.
+                tracks = [t for t in self.scanner.tracks
+                          if t.status in ("locked", "unsure", "unknown") and t.checked_time >= fed_at
+                          and float(t.center[1]) / height >= LANDED_FROM]
                 track = max(tracks, key=lambda t: float(t.center[1]), default=None)
-                if track is not None and (track.status != "unknown" or len(tracks) == 1):
+                if track is not None and track.status in ("locked", "unsure"):
                     break
+                # "unknown" so far: the first looks at a card are often while it is still
+                # sliding or blurred, so keep waiting for a match until the deadline
                 track = None
             time.sleep(0.1)
         if track is None:
