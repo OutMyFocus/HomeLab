@@ -124,6 +124,14 @@ class RemoteMachine:
         return self._call("/api/machine/feed_one", {"speed": speed, "max_seconds": max_seconds, "zone": zone,
                                                     "backoff": backoff}, timeout=(2, 15))
 
+    def drop(self, bin_no, pins_seconds=None, doors_seconds=None, tilt_seconds=None):
+        self._call("/api/machine/drop", {"bin": bin_no, "pins_seconds": pins_seconds,
+                                         "doors_seconds": doors_seconds, "tilt_seconds": tilt_seconds},
+                   timeout=(2, 30))
+
+    def sort_one(self, bin_no, speed=None) -> dict:
+        return self._call("/api/machine/sort_one", {"bin": bin_no, "speed": speed}, timeout=(2, 60))
+
     def feed_zone(self) -> list:
         return self._call("/api/machine/feed_zone")["zone"]
 

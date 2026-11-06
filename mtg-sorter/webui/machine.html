@@ -94,6 +94,15 @@
       moment so the next card, which followed it out of the slot, goes back into the hopper. Start with the bed empty.
       <b>Timed push</b> runs it for the seconds above, whatever happens.</p>
     <div class="row">
+      <span class="sub">Feed and sort one card to</span>
+      <button class="btn" data-sort="1">Bin 1</button>
+      <button class="btn" data-sort="2">Bin 2</button>
+      <button class="btn" data-sort="3">Bin 3</button>
+    </div>
+    <p class="sub"><b>Bin 1/2/3</b> feeds a card as above, tilts the chute to that bin, drops the stop pins for 3
+      seconds (a card takes a moment to slide), opens the trapdoors for bin 2, then puts everything back. If the
+      camera still sees the card on the bed, it drops it once more.</p>
+    <div class="row">
       <label class="inline">Landing zone <input id="feedZone" size="22" title="x0, y0, x1, y1 as shares of the camera picture: a band across the bed just above the stop teeth"></label>
       <button class="btn ghost" id="feedZoneSave">Save zone</button>
     </div>
@@ -218,6 +227,18 @@ $("feedOne").onclick = async () => {
     $("feedResult").textContent = d.error || (d.message + (d.landed_ms != null ? ` (landed after ${(d.landed_ms / 1000).toFixed(2)} s)` : ""));
   } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }
   $("feedOne").disabled = false;
+};
+for (const b of document.querySelectorAll("[data-sort]")) b.onclick = async () => {
+  const buttons = [...document.querySelectorAll("[data-sort]"), $("feedOne")];
+  buttons.forEach((x) => x.disabled = true);
+  $("feedResult").textContent = `Feeding, then sorting to bin ${b.dataset.sort}…`;
+  try {
+    const res = await fetch("/api/machine/sort_one", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bin: +b.dataset.sort, speed: +$("feedSpeed").value }) });
+    const d = await res.json();
+    $("feedResult").textContent = d.error || d.message;
+  } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }
+  buttons.forEach((x) => x.disabled = false);
 };
 fetch("/api/machine/feed_zone").then((r) => r.json()).then((d) => { if (d.zone) $("feedZone").value = d.zone.join(", "); }).catch(() => {});
 $("feedZoneSave").onclick = async () => {
