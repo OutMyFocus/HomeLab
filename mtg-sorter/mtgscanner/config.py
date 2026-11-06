@@ -69,6 +69,18 @@ RECHECK_SECONDS = 2.0
 GONE_SECONDS = 0.8
 # Cards are recognized in parallel; 0 means one thread per CPU core (at most 8).
 IDENTIFY_THREADS = 0
+# While the picture stands still (nothing moving, no card waiting to be recognized) the
+# scanner only looks this many times a second, which keeps the Pi cool and the stream
+# quick; any change in the picture brings it back to every frame. A picture counts as
+# still when its small grey copy differs from the last one by under SCAN_STILL_LEVEL grey
+# levels on average.
+SCAN_IDLE_FPS = 4
+SCAN_STILL_LEVEL = 2.0
+# The live picture the pages show (/stream.mjpg): its long side in pixels and JPEG
+# quality. The full-size picture (about 400 KB a frame at 1080p) is only sent with
+# ?full=1, which the server's RemoteCameraSource uses to recognize cards from it.
+STREAM_PREVIEW_PX = 960
+STREAM_PREVIEW_QUALITY = 70
 
 # The smallest card the camera looks for, as a share of the whole picture. 0.05 (5%)
 # suits a camera close to the card, like the scan station. A camera high above a
@@ -165,6 +177,16 @@ SORT_BINS = {1: "left", 2: "centre", 3: "right"}   # bin number: chute position
 # machine has no tray for: the sort run (sort_run.py) drops those cards, and the cards the
 # scanner couldn't read, into this real bin instead.
 SORT_FALLBACK_BIN = 1
+# The sort run gives the scanner this long to recognize a card on the teeth. A card not
+# read after SORT_FOIL_AFTER seconds gets a second look with the light bars dimmed to
+# SORT_FOIL_BRIGHTNESS percent (foils glare under the bars and hide their art; 2 of 2
+# misses on 2026-11-06 were foils); the lights go back up before the drop.
+SORT_RECOGNIZE_SECONDS = 8.0
+SORT_FOIL_AFTER = 3.0
+SORT_FOIL_BRIGHTNESS = 8
+# The run warns when this many cards have gone to one bin since it started (the centre
+# bin held about 20 before cards piled up on the doors, 2026-11-06).
+SORT_BIN_WARN = 15
 SORT_DOOR_BIN = 2             # the bin under the trapdoors
 SORT_PINS_SECONDS = 3.0       # pins down at most this long before the doors open / the tilt goes on
 SORT_PINS_MIN_SECONDS = 0.5   # and at least this long; sort_one goes on as soon as the camera sees the card leave

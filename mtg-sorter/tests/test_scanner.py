@@ -140,3 +140,33 @@ def test_empty_database_still_runs(tmp_path):
     hit = matcher.rank(fingerprint(fake_card(1)))
     assert hit.id == "" and hit.distance == 256
     assert matcher.search("Card") == []
+
+
+def test_scanner_takes_it_easy_while_the_picture_stands_still(db, monkeypatch):
+    """The same picture again and again is looked at only SCAN_IDLE_FPS times a second;
+    a change brings the scanner back to every frame."""
+    from app import Scanner
+    monkeypatch.setattr(config, "SCAN_IDLE_FPS", 2)
+    scanner = Scanner(db, None, source=None)
+    frames = {"frame": np.full((200, 100, 3), 120, np.uint8)}
+
+    class Source:
+        def read(self):
+            return frames["frame"]
+
+    scanner.source = Source()
+    looked = []
+    monkeypatch.setattr(scanner, "process", lambda frame: looked.append(frame))
+    for _ in range(5):
+        scanner.turn()
+    assert len(looked) == 1          # the first look, then nothing changed
+    frames["frame"] = np.full((200, 100, 3), 200, np.uint8)
+    scanner.turn()
+    assert len(looked) == 2          # a change: looked at straight away
+    big = np.full((1920, 1080, 3), 60, np.uint8)
+    scanner._publish(big)
+    assert scanner.jpeg is not None and scanner.jpeg_full is None       # a preview only...
+    assert cv2.imdecode(np.frombuffer(scanner.jpeg, np.uint8), cv2.IMREAD_COLOR).shape[0] == config.STREAM_PREVIEW_PX
+    scanner.full_viewers = 1
+    scanner._publish(big)                                                # ...until someone streams ?full=1
+    assert cv2.imdecode(np.frombuffer(scanner.jpeg_full, np.uint8), cv2.IMREAD_COLOR).shape[0] == 1920

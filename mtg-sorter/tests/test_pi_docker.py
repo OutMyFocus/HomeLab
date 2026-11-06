@@ -332,7 +332,7 @@ class StreamWire:
 
     def get(self, url, headers=None, stream=False, timeout=None):
         self.gets.append(url)
-        if url.endswith("/stream.mjpg"):
+        if url.endswith("/stream.mjpg?full=1"):      # the server asks for the full-size picture
             frames = self.frames
 
             class R:
