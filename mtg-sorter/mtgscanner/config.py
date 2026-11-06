@@ -154,6 +154,18 @@ FEED_SETTLE_SECONDS = 0.8    # then wait this long to see where it came to rest
 # passes them), goes back into the hopper instead of hanging over the landed card and
 # pinning it on the bed. Seen in the 2026-11-05 camera tests. 0 turns it off.
 FEED_BACKOFF_SECONDS = 0.25
+# Dropping a landed card into a bin (Machine.drop, the Machine page's "Sort to bin" buttons,
+# and POST /api/machine/sort_one, which feeds a card first). Bins 1 and 3 are the tilted
+# tray's sides; bin 2 is under the trapdoors. The stop pins drop first and the card slides
+# onto the level tray (1-2 s, up to 4 s for a foil, 2026-11-06 camera tests), so the pins
+# stay down SORT_PINS_SECONDS; then the doors open, or the chute tilts to the side for
+# SORT_TILT_SECONDS. The chute is sent its angle again every second so it doesn't sag.
+SORT_BINS = {1: "left", 2: "centre", 3: "right"}   # bin number: chute position
+SORT_DOOR_BIN = 2             # the bin under the trapdoors
+SORT_PINS_SECONDS = 3.0       # pins down this long before the doors open / the tilt goes on
+SORT_DOORS_SECONDS = 2.5      # trapdoors open this long
+SORT_TILT_SECONDS = 2.0       # bins 1 and 3: tilted this long for the card to slide off
+SORT_RETRIES = 1              # drop again this many times if the camera still sees the card
 
 # --- The light bars (lights.py) --------------------------------------------
 # 5 V addressable RGB bars (WS2812, "3-pin ARGB"). Their data wire goes to GPIO10 (pin 19),
