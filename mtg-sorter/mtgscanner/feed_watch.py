@@ -176,6 +176,41 @@ class FeedWatcher:
             self.busy.release()
 
 
+    def sort_one(self, bin_no, speed=None) -> dict:
+        """Feed one card and drop it into a bin, watching the camera: feed_one, then
+        Machine.drop, then a look at the landing zone to see that the card has gone. If it
+        is still there (a slow slider, or a card stuck half on the doors), the drop is done
+        again, config.SORT_RETRIES times. Returns the feed's result plus "bin", "dropped"
+        (True/False/None when no card landed) and "drop_tries"."""
+        bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
+        if bin_no not in bins and str(bin_no) not in map(str, bins):
+            raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
+        bin_no = int(bin_no)
+        fed = self.feed_one(speed=speed)
+        out = fed | {"bin": bin_no, "dropped": None, "drop_tries": 0}
+        if fed["result"] == "none":
+            return out
+        self.tap.watching += 1
+        try:
+            seq, ref = self.tap.next(self.tap.seq, timeout=2.0)   # the bed with the card on it
+            for attempt in range(1 + max(0, int(getattr(config, "SORT_RETRIES", 1)))):
+                self.machine.drop(bin_no)
+                out["drop_tries"] = attempt + 1
+                seq, now = self.tap.next(seq, timeout=2.0)
+                if ref is None or now is None:
+                    out["dropped"] = None        # no picture to compare: can't tell
+                    break
+                # Gone = the zone changed as much as a card arriving did. Compare with the
+                # bed as it looked with the card on it, not with the empty bed: the camera
+                # and lights have drifted since the feed started.
+                out["dropped"] = changed_share(ref, now, fed["zone"]) >= config.FEED_LAND_SHARE / 2
+                if out["dropped"]:
+                    break
+        finally:
+            self.tap.watching -= 1
+        return out
+
+
 MESSAGES = {
     "landed": "Fed one card: it landed on the bed.",
     "over": "A card came out but slid past the stop teeth: try a lower speed.",
@@ -199,6 +234,26 @@ def add_feed_watch_routes(app, scanner, machine):
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
         return jsonify(out | {"message": MESSAGES.get(out.get("result"), "")})
+
+    @app.post("/api/machine/sort_one")
+    def machine_sort_one():
+        body = request.get_json(silent=True) or {}
+        run_sort = machine.sort_one if watcher is None else watcher.sort_one
+        try:
+            out = run_sort(body.get("bin"), body.get("speed"))
+        except (ValueError, TypeError) as e:
+            return jsonify(error=str(e)), 400
+        except RuntimeError as e:
+            return jsonify(error=str(e)), 503
+        if out.get("result") == "none":
+            message = MESSAGES["none"]
+        elif out.get("dropped") is False:
+            message = f"A card came out but it is still on the bed after {out['drop_tries']} drop(s): check the doors and the bin."
+        elif out.get("dropped") is None:
+            message = f"Fed a card and dropped it to bin {out['bin']} (no picture to check it went)."
+        else:
+            message = f"Fed a card and dropped it to bin {out['bin']}."
+        return jsonify(out | {"message": message})
 
     @app.get("/api/machine/feed_zone")
     def machine_feed_zone_get():

@@ -273,6 +273,55 @@ class Machine:
             self.set_angle(channel, target)
             time.sleep(pause)
 
+    def drop(self, bin_no: int, pins_seconds=None, doors_seconds=None, tilt_seconds=None):
+        """Send the card on the bed to a bin (config.SORT_BINS): drop the stop pins so the
+        card slides onto the level tray, then open the trapdoors (bin 2) or tilt the chute
+        to the side (bins 1 and 3); then put everything back. About 6 s. Nothing watches the
+        camera here (sort_one in feed_watch.py does that). The tray stays level while the
+        card slides: tilted first, the card turns as it comes down and catches on the rail
+        (seen on the right side, 2026-11-06)."""
+        bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
+        try:
+            position = bins[int(bin_no)]
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
+        pins_seconds = float(config.SORT_PINS_SECONDS if pins_seconds is None else pins_seconds)
+        doors_seconds = float(config.SORT_DOORS_SECONDS if doors_seconds is None else doors_seconds)
+        tilt_seconds = float(config.SORT_TILT_SECONDS if tilt_seconds is None else tilt_seconds)
+        use_doors = int(bin_no) == getattr(config, "SORT_DOOR_BIN", 2)
+        servos = self.servos()
+        if "chute" not in servos or position not in servos["chute"][1]:
+            raise ValueError(f"The chute has no '{position}' position: set it on the Machine page")
+
+        def hold(where, seconds):
+            # The chute lets go SERVO_HOLD_SECONDS after a move (so a stalled servo can't
+            # cook); a tray left loose sags under the card, so send the angle again meanwhile.
+            end = time.monotonic() + seconds
+            while True:
+                left = end - time.monotonic()
+                if left <= 0:
+                    return
+                time.sleep(min(1.0, left))
+                self.move("chute", where)
+
+        try:
+            self.move("chute", "centre")
+            self.move("pins", "down")
+            hold("centre", pins_seconds)            # the card slides onto the level tray
+            if use_doors:
+                self.move("door_r", "open")
+                self.move("door_l", "open")
+                hold("centre", doors_seconds)
+                self.move("door_r", "closed")
+                self.move("door_l", "closed")
+                hold("centre", 0.4)
+            else:
+                self.move("chute", position)
+                hold(position, tilt_seconds)        # and off the side of the tilted tray
+        finally:
+            self.move("chute", "centre")
+            self.move("pins", "up")
+
     def self_test(self, pause: float = 0.6) -> list[dict]:
         """Moves every servo through its positions and back, then nudges the feeder.
         Returns what worked, one line per part, for the Maintenance page."""
@@ -391,6 +440,13 @@ def add_machine_routes(app, machine: Machine, web_dir):
     @app.post("/api/machine/stop")
     def machine_stop():
         return answer(machine.stop_feeder)
+
+    @app.post("/api/machine/drop")
+    def machine_drop():
+        """Send the card on the bed to a bin (no feeding, no camera)."""
+        body = request.get_json(silent=True) or {}
+        return answer(lambda: machine.drop(body.get("bin"), body.get("pins_seconds"),
+                                           body.get("doors_seconds"), body.get("tilt_seconds")))
 
     @app.post("/api/machine/save")
     def machine_save():

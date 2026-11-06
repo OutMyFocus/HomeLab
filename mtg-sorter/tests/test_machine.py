@@ -182,7 +182,9 @@ from mtgscanner import feed_watch  # noqa: E402
 
 class FakeCamera:
     """Hands the tap an empty bed, then (once the motor has run `after` frames) a card in
-    the landing zone, from a thread like the Scanner's loop."""
+    the landing zone, from a thread like the Scanner's loop. card_stays: True = the card
+    stays put; False = it slides off once the stop pins drop; "over" = it goes over the
+    teeth as soon as the motor stops."""
 
     def __init__(self, tap, machine, card_after=3, card_stays=True):
         self.tap, self.machine = tap, machine
@@ -199,7 +201,13 @@ class FakeCamera:
                 motor_frames += 1
                 if self.card_after is not None and motor_frames >= self.card_after:
                     landed = True
-            if landed and (self.card_stays or self.machine.feeding):
+            pins_ch = config.SERVOS["pins"][0]
+            pins_down = self.machine.angles.get(pins_ch) == config.SERVOS["pins"][1]["down"]
+            if landed and self.card_stays == "over" and not self.machine.feeding:
+                landed = False                 # it went over the teeth
+            if landed and self.card_stays is False and pins_down:
+                landed = False                 # the card slid off when the pins dropped
+            if landed:
                 frame[240:290, 40:260] = 230   # a white card across the zone (y 0.6-0.72)
             self.tap.put(frame)
             time.sleep(0.02)
@@ -244,7 +252,7 @@ def test_feed_one_gives_up_when_no_card_comes(watched):
 
 def test_feed_one_sees_a_card_that_went_over_the_teeth(watched):
     client, scanner, machine, cams = watched
-    cams.append(FakeCamera(scanner.tap, machine, card_after=2, card_stays=False))
+    cams.append(FakeCamera(scanner.tap, machine, card_after=2, card_stays="over"))
     out = client.post("/api/machine/feed_one", json={"max_seconds": 2}).get_json()
     assert out["result"] == "over"
 
@@ -291,3 +299,73 @@ def test_scanner_skips_recognizing_while_a_feed_watches(db, monkeypatch):  # noq
     scanner.turn()
     assert len(looked) == 1 and tap.seq == 1      # watching: straight to the feed, no recognizing
     assert scanner.jpeg is not None
+
+
+# --- Sorting a card to a bin (Machine.drop, sort_one) ------------------------------
+
+@pytest.fixture
+def quick_sort(monkeypatch):
+    for name in ("SORT_PINS_SECONDS", "SORT_DOORS_SECONDS", "SORT_TILT_SECONDS"):
+        monkeypatch.setattr(config, name, 0.05)
+
+
+def moves(machine):
+    """(part, position) for every named move so far, from the fake servos' angles log."""
+    return machine._moves
+
+
+@pytest.fixture
+def logged(machine, monkeypatch):
+    machine._moves = []
+    real = machine.move
+
+    def move(part, position):
+        machine._moves.append((part, position))
+        real(part, position)
+    monkeypatch.setattr(machine, "move", move)
+    return machine
+
+
+def test_drop_to_the_door_bin_opens_the_doors_and_puts_everything_back(client, logged, quick_sort):
+    r = client.post("/api/machine/drop", json={"bin": 2})
+    assert r.status_code == 200, r.get_json()
+    m = [x for x in moves(logged) if x != ("chute", "centre")]
+    assert m[:2] == [("pins", "down"), ("door_r", "open")]
+    assert ("door_l", "open") in m and ("door_r", "closed") in m and ("door_l", "closed") in m
+    assert m[-1] == ("pins", "up")
+    assert moves(logged)[0] == ("chute", "centre") and moves(logged)[-2] == ("chute", "centre")
+
+
+def test_drop_to_a_side_bin_drops_the_pins_before_tilting(client, logged, quick_sort):
+    client.post("/api/machine/drop", json={"bin": 3})
+    m = moves(logged)
+    assert m[:2] == [("chute", "centre"), ("pins", "down")]
+    assert ("chute", "right") in m and m.index(("chute", "right")) > m.index(("pins", "down"))
+    assert not any(part.startswith("door") for part, _ in m)
+    assert m[-2:] == [("chute", "centre"), ("pins", "up")]
+    assert client.post("/api/machine/drop", json={"bin": 7}).status_code == 400
+
+
+def test_sort_one_feeds_then_drops_and_sees_the_bed_clear(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    out = client.post("/api/machine/sort_one", json={"bin": 1}).get_json()
+    assert out["result"] == "landed" and out["bin"] == 1, out
+    assert out["dropped"] is True and out["drop_tries"] == 1
+    assert "bin 1" in out["message"]
+
+
+def test_sort_one_tries_the_drop_again_when_the_card_stays(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=True))
+    out = client.post("/api/machine/sort_one", json={"bin": 2}).get_json()
+    assert out["result"] == "landed" and out["dropped"] is False and out["drop_tries"] == 2, out
+    assert "still on the bed" in out["message"]
+
+
+def test_sort_one_does_not_drop_when_nothing_came(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=None))
+    out = client.post("/api/machine/sort_one", json={"bin": 3, "max_seconds": 0.3}).get_json()
+    assert out["result"] == "none" and out["dropped"] is None and out["drop_tries"] == 0
+    assert client.post("/api/machine/sort_one", json={"bin": 9}).status_code == 400
