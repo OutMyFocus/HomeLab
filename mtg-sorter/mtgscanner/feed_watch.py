@@ -210,9 +210,21 @@ class FeedWatcher:
             if fed["result"] == "none":
                 return out
             check = clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95]
+            latest = {"seq": seq}
+
+            def card_gone():
+                # Asked while the pins are down: has the landing band emptied, i.e. has the
+                # card slid off the teeth? Then the drop needn't wait the whole pins time.
+                latest["seq"], now = self.tap.next(latest["seq"], timeout=0.1)
+                if empty is None or now is None:
+                    return False
+                return changed_share(empty, now, fed["zone"]) < config.FEED_LAND_SHARE / 2
+
             for attempt in range(1 + max(0, int(getattr(config, "SORT_RETRIES", 1)))):
-                self.machine.drop(bin_no, **drop)
+                self.machine.drop(bin_no, card_gone=card_gone, **drop)
                 out["drop_tries"] = attempt + 1
+                out["pins_ms"] = round(1000 * getattr(self.machine, "last_pins_seconds", 0))
+                seq = max(seq, latest["seq"])
                 seq, now = self.tap.next(self.tap.seq, timeout=2.0)
                 if empty is None or now is None:
                     out["dropped"] = None        # no picture to compare: can't tell

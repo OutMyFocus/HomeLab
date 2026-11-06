@@ -292,13 +292,15 @@ class Machine:
             self.set_angle(channel, target)
             time.sleep(pause)
 
-    def drop(self, bin_no: int, pins_seconds=None, doors_seconds=None, tilt_seconds=None):
+    def drop(self, bin_no: int, pins_seconds=None, doors_seconds=None, tilt_seconds=None, card_gone=None):
         """Send the card on the bed to a bin (config.SORT_BINS): drop the stop pins so the
         card slides onto the level tray, then open the trapdoors (bin 2) or tilt the chute
         to the side (bins 1 and 3); then put everything back. About 6 s. Nothing watches the
         camera here (sort_one in feed_watch.py does that). The tray stays level while the
         card slides: tilted first, the card turns as it comes down and catches on the rail
-        (seen on the right side, 2026-11-06)."""
+        (seen on the right side, 2026-11-06). `card_gone`, if given, is asked every 0.1 s
+        while the pins are down and ends the wait early (after config.SORT_PINS_MIN_SECONDS
+        plus a moment to clear) once it says True: sort_one passes the camera's view."""
         bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
         try:
             position = bins[int(bin_no)]
@@ -313,21 +315,29 @@ class Machine:
         if "chute" not in servos or position not in servos["chute"][1]:
             raise ValueError(f"The chute has no '{position}' position: set it on the Machine page")
 
-        def hold(where, seconds):
+        def hold(where, seconds, until=None):
             # The chute lets go SERVO_HOLD_SECONDS after a move (so a stalled servo can't
             # cook); a tray left loose sags under the card, so send the angle again meanwhile.
-            end = time.monotonic() + seconds
+            start = time.monotonic()
+            end = start + seconds
+            resend = start + 1.0
+            least = start + float(getattr(config, "SORT_PINS_MIN_SECONDS", 0.5))
             while True:
-                left = end - time.monotonic()
-                if left <= 0:
-                    return
-                time.sleep(min(1.0, left))
-                self.move("chute", where)
+                now = time.monotonic()
+                if now >= end:
+                    return seconds
+                if until is not None and now >= least and until():
+                    time.sleep(min(0.3, max(0.0, end - now)))   # let it clear the teeth
+                    return round(time.monotonic() - start, 2)
+                if now >= resend:
+                    self.move("chute", where)
+                    resend = now + 1.0
+                time.sleep(min(0.1 if until is not None else 1.0, max(0.0, end - time.monotonic())))
 
         try:
             self.move("chute", "centre")
             self.move("pins", "down")
-            hold("centre", pins_seconds)            # the card slides onto the level tray
+            self.last_pins_seconds = hold("centre", pins_seconds, card_gone)   # the card slides onto the level tray
             if use_doors:
                 self.move("door_r", "open")
                 self.move("door_l", "open")

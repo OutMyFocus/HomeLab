@@ -358,6 +358,19 @@ def test_sort_one_feeds_then_drops_and_sees_the_bed_clear(watched, quick_sort):
     assert "bin 1" in out["message"]
 
 
+def test_sort_one_moves_on_as_soon_as_the_card_has_left_the_teeth(watched, monkeypatch):
+    """Pins down at most 2 s, but the fake card slides off the moment they drop, so the
+    drop goes on after the least time (0.5 s + a moment), not the full 2 s."""
+    monkeypatch.setattr(config, "SORT_PINS_SECONDS", 2.0)
+    monkeypatch.setattr(config, "SORT_DOORS_SECONDS", 0.05)
+    monkeypatch.setattr(config, "SORT_TILT_SECONDS", 0.05)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    out = client.post("/api/machine/sort_one", json={"bin": 2}).get_json()
+    assert out["result"] == "landed" and out["dropped"] is True, out
+    assert 400 <= out["pins_ms"] < 1500, out["pins_ms"]
+
+
 def test_sort_one_tries_the_drop_again_when_the_card_stays(watched, quick_sort):
     client, scanner, machine, cams = watched
     cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=True))
