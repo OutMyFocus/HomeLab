@@ -42,8 +42,9 @@
 //   post_sleeve, head_cover   camera arm covers
 //   "assembly" shows everything (preview only); "shell" just the enclosure parts
 //
-// Drawers: "Card Catalog v1.2" from MakerWorld, printed from Nic's 3MF (not in this repo).
-// Their size is set here, once, in dr_*; card_catalog_drawer.scad only draws one.
+// Drawers: the dock was sized from the "Card Catalog v1.2" drawer (MakerWorld). Since 2026-11-06
+// the bins are our own (bins.scad, with an organizer to keep them in), built to the same dr_*
+// outside size, so the dock fits either. The preview draws the bins.scad bin.
 
 include <bed_chute.scad>
 part = "none";            // keep bed_chute.scad quiet
@@ -582,7 +583,7 @@ module head_cover() {
 }
 
 // ============================ ASSEMBLY ==========================================
-use <card_catalog_drawer.scad>
+use <bins.scad>
 
 module place_post(i) {   // 0 fl, 1 fr, 2 bl, 3 br
     x = (i % 2 == 0) ? -hw : hw;  y = (i < 2) ? front_y : back_y;
@@ -610,7 +611,7 @@ module shell(open = false) {   // open: no deck, tower or right side, to see ins
 
 module drawers() {
     for (i = [0 : 2]) color(c_drawer[i]) translate([div_x[i], dock_y0 - (i == 1 ? show_drawer_out : 0), floor_t])
-        card_catalog_drawer(dr_w, dr_body_h, dr_l, dr_face_w, dr_face_h, dr_face_t);
+        sorter_bin();   // bins.scad: our own bin, same outside size as the Card Catalog drawer
 }
 
 module mechanism() {
