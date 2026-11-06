@@ -830,6 +830,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             s["saving_to"] = {"username": whose["username"], "name": whose["name"]}
             s["me"] = accounts.current()
         s["on_pi"] = ON_PI
+        s["sorter"] = ON_PI or bool(remote_url())   # a machine to run: the Scan page shows Start sorting
         s["scanners"] = [   # who else is scanning right now
             {"name": other.source.name, "owner": other.owner or (accounts.public(other.account)["name"] if other.account else ""),
              "cards": len(other.session)}

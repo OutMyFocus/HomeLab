@@ -460,3 +460,11 @@ def test_quiet_phone_pauses_then_goes_away(db):  # noqa: F811
     assert sc.stopped
     sc.run()                       # the thread's loop ends at once, and the app is told
     assert dropped == [sc]
+
+
+def test_scan_page_offers_start_sorting_only_where_there_is_a_sorter(client, monkeypatch):
+    """The Scan page's Start sorting button shows when the app runs the machine (the Pi,
+    or a server pointed at the Pi); /api/state says so."""
+    assert client.get("/api/state").get_json()["sorter"] is False       # tests: no Pi, no MTG_MACHINE_URL
+    page = client.get("/scan").get_data(as_text=True)
+    assert 'id="sortBtn"' in page and "Start sorting" in page
