@@ -184,7 +184,8 @@ class FakeCamera:
     """Hands the tap an empty bed, then (once the motor has run `after` frames) a card in
     the landing zone, from a thread like the Scanner's loop. card_stays: True = the card
     stays put; False = it slides off once the stop pins drop; "over" = it goes over the
-    teeth as soon as the motor stops."""
+    teeth as soon as the motor stops; "shifts" = the pins push it up out of the landing
+    band but it stays on the bed."""
 
     def __init__(self, tap, machine, card_after=3, card_stays=True):
         self.tap, self.machine = tap, machine
@@ -207,7 +208,9 @@ class FakeCamera:
                 landed = False                 # it went over the teeth
             if landed and self.card_stays is False and pins_down:
                 landed = False                 # the card slid off when the pins dropped
-            if landed:
+            if landed and self.card_stays == "shifts" and pins_down:
+                frame[150:200, 60:280] = 230   # pushed up out of the landing band, still on the bed
+            elif landed:
                 frame[240:290, 40:260] = 230   # a white card across the zone (y 0.6-0.72)
             self.tap.put(frame)
             time.sleep(0.02)
@@ -361,6 +364,16 @@ def test_sort_one_tries_the_drop_again_when_the_card_stays(watched, quick_sort):
     out = client.post("/api/machine/sort_one", json={"bin": 2}).get_json()
     assert out["result"] == "landed" and out["dropped"] is False and out["drop_tries"] == 2, out
     assert "still on the bed" in out["message"]
+
+
+def test_sort_one_sees_a_card_the_pins_pushed_out_of_the_landing_band(watched, quick_sort):
+    """The card leaves the landing band when the pins drop, but not the bed (2026-11-06,
+    B04): it is still there, so it must not count as dropped."""
+    client, scanner, machine, cams = watched
+    cam = FakeCamera(scanner.tap, machine, card_after=3, card_stays="shifts")
+    cams.append(cam)
+    out = client.post("/api/machine/sort_one", json={"bin": 1}).get_json()
+    assert out["result"] == "landed" and out["dropped"] is False, out
 
 
 def test_sort_one_does_not_drop_when_nothing_came(watched, quick_sort):
