@@ -115,6 +115,17 @@ class FeedWatcher:
         scanner.tap = self.tap
         self.busy = threading.Lock()
 
+    def _hold_lights(self, on: bool):
+        """The light bars stand still while the camera is watched (Lights.hold), since a
+        colour effect cycling under the bed reads as a change in the picture."""
+        lights = getattr(self.scanner, "lights", None)
+        if lights is None or not hasattr(lights, "hold"):
+            return
+        try:
+            (lights.hold if on else lights.release)()
+        except Exception:
+            pass
+
     def feed_one(self, speed=None, max_seconds=None, zone=None, backoff=None) -> dict:
         """Run the feeder until a card lands in the zone (or max_seconds pass), then stop,
         then turn the wheels backwards for `backoff` seconds (config.FEED_BACKOFF_SECONDS) so
@@ -128,6 +139,7 @@ class FeedWatcher:
         if not self.busy.acquire(blocking=False):
             raise RuntimeError("Already feeding a card")
         self.tap.watching += 1
+        self._hold_lights(True)
         try:
             seq, ref = self.tap.next(self.tap.seq, timeout=2.0)
             if ref is None:
@@ -172,6 +184,7 @@ class FeedWatcher:
             return {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms, "backoff_ms": round(1000 * backoff) if landed_ms is not None else 0,
                     "zone": zone, "settled_share": round(share, 3), "trace": trace}
         finally:
+            self._hold_lights(False)
             self.tap.watching -= 1
             self.busy.release()
 
@@ -189,6 +202,7 @@ class FeedWatcher:
         drop = {k: drop[k] for k in ("pins_seconds", "doors_seconds", "tilt_seconds")
                 if isinstance(drop, dict) and drop.get(k) is not None}
         self.tap.watching += 1
+        self._hold_lights(True)
         try:
             seq, empty = self.tap.next(self.tap.seq, timeout=2.0)   # the bed before the card
             fed = self.feed_one(speed=speed, backoff=backoff)
@@ -212,6 +226,7 @@ class FeedWatcher:
                 if out["dropped"]:
                     break
         finally:
+            self._hold_lights(False)
             self.tap.watching -= 1
         return out
 

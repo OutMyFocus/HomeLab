@@ -157,3 +157,24 @@ def test_card_light_settings_are_checked(client):
     assert client.post("/api/lights", json={"card": 5}).status_code == 400
     assert client.post("/api/lights", json={"count": 100, "card": {"count": 100}}).status_code == 400
     assert Lights().settings["card"]["count"] == 6                       # saved
+
+
+def test_lights_stand_still_while_held(spi):
+    """A feed watching the camera holds the lights: the effect freezes and flashes wait."""
+    import time
+    lights = Lights(opener=lambda: spi)
+    lights.update({"effect": "rainbow", "on": True})
+    t = time.monotonic()
+    a, moving = lights.render(t)
+    assert moving
+    lights.hold()
+    b, moving = lights.render(t + 1.0)
+    c, moving2 = lights.render(t + 2.0)
+    assert not moving and not moving2 and np.array_equal(b, c)
+    lights.flash("unknown", force=True)
+    assert lights._flash is None                 # no flash while held
+    lights.release()
+    _, moving = lights.render(t + 3.0)
+    assert moving
+    lights.flash("unknown", force=True)
+    assert lights._flash is not None
