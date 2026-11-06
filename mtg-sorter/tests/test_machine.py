@@ -1,12 +1,16 @@
 """The Machine page's API, with fake hardware (no Pi needed)."""
 
+import itertools
+import threading
 import time
 
+import numpy as np
 import pytest
 
 from app import Scanner, create_app
 from mtgscanner import config
 from mtgscanner.machine import Machine
+from mtgscanner.tracking import Track
 from test_scanner import db  # noqa: F401  (a fixture)
 
 
@@ -173,10 +177,6 @@ def test_home_sweeps_from_the_last_angle(machine, monkeypatch):
 
 # --- Feed one card, watching the camera (feed_watch.py) ---------------------------
 
-import threading  # noqa: E402
-
-import numpy as np  # noqa: E402
-
 from mtgscanner import feed_watch  # noqa: E402
 
 
@@ -195,20 +195,28 @@ class FakeCamera:
 
     def loop(self):
         motor_frames = 0
-        landed = False
+        landed = gone = False
+        pins_since = None
         while self.running:
             frame = np.full((400, 300, 3), 120, np.uint8)
-            if self.machine.feeding:
+            calls = self.machine._motor.calls
+            forward = self.machine.feeding and bool(calls) and calls[-1][0] == "forward"
+            pins_ch = config.SERVOS["pins"][0]
+            pins_down = self.machine.angles.get(pins_ch) == config.SERVOS["pins"][1]["down"]
+            if forward and gone and not pins_down:
+                gone, motor_frames, pins_since = False, 0, None   # the next card's feed
+            if forward and not gone:
                 motor_frames += 1
                 if self.card_after is not None and motor_frames >= self.card_after:
                     landed = True
-            pins_ch = config.SERVOS["pins"][0]
-            pins_down = self.machine.angles.get(pins_ch) == config.SERVOS["pins"][1]["down"]
             if landed and self.card_stays == "over" and not self.machine.feeding:
-                landed = False                 # it went over the teeth
-            if landed and self.card_stays is False and pins_down:
-                landed = False                 # the card slid off when the pins dropped
-            if landed and self.card_stays == "shifts" and pins_down:
+                landed, gone = False, True     # it went over the teeth
+            if landed and pins_down and self.card_stays in (False, "shifts"):
+                pins_since = pins_since or time.monotonic()
+            moved = pins_since is not None and time.monotonic() - pins_since > 0.4
+            if landed and self.card_stays is False and moved:
+                landed, gone = False, True     # the card slid off, 0.4 s after the pins dropped
+            if landed and self.card_stays == "shifts" and moved:
                 frame[150:200, 60:280] = 230   # pushed up out of the landing band, still on the bed
             elif landed:
                 frame[240:290, 40:260] = 230   # a white card across the zone (y 0.6-0.72)
@@ -308,7 +316,10 @@ def test_scanner_skips_recognizing_while_a_feed_watches(db, monkeypatch):  # noq
 
 @pytest.fixture
 def quick_sort(monkeypatch):
-    for name in ("SORT_PINS_SECONDS", "SORT_DOORS_SECONDS", "SORT_TILT_SECONDS"):
+    """Short drop timings: pins down up to 0.7 s (the fake card leaves 0.4 s after they drop),
+    doors and tilt 0.05 s."""
+    monkeypatch.setattr(config, "SORT_PINS_SECONDS", 0.7)
+    for name in ("SORT_DOORS_SECONDS", "SORT_TILT_SECONDS"):
         monkeypatch.setattr(config, name, 0.05)
 
 
@@ -358,6 +369,19 @@ def test_sort_one_feeds_then_drops_and_sees_the_bed_clear(watched, quick_sort):
     assert "bin 1" in out["message"]
 
 
+def test_sort_one_moves_on_as_soon_as_the_card_has_left_the_teeth(watched, monkeypatch):
+    """Pins down at most 2 s, but the fake card slides off the moment they drop, so the
+    drop goes on after the least time (0.5 s + a moment), not the full 2 s."""
+    monkeypatch.setattr(config, "SORT_PINS_SECONDS", 2.0)
+    monkeypatch.setattr(config, "SORT_DOORS_SECONDS", 0.05)
+    monkeypatch.setattr(config, "SORT_TILT_SECONDS", 0.05)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    out = client.post("/api/machine/sort_one", json={"bin": 2}).get_json()
+    assert out["result"] == "landed" and out["dropped"] is True, out
+    assert 400 <= out["pins_ms"] < 1500, out["pins_ms"]
+
+
 def test_sort_one_tries_the_drop_again_when_the_card_stays(watched, quick_sort):
     client, scanner, machine, cams = watched
     cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=True))
@@ -386,7 +410,7 @@ def test_sort_one_does_not_drop_when_nothing_came(watched, quick_sort):
 
 # --- The tuning run (tuning.py) --------------------------------------------------------
 
-def wait_tune(client, seconds=15):
+def wait_tune(client, seconds=40):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         d = client.get("/api/machine/tune").get_json()
@@ -407,12 +431,13 @@ def test_tuning_run_goes_round_the_bins_and_scores_clean_feeds(watched, quick_so
     assert [f["bin"] for f in d["feeds"]] == [1, 2, 3, 1, 2, 3]
     assert d["settings"]["speed"] == 0.8 and d["changes"] == []
     saved = client.post("/api/machine/tune/save", json={}).get_json()
-    assert saved["speed"] == 0.8 and saved["pins_seconds"] == 0.05
+    assert saved["speed"] == 0.8 and saved["pins_seconds"] == 0.7
     assert machine.feeder_defaults()["speed"] == 0.8
-    assert machine.sort_defaults()["pins_seconds"] == 0.1    # the quick test timing, saved (0.1 s is the least)
+    assert machine.sort_defaults()["pins_seconds"] == 0.7    # the quick test timing, saved
 
 
-def test_tuning_run_slows_the_feeder_after_a_card_goes_over(watched, quick_sort):
+def test_tuning_run_slows_the_feeder_after_a_card_goes_over(watched, quick_sort, monkeypatch):
+    monkeypatch.setattr(config, "SORT_PINS_SECONDS", 1.0)   # long enough to notice the card was never there
     client, scanner, machine, cams = watched
     cams.append(FakeCamera(scanner.tap, machine, card_after=2, card_stays="over"))
     client.post("/api/machine/tune", json={"cycles": 1, "bins": [2], "speed": 0.8})
@@ -428,7 +453,7 @@ def test_tuning_run_stops_when_a_card_is_left_on_the_bed(watched, quick_sort):
     d = wait_tune(client)
     assert len(d["feeds"]) == 1 and d["feeds"][0]["dropped"] is False
     assert "still on the bed" in d["done"]
-    assert d["settings"]["pins_seconds"] == 0.05   # a second drop isn't "slow": no pins change
+    assert d["settings"]["pins_seconds"] == 0.7    # a card left on the bed isn't "slow": no pins change
 
 
 def test_tuning_run_stops_when_the_hopper_is_empty(watched, quick_sort):
@@ -439,3 +464,86 @@ def test_tuning_run_stops_when_the_hopper_is_empty(watched, quick_sort):
     assert [f["result"] for f in d["feeds"]] == ["none", "none"]
     assert "hopper" in d["done"] and d["settings"]["speed"] == 1.0   # 0.95 then 1.0
     assert client.post("/api/machine/tune", json={"bins": [9]}).status_code == 400
+
+
+# --- The sort run (sort_run.py): the machine on its own ------------------------------
+
+class FakeRecognizer:
+    """Stands in for the scanner's loop during a sort run: whenever the feed watch lets
+    the pictures through (tap.watching == 0, the "choose" step), it puts one recognized
+    card on the scanner's table; while the feed watch is watching, the table is empty."""
+
+    def __init__(self, scanner, card, status="locked"):
+        self.scanner, self.card, self.status = scanner, card, status
+        self.running = True
+        self.ids = itertools.count(100)
+        threading.Thread(target=self.loop, daemon=True).start()
+
+    def loop(self):
+        while self.running:
+            with self.scanner.lock:
+                if self.scanner.tap.watching == 0 and not self.scanner.tracks and self.card is not None:
+                    t = Track(next(self.ids), 1, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
+                    t.card, t.status = self.card, self.status
+                    self.scanner.tracks.append(t)
+                elif self.scanner.tap.watching > 0:
+                    self.scanner.tracks.clear()
+            time.sleep(0.02)
+
+
+def wait_sort(client, seconds=40):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        d = client.get("/api/machine/sort").get_json()
+        if not d["running"]:
+            return d
+        time.sleep(0.05)
+    raise AssertionError("the sort run didn't finish")
+
+
+def test_sort_run_recognizes_saves_and_bins_each_card(watched, quick_sort, db):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    cams.append(FakeRecognizer(scanner, db.get_card("id1")))     # Card 1, $4.50 -> bin 2
+    r = client.post("/api/machine/sort", json={"max_cards": 2, "speed": 0.8})
+    assert r.status_code == 200, r.get_json()
+    assert client.post("/api/machine/sort", json={}).status_code == 409    # one at a time
+    d = wait_sort(client)
+    assert d["done"] == "did the 2 cards asked for", d
+    assert [c["status"] for c in d["cards"]] == ["saved", "saved"]
+    assert [c["bin"] for c in d["cards"]] == [2, 2] and d["cards"][0]["name"] == "Card 1"
+    assert d["counts"]["saved"] == 2 and d["tally"] == [{"bin": 2, "label": "$1 - $10", "cards": 2}]
+    assert all(c["dropped"] for c in d["cards"])
+    assert len(scanner.session) == 2 and scanner.session[0]["bin"] == 2     # in the collection
+
+
+def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_sort, monkeypatch):
+    from mtgscanner import sort_run
+    monkeypatch.setattr(sort_run, "RECOGNIZE_SECONDS", 0.3)
+    monkeypatch.setattr(config, "SORT_FALLBACK_BIN", 3)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
+    d = wait_sort(client)
+    assert d["cards"][0]["status"] == "unknown" and d["cards"][0]["bin"] == 3, d
+    assert scanner.session == []                                          # not saved
+
+
+def test_sort_run_does_not_save_an_unsure_guess(watched, quick_sort, db):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    cams.append(FakeRecognizer(scanner, db.get_card("id2"), status="unsure"))
+    client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
+    d = wait_sort(client)
+    c = d["cards"][0]
+    assert c["status"] == "unsure" and c["name"] == "Card 2" and c["bin"] == config.SORT_FALLBACK_BIN, d
+    assert scanner.session == []
+
+
+def test_sort_run_stops_when_the_hopper_is_empty(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=None))
+    client.post("/api/machine/sort", json={"speed": 0.8, "max_cards": 0})
+    d = wait_sort(client)
+    assert "hopper is empty" in d["done"] and d["counts"]["none"] == 2, d
+    assert client.post("/api/machine/sort/stop", json={}).get_json()["running"] is False

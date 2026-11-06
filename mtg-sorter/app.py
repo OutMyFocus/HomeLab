@@ -53,6 +53,7 @@ from mtgscanner.tuning import add_tuning_routes
 from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
 from mtgscanner.remote_machine import RemoteCameraSource, RemoteLights, RemoteMachine, remote_url
 from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
+from mtgscanner.sort_run import add_sort_run_routes
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.system import ON_PI, add_system_routes
 from mtgscanner.tracking import Track, free_number, pair_up
@@ -662,6 +663,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     add_machine_routes(app, machine, WEB)  # the /machine test page
     watcher = add_feed_watch_routes(app, scanner, machine)  # Feed one card, watching the camera
     add_tuning_routes(app, watcher, machine)               # the tuning run round the bins
+    add_sort_run_routes(app, watcher, scanner, machine)    # Start sorting: the machine on its own
     add_lights_routes(app, scanner.lights, WEB)  # the /lights page
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
     add_collection_routes(app, scanner, WEB)  # the /collection page
