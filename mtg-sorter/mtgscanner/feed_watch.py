@@ -186,24 +186,27 @@ class FeedWatcher:
         if bin_no not in bins and str(bin_no) not in map(str, bins):
             raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
         bin_no = int(bin_no)
-        fed = self.feed_one(speed=speed)
-        out = fed | {"bin": bin_no, "dropped": None, "drop_tries": 0}
-        if fed["result"] == "none":
-            return out
         self.tap.watching += 1
         try:
-            seq, ref = self.tap.next(self.tap.seq, timeout=2.0)   # the bed with the card on it
+            seq, empty = self.tap.next(self.tap.seq, timeout=2.0)   # the bed before the card
+            fed = self.feed_one(speed=speed)
+            out = fed | {"bin": bin_no, "dropped": None, "drop_tries": 0}
+            if fed["result"] == "none":
+                return out
+            check = clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95]
             for attempt in range(1 + max(0, int(getattr(config, "SORT_RETRIES", 1)))):
                 self.machine.drop(bin_no)
                 out["drop_tries"] = attempt + 1
-                seq, now = self.tap.next(seq, timeout=2.0)
-                if ref is None or now is None:
+                seq, now = self.tap.next(self.tap.seq, timeout=2.0)
+                if empty is None or now is None:
                     out["dropped"] = None        # no picture to compare: can't tell
                     break
-                # Gone = the zone changed as much as a card arriving did. Compare with the
-                # bed as it looked with the card on it, not with the empty bed: the camera
-                # and lights have drifted since the feed started.
-                out["dropped"] = changed_share(ref, now, fed["zone"]) >= config.FEED_LAND_SHARE / 2
+                # Gone = the view looks like the empty bed again, over nearly the whole
+                # picture (not just the landing band: a card the pins pushed up or turned
+                # leaves the band but not the bed, and counted as dropped, 2026-11-06).
+                share = changed_share(empty, now, check)
+                out["dropped"] = share < getattr(config, "SORT_GONE_SHARE", 0.05)
+                out["left_share"] = round(share, 3)
                 if out["dropped"]:
                     break
         finally:

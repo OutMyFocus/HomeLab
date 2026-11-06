@@ -166,6 +166,12 @@ SORT_PINS_SECONDS = 3.0       # pins down this long before the doors open / the 
 SORT_DOORS_SECONDS = 2.5      # trapdoors open this long
 SORT_TILT_SECONDS = 2.0       # bins 1 and 3: tilted this long for the card to slide off
 SORT_RETRIES = 1              # drop again this many times if the camera still sees the card
+# After a drop, the card counts as gone when less than this share of the picture
+# (SORT_CHECK_ZONE, shares like FEED_ZONE: nearly the whole view, slot to tray) still looks
+# different from the empty bed before the feed. A card is about a tenth of the view, so a
+# card the pins pushed up or turned stays well above this, which the landing band missed.
+SORT_CHECK_ZONE = (0.05, 0.05, 0.95, 0.95)
+SORT_GONE_SHARE = 0.05
 
 # --- The light bars (lights.py) --------------------------------------------
 # 5 V addressable RGB bars (WS2812, "3-pin ARGB"). Their data wire goes to GPIO10 (pin 19),
