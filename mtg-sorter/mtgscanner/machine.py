@@ -111,6 +111,25 @@ class Machine:
                       speed=round(min(1.0, max(0.1, float(speed))), 2))
         self._write(saved)
 
+    def sort_defaults(self) -> dict:
+        """How a card is dropped into a bin (config.SORT_*), with what the tuning run saved."""
+        saved = load_saved().get("sort", {})
+        out = {}
+        for key, name in (("pins_seconds", "SORT_PINS_SECONDS"), ("doors_seconds", "SORT_DOORS_SECONDS"),
+                          ("tilt_seconds", "SORT_TILT_SECONDS")):
+            v = saved.get(key, getattr(config, name))
+            out[key] = float(v) if isinstance(v, (int, float)) else float(getattr(config, name))
+        return out
+
+    def save_sort(self, **timings):
+        """Keep drop timings (pins_seconds, doors_seconds, tilt_seconds) from the tuning run."""
+        saved = load_saved()
+        sort = saved.setdefault("sort", {})
+        for key in ("pins_seconds", "doors_seconds", "tilt_seconds"):
+            if timings.get(key) is not None:
+                sort[key] = round(min(10.0, max(0.1, float(timings[key]))), 2)
+        self._write(saved)
+
     def set_feeder_reverse(self, on: bool):
         """For a motor fitted the other way round: "forward" then turns it backwards."""
         saved = load_saved()
@@ -285,9 +304,10 @@ class Machine:
             position = bins[int(bin_no)]
         except (KeyError, TypeError, ValueError):
             raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
-        pins_seconds = float(config.SORT_PINS_SECONDS if pins_seconds is None else pins_seconds)
-        doors_seconds = float(config.SORT_DOORS_SECONDS if doors_seconds is None else doors_seconds)
-        tilt_seconds = float(config.SORT_TILT_SECONDS if tilt_seconds is None else tilt_seconds)
+        defaults = self.sort_defaults()
+        pins_seconds = float(defaults["pins_seconds"] if pins_seconds is None else pins_seconds)
+        doors_seconds = float(defaults["doors_seconds"] if doors_seconds is None else doors_seconds)
+        tilt_seconds = float(defaults["tilt_seconds"] if tilt_seconds is None else tilt_seconds)
         use_doors = int(bin_no) == getattr(config, "SORT_DOOR_BIN", 2)
         servos = self.servos()
         if "chute" not in servos or position not in servos["chute"][1]:
@@ -390,6 +410,7 @@ class Machine:
                                  "angle": self.angles.get(ch)}
                           for part, (ch, pos) in servos.items()},
                 "feeder_defaults": defaults,
+                "sort_defaults": self.sort_defaults(),
                 "wide_travel": self.wide_travel(),
                 "home_at_startup": self.home_at_startup(),
                 "customized": settings_file().exists(),
@@ -459,6 +480,8 @@ def add_machine_routes(app, machine: Machine, web_dir):
             return answer(lambda: machine.set_home_at_startup(bool(body["home_at_startup"])))
         if "wide_travel" in body:
             return answer(lambda: machine.set_wide_travel(bool(body["wide_travel"])))
+        if "sort" in body:
+            return answer(lambda: machine.save_sort(**(body["sort"] if isinstance(body["sort"], dict) else {})))
         if "reverse" in body and "seconds" not in body:
             return answer(lambda: machine.set_feeder_reverse(bool(body["reverse"])))
         return answer(lambda: machine.save_feeder(body.get("seconds"), body.get("speed")))

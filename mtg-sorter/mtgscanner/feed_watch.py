@@ -176,7 +176,7 @@ class FeedWatcher:
             self.busy.release()
 
 
-    def sort_one(self, bin_no, speed=None) -> dict:
+    def sort_one(self, bin_no, speed=None, drop=None, backoff=None) -> dict:
         """Feed one card and drop it into a bin, watching the camera: feed_one, then
         Machine.drop, then a look at the landing zone to see that the card has gone. If it
         is still there (a slow slider, or a card stuck half on the doors), the drop is done
@@ -186,16 +186,18 @@ class FeedWatcher:
         if bin_no not in bins and str(bin_no) not in map(str, bins):
             raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
         bin_no = int(bin_no)
+        drop = {k: drop[k] for k in ("pins_seconds", "doors_seconds", "tilt_seconds")
+                if isinstance(drop, dict) and drop.get(k) is not None}
         self.tap.watching += 1
         try:
             seq, empty = self.tap.next(self.tap.seq, timeout=2.0)   # the bed before the card
-            fed = self.feed_one(speed=speed)
+            fed = self.feed_one(speed=speed, backoff=backoff)
             out = fed | {"bin": bin_no, "dropped": None, "drop_tries": 0}
             if fed["result"] == "none":
                 return out
             check = clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95]
             for attempt in range(1 + max(0, int(getattr(config, "SORT_RETRIES", 1)))):
-                self.machine.drop(bin_no)
+                self.machine.drop(bin_no, **drop)
                 out["drop_tries"] = attempt + 1
                 seq, now = self.tap.next(self.tap.seq, timeout=2.0)
                 if empty is None or now is None:
@@ -243,7 +245,7 @@ def add_feed_watch_routes(app, scanner, machine):
         body = request.get_json(silent=True) or {}
         run_sort = machine.sort_one if watcher is None else watcher.sort_one
         try:
-            out = run_sort(body.get("bin"), body.get("speed"))
+            out = run_sort(body.get("bin"), body.get("speed"), body.get("drop"), body.get("backoff"))
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:

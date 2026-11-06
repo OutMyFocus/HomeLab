@@ -382,3 +382,60 @@ def test_sort_one_does_not_drop_when_nothing_came(watched, quick_sort):
     out = client.post("/api/machine/sort_one", json={"bin": 3, "max_seconds": 0.3}).get_json()
     assert out["result"] == "none" and out["dropped"] is None and out["drop_tries"] == 0
     assert client.post("/api/machine/sort_one", json={"bin": 9}).status_code == 400
+
+
+# --- The tuning run (tuning.py) --------------------------------------------------------
+
+def wait_tune(client, seconds=15):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        d = client.get("/api/machine/tune").get_json()
+        if not d["running"]:
+            return d
+        time.sleep(0.05)
+    raise AssertionError("the tuning run didn't finish")
+
+
+def test_tuning_run_goes_round_the_bins_and_scores_clean_feeds(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    r = client.post("/api/machine/tune", json={"cycles": 2, "speed": 0.8})
+    assert r.status_code == 200, r.get_json()
+    assert client.post("/api/machine/tune", json={}).status_code == 409    # one at a time
+    d = wait_tune(client)
+    assert d["done"] == "finished" and d["score"] == {"clean": 6, "total": 6}, d
+    assert [f["bin"] for f in d["feeds"]] == [1, 2, 3, 1, 2, 3]
+    assert d["settings"]["speed"] == 0.8 and d["changes"] == []
+    saved = client.post("/api/machine/tune/save", json={}).get_json()
+    assert saved["speed"] == 0.8 and saved["pins_seconds"] == 0.05
+    assert machine.feeder_defaults()["speed"] == 0.8
+    assert machine.sort_defaults()["pins_seconds"] == 0.1    # the quick test timing, saved (0.1 s is the least)
+
+
+def test_tuning_run_slows_the_feeder_after_a_card_goes_over(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=2, card_stays="over"))
+    client.post("/api/machine/tune", json={"cycles": 1, "bins": [2], "speed": 0.8})
+    d = wait_tune(client)
+    assert d["feeds"][0]["result"] == "over" and d["feeds"][0]["clean"] is False
+    assert d["settings"]["speed"] == 0.75 and d["changes"][0]["speed"] == 0.75
+
+
+def test_tuning_run_stops_when_a_card_is_left_on_the_bed(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=True))
+    client.post("/api/machine/tune", json={"cycles": 3, "speed": 0.8})
+    d = wait_tune(client)
+    assert len(d["feeds"]) == 1 and d["feeds"][0]["dropped"] is False
+    assert "still on the bed" in d["done"]
+    assert d["settings"]["pins_seconds"] == 0.05   # a second drop isn't "slow": no pins change
+
+
+def test_tuning_run_stops_when_the_hopper_is_empty(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=None))
+    client.post("/api/machine/tune", json={"cycles": 2, "bins": [1], "speed": 0.9})
+    d = wait_tune(client)
+    assert [f["result"] for f in d["feeds"]] == ["none", "none"]
+    assert "hopper" in d["done"] and d["settings"]["speed"] == 1.0   # 0.95 then 1.0
+    assert client.post("/api/machine/tune", json={"bins": [9]}).status_code == 400

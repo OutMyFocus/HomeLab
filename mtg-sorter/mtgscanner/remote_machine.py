@@ -129,8 +129,28 @@ class RemoteMachine:
                                          "doors_seconds": doors_seconds, "tilt_seconds": tilt_seconds},
                    timeout=(2, 30))
 
-    def sort_one(self, bin_no, speed=None) -> dict:
-        return self._call("/api/machine/sort_one", {"bin": bin_no, "speed": speed}, timeout=(2, 60))
+    def sort_one(self, bin_no, speed=None, drop=None, backoff=None) -> dict:
+        return self._call("/api/machine/sort_one", {"bin": bin_no, "speed": speed, "drop": drop, "backoff": backoff},
+                          timeout=(2, 60))
+
+    def sort_defaults(self) -> dict:
+        return self.state().get("sort_defaults", {})
+
+    def save_sort(self, **timings):
+        self._call("/api/machine/save", {"sort": timings})
+
+    # the tuning run (tuning.py) happens on the Pi; these pass the page's calls on
+    def tune_start(self, body: dict) -> dict:
+        return self._call("/api/machine/tune", body)
+
+    def tune_status(self) -> dict:
+        return self._call("/api/machine/tune")
+
+    def tune_stop(self) -> dict:
+        return self._call("/api/machine/tune/stop", {})
+
+    def tune_save(self) -> dict:
+        return self._call("/api/machine/tune/save", {}, timeout=(2, 15))
 
     def feed_zone(self) -> list:
         return self._call("/api/machine/feed_zone")["zone"]
