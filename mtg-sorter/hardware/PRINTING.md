@@ -141,3 +141,24 @@ settings (the drawer prints standing, front plate vertical); use them as they ar
 print only the **drawer** and **drawer top** objects, three of each. The box, dividers
 and connectors are for your shelf, not the sorter. The sorter's dock is measured from
 this exact file, so a drawer that fits your shelf fits the sorter.
+
+## DC jack holder (servo power)
+
+`bambu/MTG_Sorter_DC_Jack_Holder.3mf` (File > Open Project, one plate, black, under 10 g and
+about half an hour). It holds the green-terminal 5.5 × 2.1 mm barrel jack that the 5 V 4 A adapter plugs
+into, in the power cut-out of `back_l`, so the adapter plugs in from outside the box. No new
+holes; the Pi's USB-C cable still goes through the same cut-out, beside the jack.
+
+1. Wire the jack first (red to **+**, black to **−**), the wires leaving the back of the green block.
+2. Lay the jack in the holder's trough, green block at the back stop, nose forward. Tie it down
+   with two small zip ties through the tunnels under the trough.
+3. From inside, push the holder against the back panel: the tongue goes into the right-hand end
+   of the cut-out (seen from inside), the jack's nose into the left-hand end, and the base stands
+   on the floor.
+4. Lay the Pi's USB-C cable in the gap between the jack and the tongue.
+5. From outside, put the bezel on (cable slot over the cable, open side down) and drive one
+   M3 × 12 self-tapping screw through it into the tongue. Snug, not tight.
+
+Made for a jack about 38 × 14 × 13 mm. If yours is longer or shorter, change `jack_l` in
+`dc_jack_holder.scad` and run `sh export_enclosure.sh`, then
+`python3 bambu/make_small_projects.py MTG_Sorter_DC_Jack_Holder.3mf`.

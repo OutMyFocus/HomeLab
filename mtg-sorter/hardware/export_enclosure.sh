@@ -22,3 +22,7 @@ for p in bed_plate stop_gate gate_bearing chute3 door3 door3_left door_crank3 do
   openscad -q --export-format binstl -o "stl/bed_chute_$p.stl" -D "part=\"$p\"" bed_chute.scad
 done
 # the drawers themselves come from the Card Catalog 3MF (MakerWorld 3016550), not from here
+# holder + bezel for the servo-power barrel jack in the back panel's power cut-out
+for p in holder bezel; do
+  openscad -q --export-format binstl -o "stl/dc_jack_$p.stl" -D "part=\"$p\"" dc_jack_holder.scad
+done
