@@ -311,10 +311,10 @@ function showSort(d) {
   const cards = d.cards || [], c = d.counts || {};
   const where = d.running ? "Sorting" : (d.done ? `Done: ${d.done}` : "Not started");
   $("sortStatus").textContent = `${where}. ${cards.length} card${cards.length === 1 ? "" : "s"}: ${c.saved || 0} saved (${money(d.value)}), ${c.unsure || 0} unsure, ${c.unknown || 0} unknown. Speed ${d.speed ?? "-"}.`;
-  $("sortTally").textContent = (d.tally || []).map((t) => `Bin ${t.bin} (${t.label}): ${t.cards}`).join(" · ");
+  $("sortTally").textContent = (d.tally || []).map((t) => `Bin ${t.bin} (${t.label}): ${t.cards}`).join(" · ") + (d.warning ? ` — ${d.warning}` : "");
   $("sortTable").hidden = cards.length === 0;
   $("sortTable").querySelector("tbody").innerHTML = cards.slice().reverse().map((k) =>
-    `<tr><td>${k.n}</td><td>${k.name ? `${k.name} <small>${k.set || ""} ${k.number || ""}</small>` : (k.status === "none" ? "nothing came out" : "not recognized")}${k.status === "unsure" ? " <small>(unsure)</small>" : ""}</td><td>${money(k.price)}</td><td>${k.bin == null ? "-" : `${k.bin} ${k.bin_label || ""}`}</td><td>${k.status === "none" ? "no card" : (k.dropped === false ? "still on the bed" : (k.drop_tries > 1 ? "dropped (2nd try)" : "dropped"))}</td><td>${k.seconds ?? "-"} s</td></tr>`).join("");
+    `<tr><td>${k.n}</td><td>${k.name ? `${k.name} <small>${k.set || ""} ${k.number || ""}</small>` : (k.status === "none" ? "nothing came out" : "not recognized")}${k.status === "unsure" ? " <small>(unsure)</small>" : ""}</td><td>${money(k.price)}</td><td>${k.bin == null ? "-" : `${k.bin} ${k.bin_label || ""}`}</td><td>${k.status === "none" ? "no card" : (k.dropped === false ? "still on the bed" : (k.drop_tries > 1 ? "dropped (2nd try)" : "dropped"))}</td><td>${k.seconds ?? "-"} s${k.seconds_reading != null ? ` <small>(read ${k.seconds_reading} s${k.dimmed ? ", dimmed" : ""})</small>` : ""}</td></tr>`).join("");
   $("sortStart").disabled = !!d.running;
   if (d.running && !sortTimer) sortTimer = setInterval(async () => showSort(await tuneApi("/api/machine/sort")), 2000);
   if (!d.running && sortTimer) { clearInterval(sortTimer); sortTimer = null; }
