@@ -191,16 +191,26 @@ class FeedWatcher:
             self.busy.release()
 
 
-    def sort_one(self, bin_no, speed=None, drop=None, backoff=None) -> dict:
+    @staticmethod
+    def check_bin(bin_no) -> int:
+        bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
+        if bin_no not in bins and str(bin_no) not in map(str, bins):
+            raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
+        return int(bin_no)
+
+    def sort_one(self, bin_no, speed=None, drop=None, backoff=None, choose=None) -> dict:
         """Feed one card and drop it into a bin, watching the camera: feed_one, then
         Machine.drop, then a look at the landing zone to see that the card has gone. If it
         is still there (a slow slider, or a card stuck half on the doors), the drop is done
         again, config.SORT_RETRIES times. Returns the feed's result plus "bin", "dropped"
-        (True/False/None when no card landed) and "drop_tries"."""
-        bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
-        if bin_no not in bins and str(bin_no) not in map(str, bins):
-            raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
-        bin_no = int(bin_no)
+        (True/False/None when no card landed) and "drop_tries".
+
+        `choose(fed)`, if given, is asked for the bin once the card has landed (bin_no may
+        then be None): the sort run (sort_run.py) lets the scanner recognize the card
+        meanwhile, so the camera's pictures go to the scanner, not the feed watch, while
+        it runs."""
+        if bin_no is not None or choose is None:
+            bin_no = self.check_bin(bin_no)
         drop = {k: drop[k] for k in ("pins_seconds", "doors_seconds", "tilt_seconds")
                 if isinstance(drop, dict) and drop.get(k) is not None}
         self.tap.watching += 1
@@ -220,6 +230,13 @@ class FeedWatcher:
             if backoff:
                 self.machine.feed(seconds=backoff, speed=speed, backward=True)
                 out["backoff_ms"] = round(1000 * backoff)
+            if choose is not None:
+                self.tap.watching -= 1      # the scanner gets the pictures: let it look
+                try:
+                    bin_no = self.check_bin(choose(fed))
+                finally:
+                    self.tap.watching += 1
+                out["bin"] = bin_no
             check = clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95]
             latest = {"seq": seq}
 

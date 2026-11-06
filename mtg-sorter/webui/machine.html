@@ -107,6 +107,21 @@
       <button class="btn ghost" id="feedZoneSave">Save zone</button>
     </div>
   </section>
+  <section class="panel" id="sortPanel">
+    <h2>Start sorting</h2>
+    <p class="sub">The machine on its own: it feeds a card, the scanner recognizes it, it is saved to the collection
+      and dropped into the bin your <a href="/bins">Bins</a> rules give it, then the next one, until the hopper is empty
+      or you press Stop. A card the scanner isn't sure of, or can't read in time, isn't saved and goes to the
+      fallback bin so you can look at it by hand. Keep your hands out while it runs.</p>
+    <div class="row">
+      <label class="inline">Cards <input type="number" id="sortMax" min="0" max="1000" value="0" title="0 = until the hopper is empty"></label>
+      <button class="btn primary" id="sortStart">Start sorting</button>
+      <button class="btn ghost" id="sortStop">Stop</button>
+    </div>
+    <p class="sub" id="sortStatus"></p>
+    <p class="sub" id="sortTally"></p>
+    <table id="sortTable" hidden><thead><tr><th>#</th><th>Card</th><th>Price</th><th>Bin</th><th>Result</th><th>Time</th></tr></thead><tbody></tbody></table>
+  </section>
   <section class="panel">
     <h2>Tuning run</h2>
     <p class="sub">Sorts card after card round the bins and scores every feed. With <b>adjust</b> on it slows the
@@ -286,6 +301,26 @@ $("tuneSave").onclick = async () => {
   if (!d.error) $("feedSpeed").value = d.speed;
 };
 tuneApi("/api/machine/tune").then(showTune).catch(() => {});
+
+// --- the sort run: the machine on its own ---
+let sortTimer = null;
+const money = (v) => v == null ? "-" : "$" + Number(v).toFixed(2);
+function showSort(d) {
+  if (d.error) { $("sortStatus").textContent = d.error; return; }
+  const cards = d.cards || [], c = d.counts || {};
+  const where = d.running ? "Sorting" : (d.done ? `Done: ${d.done}` : "Not started");
+  $("sortStatus").textContent = `${where}. ${cards.length} card${cards.length === 1 ? "" : "s"}: ${c.saved || 0} saved (${money(d.value)}), ${c.unsure || 0} unsure, ${c.unknown || 0} unknown. Speed ${d.speed ?? "-"}.`;
+  $("sortTally").textContent = (d.tally || []).map((t) => `Bin ${t.bin} (${t.label}): ${t.cards}`).join(" · ");
+  $("sortTable").hidden = cards.length === 0;
+  $("sortTable").querySelector("tbody").innerHTML = cards.slice().reverse().map((k) =>
+    `<tr><td>${k.n}</td><td>${k.name ? `${k.name} <small>${k.set || ""} ${k.number || ""}</small>` : (k.status === "none" ? "nothing came out" : "not recognized")}${k.status === "unsure" ? " <small>(unsure)</small>" : ""}</td><td>${money(k.price)}</td><td>${k.bin == null ? "-" : `${k.bin} ${k.bin_label || ""}`}</td><td>${k.status === "none" ? "no card" : (k.dropped === false ? "still on the bed" : (k.drop_tries > 1 ? "dropped (2nd try)" : "dropped"))}</td><td>${k.seconds ?? "-"} s</td></tr>`).join("");
+  $("sortStart").disabled = !!d.running;
+  if (d.running && !sortTimer) sortTimer = setInterval(async () => showSort(await tuneApi("/api/machine/sort")), 2000);
+  if (!d.running && sortTimer) { clearInterval(sortTimer); sortTimer = null; }
+}
+$("sortStart").onclick = async () => showSort(await tuneApi("/api/machine/sort", { max_cards: +$("sortMax").value, speed: +$("feedSpeed").value }));
+$("sortStop").onclick = async () => showSort(await tuneApi("/api/machine/sort/stop", {}));
+tuneApi("/api/machine/sort").then(showSort).catch(() => {});
 fetch("/api/machine/feed_zone").then((r) => r.json()).then((d) => { if (d.zone) $("feedZone").value = d.zone.join(", "); }).catch(() => {});
 $("feedZoneSave").onclick = async () => {
   const zone = $("feedZone").value.split(/[ ,]+/).filter(Boolean).map(Number);
