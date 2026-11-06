@@ -594,3 +594,32 @@ def test_sort_run_stops_when_the_hopper_is_empty(watched, quick_sort):
     d = wait_sort(client)
     assert "hopper is empty" in d["done"] and d["counts"]["none"] == 2, d
     assert client.post("/api/machine/sort/stop", json={}).get_json()["running"] is False
+
+
+def test_sort_run_stops_when_two_cards_come_out_together(watched, quick_sort, db):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    pair = FakeRecognizer(scanner, db.get_card("id1"))
+    cams.append(pair)
+
+    class Second:   # a second card next to the first, as a stacked pair looks to the scanner
+        def __init__(self):
+            self.running = True
+            threading.Thread(target=self.loop, daemon=True).start()
+
+        def loop(self):
+            while self.running:
+                with scanner.lock:
+                    if len(scanner.tracks) == 1 and scanner.tap.watching == 0:
+                        t = Track(999, 2, np.array([[40, 185], [260, 185], [260, 235], [40, 235]], float))
+                        t.card, t.status, t.checked_time, t.streak_key = db.get_card("id2"), "locked", time.monotonic(), "id2"
+                        scanner.tracks.append(t)
+                time.sleep(0.01)
+    cams.append(Second())
+    client.post("/api/machine/sort", json={"max_cards": 3, "speed": 0.8})
+    d = wait_sort(client)
+    assert "two cards came out together" in d["done"], d
+    assert d["cards"][-1]["status"] == "double" and d["cards"][-1]["bin"] is None
+    pins = config.SERVOS["pins"]
+    assert machine.angles.get(pins[0]) == pins[1]["up"]      # nothing was dropped
+    assert scanner.session == []

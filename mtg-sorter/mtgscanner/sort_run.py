@@ -17,6 +17,7 @@ What each card ends up as:
   unknown   not recognized in time (config.SORT_RECOGNIZE_SECONDS, with the light bars
             dimmed for a second look after SORT_FOIL_AFTER: foils glare): the same, not saved
   none      nothing reached the bed (the run stops after two in a row: hopper empty)
+  double    two cards came out together: the run stops with the pins up, nothing dropped
 
 The run stops on its own when a card is left on the bed after the retries (something is
 caught) or when nothing came out twice in a row.
@@ -31,6 +32,10 @@ from . import config, sort_rules
 
 LANDED_FROM = 0.45          # a landed card's middle is below this share of the picture's height
 MAX_CARDS = 1000
+
+
+class DoubleFeed(RuntimeError):
+    """Two cards reached the bed at once; the run stops rather than sort them as one."""
 
 
 class SortRun:
@@ -105,6 +110,11 @@ class SortRun:
                         pass
                 try:
                     out = self.watcher.sort_one(None, speed=speed, choose=lambda fed, c=card: self._choose(c))
+                except DoubleFeed as e:
+                    with self.lock:
+                        self.state["cards"].append(card | {"seconds": round(time.monotonic() - t0, 1)})
+                    reason = str(e)
+                    return
                 except (RuntimeError, ValueError) as e:
                     reason = f"error: {e}"
                     return
@@ -126,6 +136,17 @@ class SortRun:
             with self.lock:
                 self.state["running"] = False
                 self.state["done"] = reason
+
+    @staticmethod
+    def _apart(tracks) -> bool:
+        """Two tracks whose middles are a fifth of a card apart or more (a card the scanner
+        sees twice at nearly the same spot doesn't count)."""
+        import itertools
+        for a, b in itertools.combinations(tracks, 2):
+            gap = float(abs(a.center - b.center).max())
+            if gap > 0.2 * max(a.size, b.size, 1.0):
+                return True
+        return False
 
     @staticmethod
     def real_bin(bin_no) -> int:
@@ -187,6 +208,12 @@ class SortRun:
                           and t.streak_key == (t.card.id if t.card else "unknown")   # latest look agrees
                           and float(t.center[1]) / height >= LANDED_FROM]
                 track = max(tracks, key=lambda t: float(t.center[1]), default=None)
+                if len(tracks) >= 2 and self._apart(tracks):
+                    # Two cards on the bed at once: the feeder let a pair through. Sorting
+                    # the pair as one card puts an unsaved card in the wrong bin, so stop
+                    # with the pins up and let someone take them off (seen 2026-11-06).
+                    card.update({"status": "double", "bin": None})
+                    raise DoubleFeed("two cards came out together: take them off the bed and press Start again")
                 if track is not None and track.status in ("locked", "unsure"):
                     break
                 # "unknown" so far: the first looks at a card are often while it is still
