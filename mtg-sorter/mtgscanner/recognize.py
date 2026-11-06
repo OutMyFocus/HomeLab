@@ -7,7 +7,7 @@ import numpy as np
 
 from . import config
 from .database import Card, Hit, Matcher
-from .vision import find_card_candidates, fingerprint, grow, warp_card
+from .vision import find_card_candidates, fingerprint, grow, warp_card, tame_glare
 
 GOOD_ENOUGH = 40   # a match this close is certain: stop trying other outlines
 
@@ -176,6 +176,19 @@ def identify(matcher: Matcher, card_img) -> tuple[Card | None, int]:
 
 def _rank(matcher: Matcher, card_img) -> Hit:
     # The card might be upside down, so try both ways and keep the better match.
+    best = _rank_both_ways(matcher, card_img)
+    if best.distance > config.MAX_MATCH_DISTANCE:
+        # No match: a foil's glare may be hiding the art. Paint the bright patches over
+        # and look again (2026-11-06: 4 of 5 misses on the sorter were foils).
+        tamed = tame_glare(card_img)
+        if tamed is not None:
+            again = _rank_both_ways(matcher, tamed)
+            if again.distance < best.distance:
+                best = again
+    return best
+
+
+def _rank_both_ways(matcher: Matcher, card_img) -> Hit:
     best: Hit | None = None
     for img in (card_img, cv2.rotate(card_img, cv2.ROTATE_180)):
         hit = matcher.rank(fingerprint(img))
