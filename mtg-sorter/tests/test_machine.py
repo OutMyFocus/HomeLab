@@ -529,7 +529,9 @@ def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_
     stale.card, stale.status, stale.checked_time = db.get_card("id1"), "locked", time.monotonic() - 1
     top = Track(2, 2, np.array([[40, 10], [260, 10], [260, 60], [40, 60]], float))
     top.card, top.status, top.checked_time = db.get_card("id2"), "locked", time.monotonic() + 100
-    scanner.tracks.extend([stale, top])
+    unread = Track(3, 3, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
+    unread.status, unread.checked_time = "unknown", time.monotonic() + 100      # no match yet: keep waiting
+    scanner.tracks.extend([stale, top, unread])
     scanner.frame_size = (300, 400)
     client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
     d = wait_sort(client)

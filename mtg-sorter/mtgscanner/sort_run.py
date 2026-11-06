@@ -137,8 +137,10 @@ class SortRun:
                           if t.status in ("locked", "unsure", "unknown") and t.checked_time >= fed_at
                           and float(t.center[1]) / height >= LANDED_FROM]
                 track = max(tracks, key=lambda t: float(t.center[1]), default=None)
-                if track is not None and (track.status != "unknown" or len(tracks) == 1):
+                if track is not None and track.status in ("locked", "unsure"):
                     break
+                # "unknown" so far: the first looks at a card are often while it is still
+                # sliding or blurred, so keep waiting for a match until the deadline
                 track = None
             time.sleep(0.1)
         if track is None:
