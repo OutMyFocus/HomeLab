@@ -161,6 +161,10 @@ FEED_BACKOFF_SECONDS = 0.25
 # stay down SORT_PINS_SECONDS; then the doors open, or the chute tilts to the side for
 # SORT_TILT_SECONDS. The chute is sent its angle again every second so it doesn't sag.
 SORT_BINS = {1: "left", 2: "centre", 3: "right"}   # bin number: chute position
+# The Bins page also has bin 0 ("Unknown price", the rules' usual fallback), which the
+# machine has no tray for: the sort run (sort_run.py) drops those cards, and the cards the
+# scanner couldn't read, into this real bin instead.
+SORT_FALLBACK_BIN = 1
 SORT_DOOR_BIN = 2             # the bin under the trapdoors
 SORT_PINS_SECONDS = 3.0       # pins down at most this long before the doors open / the tilt goes on
 SORT_PINS_MIN_SECONDS = 0.5   # and at least this long; sort_one goes on as soon as the camera sees the card leave

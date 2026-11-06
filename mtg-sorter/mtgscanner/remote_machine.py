@@ -152,6 +152,16 @@ class RemoteMachine:
     def tune_save(self) -> dict:
         return self._call("/api/machine/tune/save", {}, timeout=(2, 15))
 
+    # the sort run (sort_run.py) happens on the Pi too, with the Pi's scanner
+    def sort_start(self, body: dict) -> dict:
+        return self._call("/api/machine/sort", body)
+
+    def sort_status(self) -> dict:
+        return self._call("/api/machine/sort")
+
+    def sort_stop(self) -> dict:
+        return self._call("/api/machine/sort/stop", {})
+
     def feed_zone(self) -> list:
         return self._call("/api/machine/feed_zone")["zone"]
 
