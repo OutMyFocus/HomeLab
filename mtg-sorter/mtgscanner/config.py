@@ -171,7 +171,7 @@ SORT_RETRIES = 1              # drop again this many times if the camera still s
 # different from the empty bed before the feed. A card is about a tenth of the view, so a
 # card the pins pushed up or turned stays well above this, which the landing band missed.
 SORT_CHECK_ZONE = (0.05, 0.05, 0.95, 0.95)
-SORT_GONE_SHARE = 0.05
+SORT_GONE_SHARE = 0.08     # 0.05 called an empty bed "still there" (0.055-0.058) under the rail light, 2026-11-06
 
 # --- The light bars (lights.py) --------------------------------------------
 # 5 V addressable RGB bars (WS2812, "3-pin ARGB"). Their data wire goes to GPIO10 (pin 19),
