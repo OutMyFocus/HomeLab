@@ -161,8 +161,15 @@ FEED_BACKOFF_SECONDS = 0.25
 # stay down SORT_PINS_SECONDS; then the doors open, or the chute tilts to the side for
 # SORT_TILT_SECONDS. The chute is sent its angle again every second so it doesn't sag.
 SORT_BINS = {1: "left", 2: "centre", 3: "right"}   # bin number: chute position
+# The Bins page also has bin 0 ("Unknown price", the rules' usual fallback), which the
+# machine has no tray for: the sort run (sort_run.py) drops those cards, and the cards the
+# scanner couldn't read, into this real bin instead.
+SORT_FALLBACK_BIN = 1
 SORT_DOOR_BIN = 2             # the bin under the trapdoors
-SORT_PINS_SECONDS = 3.0       # pins down this long before the doors open / the tilt goes on
+SORT_PINS_SECONDS = 3.0       # pins down at most this long before the doors open / the tilt goes on
+SORT_PINS_MIN_SECONDS = 0.5   # and at least this long; sort_one goes on as soon as the camera sees the card leave
+SORT_OVER_SECONDS = 0.3       # a card gone from the landing band sooner than this after pins down never rested
+                              # on the teeth: it went over them (the feed was too fast)
 SORT_DOORS_SECONDS = 2.5      # trapdoors open this long
 SORT_TILT_SECONDS = 2.0       # bins 1 and 3: tilted this long for the card to slide off
 SORT_RETRIES = 1              # drop again this many times if the camera still sees the card
@@ -171,7 +178,7 @@ SORT_RETRIES = 1              # drop again this many times if the camera still s
 # different from the empty bed before the feed. A card is about a tenth of the view, so a
 # card the pins pushed up or turned stays well above this, which the landing band missed.
 SORT_CHECK_ZONE = (0.05, 0.05, 0.95, 0.95)
-SORT_GONE_SHARE = 0.05
+SORT_GONE_SHARE = 0.08     # 0.05 called an empty bed "still there" (0.055-0.058) under the rail light, 2026-11-06
 
 # --- The light bars (lights.py) --------------------------------------------
 # 5 V addressable RGB bars (WS2812, "3-pin ARGB"). Their data wire goes to GPIO10 (pin 19),
