@@ -609,7 +609,7 @@
 
   // ---------- Start sorting: the machine on its own (sort_run.py) ----------
   let sortRun = null, sortT = null;
-  const money = v => v == null ? "" : "$" + Number(v).toFixed(2);
+  const cash = v => v == null ? "" : "$" + Number(v).toFixed(2);
   function showSortRun(d) {
     sortRun = d;
     const btn = $("sortBtn"), running = !!d?.running;
@@ -623,9 +623,9 @@
     }
     const last = cards[cards.length - 1];
     const tally = (d.tally || []).map(t => `bin ${t.bin}: ${t.cards}`).join(", ");
-    const now = running ? (last?.name ? `Last: <b>${last.name}</b> ${money(last.price)} → bin ${last.bin}.` : "Working…")
+    const now = running ? (last?.name ? `Last: <b>${last.name}</b> ${cash(last.price)} → bin ${last.bin}.` : "Working…")
       : `Done: ${d.done || ""}.`;
-    $("sortInfo").innerHTML = `${now} <b>${c.saved || 0}</b> saved (${money(d.value)}), ${c.unsure || 0} unsure, ${c.unknown || 0} unread${tally ? ` · ${tally}` : ""}${d.warning ? ` · <b>${d.warning}</b>` : ""}`;
+    $("sortInfo").innerHTML = `${now} <b>${c.saved || 0}</b> saved (${cash(d.value)}), ${c.unsure || 0} unsure, ${c.unknown || 0} unread${tally ? ` · ${tally}` : ""}${d.warning ? ` · <b>${d.warning}</b>` : ""}`;
     if (running && !sortT) sortT = setInterval(pollSortRun, 2000);
     if (!running && sortT) { clearInterval(sortT); sortT = null; }
   }
