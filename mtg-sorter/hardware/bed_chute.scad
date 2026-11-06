@@ -134,11 +134,6 @@ module servo_screws(depth, flip = false) {
 // at the top where the card lands; four slots at the front for the stop gate's teeth.
 rail_in = 34;           // inside faces of the rails, x = +-34
 rail_h = 2.5;
-// Feeder v3 puts its wheels 8 mm behind the hopper's front wall, so they reach over the bed's
-// back edge: two notches there, under the hopper floor, where the wheels (x = +-15, 7 wide)
-// swing through. An already printed plate can be notched by hand (saw or hot knife).
-wheel_notch = 6;        // deep, up the slope from the back edge
-wheel_notch_w = 14;
 funnel_s = 72;          // the rails start opening out here ...
 funnel_in = 42;         // ... to x = +-42 at the top edge
 module bed_plate() {
@@ -155,8 +150,6 @@ module bed_plate() {
         }
         // slots the stop teeth come up through (open at the front edge)
         for (x = tooth_x) translate([x - 2.5, -1, -bed_t - 1]) cube([5, 6, bed_t + 2]);
-        // notches at the back edge for the feeder's wheels (v3)
-        for (x = [-15, 15]) translate([x - wheel_notch_w / 2, bed_len - wheel_notch, -bed_t - 1]) cube([wheel_notch_w, wheel_notch + 1, bed_t + 2]);
     }
 }
 

@@ -1,13 +1,4 @@
-// Feeder v3: the hopper and card picker that stands on the enclosure's bridge, behind the scan bed.
-//
-// v3 (2026-11-05, from watching v2 feed on camera): the wheels move from 20 mm behind the gate
-// to 8 mm. With them at 20 mm they touched the NEXT card as soon as the fed card's tail passed
-// them, and drove it 20-35 mm out of the slot behind the first, where it lay on the landed card
-// and pinned it on the bed. At 8 mm the next card only moves a few mm before the app stops the
-// motor (and backs it off, feed_watch.py). The arm's hinge moves forward too, so the rubber
-// band presses the wheels into the stack about twice as hard. The wheels now reach over the
-// back edge of the scan bed, which gets two notches (bed_chute.scad: wheel_notch). Changed
-// parts: stand, arm, hopper, bed plate. The roller, gate and weight are the v2 ones.
+// Feeder v2: the hopper and card picker that stands on the enclosure's bridge, behind the scan bed.
 //
 // How it picks ONE card:
 //   - Two O-ring wheels, 30 mm apart, poke up through the hopper floor under the stack and push
@@ -72,9 +63,7 @@ stub_d = 5;                          // stub axle at the -x end, turns in the ar
 shaft_len = 9;                       // N20 D-shaft, 3 mm
 poke = 2.5;                          // how far the O-rings stand above the floor at the stop
 
-roller_y = 8;                        // v3: wheels 8 mm behind the front wall (v2: 20). Any closer
-                                     // and the wheel hits the gate's foot; any further back and
-                                     // it drives the next card out behind the first.
+roller_y = 20;
 roller_z = floor_top + poke - roller_r;  // 87: roller axis with the arm against its stop
 
 // --- N20 gear motor (12 x 10 mm, about 26 mm long with the motor) ----------------------
@@ -82,9 +71,7 @@ n20_w = 12.4;  n20_h = 10.4;  n20_len = 26;
 gear_face_x = 22.5;                  // the gearbox's front face (shaft side)
 
 // --- Arm ---------------------------------------------------------------------------
-pivot = [44, 76];                    // hinge (y, z): two M3 screws through the stand walls. v3: 44
-                                     // (v2: 62), so the band's pull at the tail (y 91) reaches the
-                                     // wheels at y 8 through a 47:36 lever instead of 29:42.
+pivot = [62, 76];                    // hinge (y, z): two M3 screws through the stand walls
 arm_z0 = 66;                         // underside of the arm's base plate
 arm_t = 3;
 stop_z = stand_h;                    // the arm's stop pads touch the floor's underside here
@@ -127,8 +114,8 @@ module arm() {
     difference() {
         union() {
             // base plate under the roller, out to the hinge cheeks and the tail
-            rbox([-24, roller_y - 12, arm_z0], [24 + 33, pivot[0] - 4 - (roller_y - 12), arm_t]);
-            rbox([-arm_half, pivot[0] - 8, arm_z0], [2 * arm_half, 80 - (pivot[0] - 8), arm_t]);
+            rbox([-24, 4, arm_z0], [24 + 33, 52, arm_t]);
+            rbox([-arm_half, 50, arm_z0], [2 * arm_half, 30, arm_t]);
             // tail tongue for the rubber band, with a bump so the band can't slip off
             rbox([-4, 78, arm_z0], [8, tail_y - 78, arm_t]);
             rbox([-4, tail_y - 2, arm_z0], [8, 2, arm_t + 2]);
@@ -199,9 +186,8 @@ module hopper() {
             translate([-3.5, -wall, z0]) rotate([90, 0, 90]) linear_extrude(7)
                 polygon([[0, 11.5], [0, 24], [-7.5, 24], [-7.5, 19]]);
         }
-        // slots the wheels poke up through (the core between them stays under the floor). They
-        // stop 2 mm short of the floor's front edge, so the edge the card slides over is whole.
-        for (x = [-wheel_x - 5, wheel_x - 5]) rbox([x, max(roller_y - 14, floor_y0 + 2), z0 - 1], [14, 28, floor_t + 2]);
+        // slots the wheels poke up through (the core between them stays under the floor)
+        for (x = [-wheel_x - 5, wheel_x - 5]) rbox([x, roller_y - 14, z0 - 1], [14, 28, floor_t + 2]);
         // round off the floor's front edge so the card bends down onto the bed
         translate([0, floor_y0, z0 + floor_t]) rotate([45, 0, 0]) cube([2 * out_w, 2.5, 2.5], center = true);
         // pegs from the stand
