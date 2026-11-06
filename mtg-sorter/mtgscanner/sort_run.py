@@ -88,6 +88,10 @@ class SortRun:
                 card = {"n": len(self.state["cards"]) + 1, "status": "none", "bin": None, "name": None}
                 t0 = time.monotonic()
                 card["fed_at"] = t0
+                # Start this card with a clean table: a new card lands where the last one
+                # sat, and the scanner would carry on that card's track (and name) for it.
+                with self.scanner.lock:
+                    self.scanner.forget_tracks()
                 try:
                     out = self.watcher.sort_one(None, speed=speed, choose=lambda fed, c=card: self._choose(c))
                 except (RuntimeError, ValueError) as e:
@@ -135,6 +139,7 @@ class SortRun:
                 # of the slot shows at the top, and either would end the wait at once.
                 tracks = [t for t in self.scanner.tracks
                           if t.status in ("locked", "unsure", "unknown") and t.checked_time >= fed_at
+                          and t.streak_key == (t.card.id if t.card else "unknown")   # latest look agrees
                           and float(t.center[1]) / height >= LANDED_FROM]
                 track = max(tracks, key=lambda t: float(t.center[1]), default=None)
                 if track is not None and track.status in ("locked", "unsure"):
