@@ -484,7 +484,7 @@ class FakeRecognizer:
             with self.scanner.lock:
                 if self.scanner.tap.watching == 0 and not self.scanner.tracks and self.card is not None:
                     t = Track(next(self.ids), 1, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
-                    t.card, t.status = self.card, self.status
+                    t.card, t.status, t.checked_time = self.card, self.status, time.monotonic()
                     self.scanner.tracks.append(t)
                 elif self.scanner.tap.watching > 0:
                     self.scanner.tracks.clear()
@@ -517,12 +517,20 @@ def test_sort_run_recognizes_saves_and_bins_each_card(watched, quick_sort, db):
     assert len(scanner.session) == 2 and scanner.session[0]["bin"] == 2     # in the collection
 
 
-def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_sort, monkeypatch):
+def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_sort, monkeypatch, db):
     from mtgscanner import sort_run
     monkeypatch.setattr(sort_run, "RECOGNIZE_SECONDS", 0.3)
     monkeypatch.setattr(config, "SORT_FALLBACK_BIN", 3)
     client, scanner, machine, cams = watched
     cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    # a card recognized before the feed (the last one dropped, or the next one hanging
+    # out of the slot at the top of the picture) doesn't count as this card
+    stale = Track(1, 1, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
+    stale.card, stale.status, stale.checked_time = db.get_card("id1"), "locked", time.monotonic() - 1
+    top = Track(2, 2, np.array([[40, 10], [260, 10], [260, 60], [40, 60]], float))
+    top.card, top.status, top.checked_time = db.get_card("id2"), "locked", time.monotonic() + 100
+    scanner.tracks.extend([stale, top])
+    scanner.frame_size = (300, 400)
     client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
     d = wait_sort(client)
     assert d["cards"][0]["status"] == "unknown" and d["cards"][0]["bin"] == 3, d
