@@ -485,6 +485,7 @@ class FakeRecognizer:
                 if self.scanner.tap.watching == 0 and not self.scanner.tracks and self.card is not None:
                     t = Track(next(self.ids), 1, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
                     t.card, t.status, t.checked_time = self.card, self.status, time.monotonic()
+                    t.streak_key = self.card.id
                     self.scanner.tracks.append(t)
                 elif self.scanner.tap.watching > 0:
                     self.scanner.tracks.clear()
@@ -532,6 +533,21 @@ def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_
     unread = Track(3, 3, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
     unread.status, unread.checked_time = "unknown", time.monotonic() + 100      # no match yet: keep waiting
     scanner.tracks.extend([stale, top, unread])
+
+    class Sticky:   # the scanner keeps re-planting the stale tracks, as it would carry on a track
+        def __init__(self):
+            self.running = True
+            threading.Thread(target=self.loop, daemon=True).start()
+
+        def loop(self):
+            while self.running:
+                with scanner.lock:
+                    if not scanner.tracks:
+                        for t in (stale, top, unread):
+                            t.checked_time = time.monotonic() + 100
+                        scanner.tracks.extend([stale, top, unread])
+                time.sleep(0.02)
+    cams.append(Sticky())
     scanner.frame_size = (300, 400)
     client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
     d = wait_sort(client)
