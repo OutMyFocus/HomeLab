@@ -195,20 +195,28 @@ class FakeCamera:
 
     def loop(self):
         motor_frames = 0
-        landed = False
+        landed = gone = False
+        pins_since = None
         while self.running:
             frame = np.full((400, 300, 3), 120, np.uint8)
-            if self.machine.feeding:
+            calls = self.machine._motor.calls
+            forward = self.machine.feeding and bool(calls) and calls[-1][0] == "forward"
+            pins_ch = config.SERVOS["pins"][0]
+            pins_down = self.machine.angles.get(pins_ch) == config.SERVOS["pins"][1]["down"]
+            if forward and gone and not pins_down:
+                gone, motor_frames, pins_since = False, 0, None   # the next card's feed
+            if forward and not gone:
                 motor_frames += 1
                 if self.card_after is not None and motor_frames >= self.card_after:
                     landed = True
-            pins_ch = config.SERVOS["pins"][0]
-            pins_down = self.machine.angles.get(pins_ch) == config.SERVOS["pins"][1]["down"]
             if landed and self.card_stays == "over" and not self.machine.feeding:
-                landed = False                 # it went over the teeth
-            if landed and self.card_stays is False and pins_down:
-                landed = False                 # the card slid off when the pins dropped
-            if landed and self.card_stays == "shifts" and pins_down:
+                landed, gone = False, True     # it went over the teeth
+            if landed and pins_down and self.card_stays in (False, "shifts"):
+                pins_since = pins_since or time.monotonic()
+            moved = pins_since is not None and time.monotonic() - pins_since > 0.4
+            if landed and self.card_stays is False and moved:
+                landed, gone = False, True     # the card slid off, 0.4 s after the pins dropped
+            if landed and self.card_stays == "shifts" and moved:
                 frame[150:200, 60:280] = 230   # pushed up out of the landing band, still on the bed
             elif landed:
                 frame[240:290, 40:260] = 230   # a white card across the zone (y 0.6-0.72)
@@ -308,7 +316,10 @@ def test_scanner_skips_recognizing_while_a_feed_watches(db, monkeypatch):  # noq
 
 @pytest.fixture
 def quick_sort(monkeypatch):
-    for name in ("SORT_PINS_SECONDS", "SORT_DOORS_SECONDS", "SORT_TILT_SECONDS"):
+    """Short drop timings: pins down up to 0.7 s (the fake card leaves 0.4 s after they drop),
+    doors and tilt 0.05 s."""
+    monkeypatch.setattr(config, "SORT_PINS_SECONDS", 0.7)
+    for name in ("SORT_DOORS_SECONDS", "SORT_TILT_SECONDS"):
         monkeypatch.setattr(config, name, 0.05)
 
 
@@ -399,7 +410,7 @@ def test_sort_one_does_not_drop_when_nothing_came(watched, quick_sort):
 
 # --- The tuning run (tuning.py) --------------------------------------------------------
 
-def wait_tune(client, seconds=15):
+def wait_tune(client, seconds=40):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         d = client.get("/api/machine/tune").get_json()
@@ -420,12 +431,13 @@ def test_tuning_run_goes_round_the_bins_and_scores_clean_feeds(watched, quick_so
     assert [f["bin"] for f in d["feeds"]] == [1, 2, 3, 1, 2, 3]
     assert d["settings"]["speed"] == 0.8 and d["changes"] == []
     saved = client.post("/api/machine/tune/save", json={}).get_json()
-    assert saved["speed"] == 0.8 and saved["pins_seconds"] == 0.05
+    assert saved["speed"] == 0.8 and saved["pins_seconds"] == 0.7
     assert machine.feeder_defaults()["speed"] == 0.8
-    assert machine.sort_defaults()["pins_seconds"] == 0.1    # the quick test timing, saved (0.1 s is the least)
+    assert machine.sort_defaults()["pins_seconds"] == 0.7    # the quick test timing, saved
 
 
-def test_tuning_run_slows_the_feeder_after_a_card_goes_over(watched, quick_sort):
+def test_tuning_run_slows_the_feeder_after_a_card_goes_over(watched, quick_sort, monkeypatch):
+    monkeypatch.setattr(config, "SORT_PINS_SECONDS", 1.0)   # long enough to notice the card was never there
     client, scanner, machine, cams = watched
     cams.append(FakeCamera(scanner.tap, machine, card_after=2, card_stays="over"))
     client.post("/api/machine/tune", json={"cycles": 1, "bins": [2], "speed": 0.8})
@@ -441,7 +453,7 @@ def test_tuning_run_stops_when_a_card_is_left_on_the_bed(watched, quick_sort):
     d = wait_tune(client)
     assert len(d["feeds"]) == 1 and d["feeds"][0]["dropped"] is False
     assert "still on the bed" in d["done"]
-    assert d["settings"]["pins_seconds"] == 0.05   # a second drop isn't "slow": no pins change
+    assert d["settings"]["pins_seconds"] == 0.7    # a card left on the bed isn't "slow": no pins change
 
 
 def test_tuning_run_stops_when_the_hopper_is_empty(watched, quick_sort):
