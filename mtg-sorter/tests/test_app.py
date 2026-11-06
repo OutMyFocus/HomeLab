@@ -468,3 +468,17 @@ def test_scan_page_offers_start_sorting_only_where_there_is_a_sorter(client, mon
     assert client.get("/api/state").get_json()["sorter"] is False       # tests: no Pi, no MTG_MACHINE_URL
     page = client.get("/scan").get_data(as_text=True)
     assert 'id="sortBtn"' in page and "Start sorting" in page
+
+
+def test_the_pages_scripts_parse():
+    """A syntax error in a page script kills the whole page (the Scan page lost its live
+    view and buttons on 2026-11-06 to a helper declared twice), so every script is parsed."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node isn't installed here")
+    for script in sorted((Path(__file__).resolve().parent.parent / "webui").glob("*.js")):
+        check = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
+        assert check.returncode == 0, f"{script.name}: {check.stderr.strip()}"
