@@ -107,6 +107,22 @@
       <button class="btn ghost" id="feedZoneSave">Save zone</button>
     </div>
   </section>
+  <section class="panel">
+    <h2>Tuning run</h2>
+    <p class="sub">Sorts card after card round the bins and scores every feed. With <b>adjust</b> on it slows the
+      feeder after a card goes over the teeth, speeds it up when nothing comes, and keeps the pins down longer when a
+      card needed a second drop. It stops if a card is left on the bed or the hopper runs out. Keep your hands out
+      while it runs. Nothing is saved until you press Save.</p>
+    <div class="row">
+      <label class="inline">Rounds <input type="number" id="tuneCycles" min="1" max="20" value="4"></label>
+      <label class="switch"><input type="checkbox" id="tuneAdjust" checked><span></span>Adjust as it goes</label>
+      <button class="btn primary" id="tuneStart">Start</button>
+      <button class="btn ghost" id="tuneStop">Stop</button>
+      <button class="btn" id="tuneSave" hidden>Save these settings</button>
+    </div>
+    <p class="sub" id="tuneStatus"></p>
+    <table id="tuneTable" hidden><thead><tr><th>#</th><th>Bin</th><th>Feed</th><th>Landed</th><th>Drops</th><th>Speed</th><th>Pins</th><th>Note</th></tr></thead><tbody></tbody></table>
+  </section>
 </div>
 <div id="toast" hidden></div>
 
@@ -240,6 +256,36 @@ for (const b of document.querySelectorAll("[data-sort]")) b.onclick = async () =
   } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }
   buttons.forEach((x) => x.disabled = false);
 };
+
+// --- the tuning run ---
+const tuneApi = async (path, body) => {
+  const res = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return res.json();
+};
+let tuneTimer = null;
+function showTune(d) {
+  if (d.error) { $("tuneStatus").textContent = d.error; return; }
+  const s = d.settings || {};
+  const where = d.running ? "Running" : (d.done ? `Done: ${d.done}` : "Not started");
+  $("tuneStatus").textContent = `${where}. ${d.score ? `${d.score.clean} of ${d.score.total} clean.` : ""} Speed ${s.speed ?? "-"}, pins down ${s.pins_seconds ?? "-"} s, doors ${s.doors_seconds ?? "-"} s, tilt ${s.tilt_seconds ?? "-"} s.`;
+  const rows = d.feeds || [];
+  $("tuneTable").hidden = rows.length === 0;
+  $("tuneTable").querySelector("tbody").innerHTML = rows.map((f) =>
+    `<tr><td>${f.n}</td><td>${f.bin}</td><td>${f.result}</td><td>${f.landed_ms == null ? "-" : (f.landed_ms / 1000).toFixed(2) + " s"}</td><td>${f.drop_tries}${f.dropped === false ? " (still there)" : ""}</td><td>${f.speed}</td><td>${f.pins_seconds} s</td><td>${f.note || ""}</td></tr>`).join("");
+  $("tuneSave").hidden = !(d.done && d.settings);
+  $("tuneStart").disabled = !!d.running;
+  if (d.running && !tuneTimer) tuneTimer = setInterval(async () => showTune(await tuneApi("/api/machine/tune")), 2000);
+  if (!d.running && tuneTimer) { clearInterval(tuneTimer); tuneTimer = null; }
+}
+$("tuneStart").onclick = async () => showTune(await tuneApi("/api/machine/tune",
+  { cycles: +$("tuneCycles").value, adjust: $("tuneAdjust").checked, speed: +$("feedSpeed").value }));
+$("tuneStop").onclick = async () => showTune(await tuneApi("/api/machine/tune/stop", {}));
+$("tuneSave").onclick = async () => {
+  const d = await tuneApi("/api/machine/tune/save", {});
+  toast(d.error || `Saved: speed ${d.speed}, pins down ${d.pins_seconds} s, doors ${d.doors_seconds} s, tilt ${d.tilt_seconds} s.`);
+  if (!d.error) $("feedSpeed").value = d.speed;
+};
+tuneApi("/api/machine/tune").then(showTune).catch(() => {});
 fetch("/api/machine/feed_zone").then((r) => r.json()).then((d) => { if (d.zone) $("feedZone").value = d.zone.join(", "); }).catch(() => {});
 $("feedZoneSave").onclick = async () => {
   const zone = $("feedZone").value.split(/[ ,]+/).filter(Boolean).map(Number);
