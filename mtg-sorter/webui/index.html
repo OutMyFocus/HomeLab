@@ -452,6 +452,12 @@
             </div>
             <div class="card-list" id="cardList"></div>
             <div class="controls">
+              <div class="sorter" id="sorter" hidden>
+                <button class="btn primary start" id="sortBtn" title="Feed, read and sort every card in the hopper by your Bins rules">
+                  <svg><use href="#i-bolt" /></svg><span id="sortBtnText">Start sorting</span>
+                </button>
+                <small id="sortInfo">Feeds every card, reads it, saves it and drops it into the bin your <a href="/bins">Bins</a> rules give it.</small>
+              </div>
               <button class="btn primary" id="saveBtn" disabled>
                 Save all <kbd>Space</kbd>
               </button>

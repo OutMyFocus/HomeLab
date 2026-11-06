@@ -189,6 +189,10 @@ class Scanner:
             "frame_age_ms": None,
         }
         self._last_frame_time = None
+        self._last_small = None       # a small grey copy of the last picture looked at
+        self._last_look = 0.0         # when it was looked at (time.monotonic)
+        self.jpeg_full = None         # the full-size picture, made only while someone streams ?full=1
+        self.full_viewers = 0
         workers = config.IDENTIFY_THREADS or min(8, os.cpu_count() or 2)
         self._pool = ThreadPoolExecutor(
             max_workers=workers, thread_name_prefix="identify"
@@ -289,13 +293,35 @@ class Scanner:
             # picture straight away and skip finding and recognizing cards until it's done,
             # which can take a few hundred ms a picture and made it see the card late.
             self.tap.put(frame)
-            jpeg = self._encode(frame)
-            with self.lock:
-                self.started = True
-                self.frame_size = (frame.shape[1], frame.shape[0])
-                self.jpeg = jpeg
+            self._publish(frame)
             return
+        if self._still(frame) and time.monotonic() - self._last_look < 1 / max(0.5, config.SCAN_IDLE_FPS):
+            return      # nothing has changed: no need to look again so soon
+        self._last_look = time.monotonic()
         self.process(frame)
+
+    def _still(self, frame) -> bool:
+        """True when the picture is the same as the last one looked at and no card on the
+        table is waiting for an answer, so the scanner can take it easy (SCAN_IDLE_FPS)."""
+        small = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (64, 48), interpolation=cv2.INTER_AREA)
+        last, self._last_small = self._last_small, small
+        if last is None:
+            return False
+        if float(np.mean(cv2.absdiff(small, last))) >= config.SCAN_STILL_LEVEL:
+            return False
+        now = time.monotonic()
+        with self.lock:
+            return not any(t.needs_check(now) for t in self.tracks)
+
+    def _publish(self, frame):
+        """Keep the picture for the pages (and for a full-size stream when one is open)."""
+        jpeg = self._encode(frame)
+        full = self._encode(frame, full=True) if self.full_viewers > 0 else None
+        with self.lock:
+            self.started = True
+            self.frame_size = (frame.shape[1], frame.shape[0])
+            self.jpeg = jpeg
+            self.jpeg_full = full
 
     def process(self, frame):
         """Find every card in one camera picture and update what's known about each."""
@@ -341,8 +367,8 @@ class Scanner:
                 if t.gone(now):  # card taken away
                     self.finish_capture(t)
                     self.tracks.remove(t)
-            self.jpeg = self._encode(frame)
             self._note_speed(t0, t1, t2)
+        self._publish(frame)
 
     # Called with the lock held.
     def _note_speed(self, t0, t1, t2):
@@ -494,14 +520,20 @@ class Scanner:
     def track(self, track_id) -> Track | None:
         return next((t for t in self.tracks if t.id == track_id), None)
 
-    def _encode(self, frame) -> bytes:
-        """The camera picture for the page (the page draws the outlines itself)."""
+    def _encode(self, frame, full: bool = False) -> bytes:
+        """The camera picture for the page (the page draws the outlines itself): a preview
+        of STREAM_PREVIEW_PX on its long side, about a tenth of the full picture's bytes,
+        which a phone or a Tailscale link can keep up with. `full` keeps the full size
+        (at most 1280 wide) for the server's recognizing."""
         h, w = frame.shape[:2]
-        if w > 1280:
-            frame = cv2.resize(
-                frame, (1280, int(h * 1280 / w)), interpolation=cv2.INTER_AREA
-            )
-        return cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+        if full:
+            limit, side, quality = 1280, w, 80
+        else:
+            limit, side, quality = config.STREAM_PREVIEW_PX, max(h, w), config.STREAM_PREVIEW_QUALITY
+        if side > limit:
+            scale = limit / side
+            frame = cv2.resize(frame, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+        return cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])[1].tobytes()
 
     def state(self):
         with self.lock:
@@ -747,18 +779,26 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
 
     @app.get("/stream.mjpg")
     def stream():
+        """The live picture: a preview unless ?full=1 (the server's RemoteCameraSource)."""
         sc = current()
+        full = request.args.get("full") in ("1", "true", "yes")
 
         def frames():
             last = None
-            while not sc.stopped:
-                jpeg = sc.jpeg
-                if jpeg is not None and jpeg is not last:
-                    last = jpeg
-                    yield (
-                        b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
-                    )
-                time.sleep(0.04)
+            if full:
+                sc.full_viewers += 1
+            try:
+                while not sc.stopped:
+                    jpeg = sc.jpeg_full if full else sc.jpeg
+                    if jpeg is not None and jpeg is not last:
+                        last = jpeg
+                        yield (
+                            b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                        )
+                    time.sleep(0.04)
+            finally:
+                if full:
+                    sc.full_viewers = max(0, sc.full_viewers - 1)
 
         return Response(frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
@@ -790,6 +830,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             s["saving_to"] = {"username": whose["username"], "name": whose["name"]}
             s["me"] = accounts.current()
         s["on_pi"] = ON_PI
+        s["sorter"] = ON_PI or bool(remote_url())   # a machine to run: the Scan page shows Start sorting
         s["scanners"] = [   # who else is scanning right now
             {"name": other.source.name, "owner": other.owner or (accounts.public(other.account)["name"] if other.account else ""),
              "cards": len(other.session)}

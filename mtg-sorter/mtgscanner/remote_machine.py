@@ -304,7 +304,7 @@ class RemoteCameraSource:
 
     def _watch(self):
         headers = {KEY_HEADER: self.key} if self.key else {}
-        with self.http.get(self.url + "/stream.mjpg", headers=headers, stream=True, timeout=(2, 15)) as r:
+        with self.http.get(self.url + "/stream.mjpg?full=1", headers=headers, stream=True, timeout=(2, 15)) as r:
             self._resp = r
             if r.status_code in (401, 403):
                 self.error = ("The sorter's Pi has a PIN or accounts on, so it refused. Put the Pi's "

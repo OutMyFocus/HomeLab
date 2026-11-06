@@ -485,6 +485,7 @@ class FakeRecognizer:
                 if self.scanner.tap.watching == 0 and not self.scanner.tracks and self.card is not None:
                     t = Track(next(self.ids), 1, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
                     t.card, t.status, t.checked_time = self.card, self.status, time.monotonic()
+                    t.streak_key = self.card.id
                     self.scanner.tracks.append(t)
                 elif self.scanner.tap.watching > 0:
                     self.scanner.tracks.clear()
@@ -518,8 +519,8 @@ def test_sort_run_recognizes_saves_and_bins_each_card(watched, quick_sort, db):
 
 
 def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_sort, monkeypatch, db):
-    from mtgscanner import sort_run
-    monkeypatch.setattr(sort_run, "RECOGNIZE_SECONDS", 0.3)
+    monkeypatch.setattr(config, "SORT_RECOGNIZE_SECONDS", 0.4)
+    monkeypatch.setattr(config, "SORT_FOIL_AFTER", 0.1)
     monkeypatch.setattr(config, "SORT_FALLBACK_BIN", 3)
     client, scanner, machine, cams = watched
     cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
@@ -532,10 +533,34 @@ def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_
     unread = Track(3, 3, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
     unread.status, unread.checked_time = "unknown", time.monotonic() + 100      # no match yet: keep waiting
     scanner.tracks.extend([stale, top, unread])
+
+    class Sticky:   # the scanner keeps re-planting the stale tracks, as it would carry on a track
+        def __init__(self):
+            self.running = True
+            threading.Thread(target=self.loop, daemon=True).start()
+
+        def loop(self):
+            while self.running:
+                with scanner.lock:
+                    if not scanner.tracks:
+                        for t in (stale, top, unread):
+                            t.checked_time = time.monotonic() + 100
+                        scanner.tracks.extend([stale, top, unread])
+                time.sleep(0.02)
+    cams.append(Sticky())
     scanner.frame_size = (300, 400)
+    class Bars:   # the light bars: dimmed for the second look, then put back
+        settings = {"brightness": 30}
+        changes = []
+
+        def update(self, raw):
+            self.settings = self.settings | raw
+            self.changes.append(raw["brightness"])
+    scanner.lights = Bars()
     client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
     d = wait_sort(client)
     assert d["cards"][0]["status"] == "unknown" and d["cards"][0]["bin"] == 3, d
+    assert d["cards"][0]["dimmed"] is True and scanner.lights.changes == [8, 30]
     assert scanner.session == []                                          # not saved
 
 
@@ -548,6 +573,18 @@ def test_sort_run_does_not_save_an_unsure_guess(watched, quick_sort, db):
     c = d["cards"][0]
     assert c["status"] == "unsure" and c["name"] == "Card 2" and c["bin"] == config.SORT_FALLBACK_BIN, d
     assert scanner.session == []
+
+
+def test_sort_run_warns_when_a_bin_is_filling_up(watched, quick_sort, db, monkeypatch):
+    monkeypatch.setattr(config, "SORT_BIN_WARN", 2)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    cams.append(FakeRecognizer(scanner, db.get_card("id1")))
+    client.post("/api/machine/sort", json={"max_cards": 2, "speed": 0.8})
+    d = wait_sort(client)
+    assert d["full"] == [2] and "Bin 2" in d["warning"], d
+    door = config.SERVOS["door_l"]
+    assert machine.angles.get(door[0]) == door[1]["closed"]     # the doors are told "closed" again each card
 
 
 def test_sort_run_stops_when_the_hopper_is_empty(watched, quick_sort):
