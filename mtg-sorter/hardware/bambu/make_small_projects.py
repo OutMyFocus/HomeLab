@@ -8,6 +8,8 @@ writes, next to this script:
   MTG_Sorter_Feeder_And_Bed_v2.3mf   everything for the new feeder and scan bed
   MTG_Sorter_Chute_v3.3mf            chute v3 (tray, doors, cranks, links, hinge frame) and the
                                      new front bridge with its bearing cap
+  MTG_Sorter_Scan_Bed_v3.3mf         scan bed v3 plate (steeper, centring channel, ribs), the
+                                     all-plastic hopper weight and the one-bar stop gate
   MTG_Sorter_DC_Jack_Holder.3mf      holder + bezel for the servo-power barrel jack (dc_jack_holder.scad)
 
   python3 make_small_projects.py MTG_Sorter_DC_Jack_Holder.3mf   builds just that one
@@ -40,6 +42,13 @@ mp.PER_PART.update({
     "enc_bridge_cap": SOLID,
     "dc_jack_holder": STRUCTURAL,
     "dc_jack_bezel": STRUCTURAL,
+    # scan bed v3, slippery smooth: fine layers so the sloped rib tops are small steps, more top
+    # layers, and ironing on every top surface (the nozzle passes again with a little flow)
+    "bed_chute_bed_plate3": {"layer_height": "0.12", "wall_loops": "3", "sparse_infill_density": "20%",
+                             "top_shell_layers": "7", "top_surface_line_width": "0.4",
+                             "ironing_type": "top", "ironing_flow": "15%", "ironing_spacing": "0.1", "ironing_speed": "20"},
+    "feeder_weight_solid": SOLID,
+    "bed_chute_stop_gate3": STRUCTURAL,
 })
 
 PROJECTS = {
@@ -57,6 +66,11 @@ PROJECTS = {
                                                         "bed_chute_door_crank3", "bed_chute_door_crank3_left",
                                                         "bed_chute_servo_crank3", "bed_chute_servo_crank3_left",
                                                         "bed_chute_door_link3", "bed_chute_door_link3"]),
+    ],
+    "MTG_Sorter_Scan_Bed_v3.3mf": [
+        ("1 Scan bed v3 plate (WHITE)", ["bed_chute_bed_plate3"]),
+        ("2 Solid hopper weight (any colour, 100% infill)", ["feeder_weight_solid"]),
+        ("3 Stop bar, replaces the four-tooth stop gate (black)", ["bed_chute_stop_gate3"]),
     ],
     "MTG_Sorter_DC_Jack_Holder.3mf": [
         ("1 DC jack holder and bezel (black)", ["dc_jack_holder", "dc_jack_bezel"]),
