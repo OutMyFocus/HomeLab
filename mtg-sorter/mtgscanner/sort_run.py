@@ -17,6 +17,7 @@ What each card ends up as:
   unknown   not recognized in time (config.SORT_RECOGNIZE_SECONDS, with the light bars
             dimmed for a second look after SORT_FOIL_AFTER: foils glare): the same, not saved
   none      nothing reached the bed (the run stops after two in a row: hopper empty)
+  stuck     a card came part way out and stopped moving: the gate holds it; the run stops
   double    two cards came out together: the run stops with the pins up, nothing dropped
 
 The run stops on its own when a card is left on the bed after the retries (something is
@@ -120,10 +121,13 @@ class SortRun:
                     return
                 card.update({"result": out["result"], "dropped": out.get("dropped"),
                              "drop_tries": out.get("drop_tries", 0), "seconds": round(time.monotonic() - t0, 1)})
-                if out["result"] == "none":
-                    card["status"], card["bin"] = "none", None
+                if out["result"] in ("none", "stuck"):
+                    card["status"], card["bin"] = out["result"], None
                 with self.lock:
                     self.state["cards"].append(card)
+                if out["result"] == "stuck":
+                    reason = "a card is held in the slot: open the gate a little and take the card off the bed"
+                    return
                 nothing_in_a_row = nothing_in_a_row + 1 if out["result"] == "none" else 0
                 if out.get("dropped") is False:
                     reason = "a card is still on the bed after the retries: take it out and look at what it caught on"
