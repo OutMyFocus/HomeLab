@@ -137,12 +137,12 @@ def test_rotate_and_crop_the_picture(db, tmp_path, monkeypatch):  # noqa: F811
     client.post("/api/settings", json={"slots": [[0.5, 0.5, 1, 1]]})
 
     state = client.post("/api/settings", json={"crop": [0.5, 0.5, 1, 1]}).get_json()
-    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False}
+    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False, "auto_straight": True, "straight_samples": 0, "straight_refused": None}
     assert state["slots"] == [[0, 0, 1, 1]]                      # same spot, now the whole picture
     state = client.post("/api/settings", json={"crop": [0, 0, 0.5, 0.5]}).get_json()
     assert state["view"]["crop"] == [0.5, 0.5, 0.75, 0.75]       # a crop of the crop
     state = client.post("/api/settings", json={"rotate": 90}).get_json()
-    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False}
+    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False, "auto_straight": True, "straight_samples": 0, "straight_refused": None}
     saved = json.loads((tmp_path / "settings.json").read_text())
     assert saved["rotate"] == 90 and saved["crop"] == [0.25, 0.5, 0.5, 0.75]
 

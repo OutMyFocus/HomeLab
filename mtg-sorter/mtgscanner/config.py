@@ -236,3 +236,21 @@ LIGHTS_CARD_BRIGHTNESS = 60    # percent
 # The bars share the 5 V supply with the Pi, servos and feeder, so the app dims them if
 # they'd draw more than this (full white is about 60 mA per LED).
 LIGHTS_MAX_AMPS = 1.0
+
+# The machine camera straightens its own picture (auto_straighten.py) from the cards it
+# recognizes for sure: it needs AUTO_STRAIGHT_SAMPLES of them (keeping the latest
+# AUTO_STRAIGHT_KEEP), leaves out outlines with a corner more than AUTO_STRAIGHT_MAX_CORNER
+# degrees off square, proportions more than AUTO_STRAIGHT_MAX_SHAPE off a card's, or
+# within AUTO_STRAIGHT_EDGE of the picture's sides (the light bars), and refuses a
+# correction that turns an edge more than AUTO_STRAIGHT_MAX_TURN degrees or stretches it
+# more than AUTO_STRAIGHT_MAX_STRETCH (measured 2026-11-07: the camera is about 1° and
+# 3 % off). On by default; the Scan page can turn it off.
+AUTO_STRAIGHTEN = True
+AUTO_STRAIGHT_SAMPLES = 8
+AUTO_STRAIGHT_KEEP = 25
+AUTO_STRAIGHT_MAX_CORNER = 8.0
+AUTO_STRAIGHT_MAX_SHAPE = 0.12
+AUTO_STRAIGHT_EDGE = 0.04
+AUTO_STRAIGHT_MAX_TURN = 3.0
+AUTO_STRAIGHT_MAX_STRETCH = 0.08
+AUTO_STRAIGHT_MIN_MOVE = 0.002
