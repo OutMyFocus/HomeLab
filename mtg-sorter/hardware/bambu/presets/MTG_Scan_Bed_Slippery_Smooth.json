@@ -17,7 +17,6 @@
     "precise_outer_wall": "1",
     "elefant_foot_compensation": "0.15",
     "ironing_type": "top",
-    "layer_height": "0.12",
     "top_shell_layers": "7",
     "top_surface_line_width": "0.4",
     "ironing_flow": "15%",

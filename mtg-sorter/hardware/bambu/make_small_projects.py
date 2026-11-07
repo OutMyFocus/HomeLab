@@ -42,9 +42,9 @@ mp.PER_PART.update({
     "enc_bridge_cap": SOLID,
     "dc_jack_holder": STRUCTURAL,
     "dc_jack_bezel": STRUCTURAL,
-    # scan bed v3, slippery smooth: fine layers so the sloped rib tops are small steps, more top
-    # layers, and ironing on every top surface (the nozzle passes again with a little flow)
-    "bed_chute_bed_plate3": {"layer_height": "0.12", "wall_loops": "3", "sparse_infill_density": "20%",
+    # scan bed v3.1, slippery smooth: the card's face is flat on this print, so 0.2 mm layers are
+    # fine; more top layers and ironing on every top surface (the nozzle passes again, a little flow)
+    "bed_chute_bed_plate3": {"wall_loops": "3", "sparse_infill_density": "20%",
                              "top_shell_layers": "7", "top_surface_line_width": "0.4",
                              "ironing_type": "top", "ironing_flow": "15%", "ironing_spacing": "0.1", "ironing_speed": "20"},
     "feeder_weight_solid": SOLID,
