@@ -17,7 +17,7 @@ for p in arm roller hopper gate weight weight_solid; do
   openscad -q --export-format binstl -o "stl/feeder_$p.stl" -D "part=\"$p\"" feeder.scad
 done
 # scan bed v2 (stop gate), and chute v3 (solid bomb bay: tray, doors on journals, cranks and links)
-for p in bed_plate bed_plate3 stop_gate gate_bearing chute3 door3 door3_left door_crank3 door_crank3_left \
+for p in bed_plate bed_plate3 stop_gate stop_gate3 gate_bearing chute3 door3 door3_left door_crank3 door_crank3_left \
          servo_crank3 servo_crank3_left door_link3 hinge_frame3; do
   openscad -q --export-format binstl -o "stl/bed_chute_$p.stl" -D "part=\"$p\"" bed_chute.scad
 done

@@ -14,7 +14,7 @@ module piece() {
     if (what == "card") card3();
     if (what == "card2") on_bed() translate([-card_w / 2, 3, 0.05]) cube([card_w, card_l, 0.4]);
     if (what == "walls") { bed_side(false); mirror([1, 0, 0]) bed_side(true); }
-    if (what == "gate") stop_gate();
+    if (what == "gate") stop_gate(true);
     if (what == "hopper") feeder_at() hopper();
     if (what == "fgate") feeder_at() gate();
     if (what == "stand") feeder_at() stand();
