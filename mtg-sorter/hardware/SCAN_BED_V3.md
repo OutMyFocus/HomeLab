@@ -73,6 +73,10 @@ are about 25° apart.
 | Top surface line width | 0.40 mm | finer lines on top |
 | Ironing | Top surfaces, flow 15 %, spacing 0.10 mm, speed 20 mm/s | the hot nozzle passes again over every top face and melts the lines flat |
 
+The same settings as a preset you can import: `bambu/presets/MTG_Scan_Bed_Slippery_Smooth.json`
+(Bambu Studio: File > Import > Import Configs, then pick "MTG Scan Bed - Slippery smooth @BBL A1" as
+the process). You only need it when you slice the bed from the STL instead of the 3MF.
+
 In Bambu Studio these show as object settings on the bed plate (right-click it > Edit / the
 object list). After printing, rub the rib tops lightly along the slope with 600-grit paper and wipe
 off the dust. Don't use spray, wax or lubricant: it rubs off onto the cards.
