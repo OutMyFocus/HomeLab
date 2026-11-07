@@ -128,7 +128,8 @@ def test_machine_angles_are_saved_outside_config(client, data):
     assert client.get("/api/machine").get_json()["parts"]["pins"]["angle"] == 58
 
     s = client.post("/api/machine/save", json={"seconds": 0.8, "speed": 0.7}).get_json()
-    assert s["feeder_defaults"] == {"seconds": 0.8, "speed": 0.7, "reverse": False}
+    assert s["feeder_defaults"] == {"seconds": 0.8, "speed": 0.7, "reverse": False,
+                                    "backoff": config.FEED_BACKOFF_SECONDS, "push": config.FEED_PUSH_SECONDS}
     s = client.post("/api/machine/reset", json={}).get_json()
     assert not s["customized"] and s["parts"]["pins"]["positions"]["down"] == config.SERVOS["pins"][1]["down"]
     assert client.post("/api/machine/save", json={"part": "pins", "position": "sideways", "angle": 5}).status_code == 400

@@ -41,7 +41,8 @@ def test_feeder_can_be_turned_around(db, data):  # noqa: F811
     assert ("forward", 0.5) in m._motor.calls
     # Saving the usual push keeps the direction.
     s = client.post("/api/machine/save", json={"seconds": 0.8, "speed": 0.7}).get_json()
-    assert s["feeder_defaults"] == {"seconds": 0.8, "speed": 0.7, "reverse": True}
+    assert s["feeder_defaults"] == {"seconds": 0.8, "speed": 0.7, "reverse": True,
+                                    "backoff": config.FEED_BACKOFF_SECONDS, "push": config.FEED_PUSH_SECONDS}
     client.post("/api/machine/stop", json={})
 
 
