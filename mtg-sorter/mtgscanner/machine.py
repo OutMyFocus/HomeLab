@@ -47,6 +47,7 @@ class Machine:
         self.feeding = False
         self._stop_timer = None
         self._relax_timers = {}   # channel -> timer that lets that servo go after a move
+        self.pins_up_at = None    # when the stop pins were last sent up from somewhere else
 
     # --- connecting ---------------------------------------------------------
 
@@ -276,7 +277,23 @@ class Machine:
             angle = positions[position]
         except KeyError:
             raise ValueError(f"Unknown part or position: {part} {position}")
+        moving = self.angles.get(channel) != angle
         self.set_angle(channel, angle)
+        if part == "pins" and position == "up" and moving:
+            self.pins_up_at = time.monotonic()
+
+    def pins_up(self) -> float:
+        """Put the stop pins up and wait until they are all the way up (config.FEED_PINS_UP_SECONDS
+        after they were sent up; no wait if they were up already), so the next card can't
+        arrive under a stop bar that is still rising. Returns how long it waited."""
+        self.move("pins", "up")
+        if self.pins_up_at is None:
+            return 0.0
+        left = self.pins_up_at + float(getattr(config, "FEED_PINS_UP_SECONDS", 0.6)) - time.monotonic()
+        if left <= 0:
+            return 0.0
+        time.sleep(left)
+        return round(left, 2)
 
     def relax_all(self):
         for channel, _ in config.SERVOS.values():

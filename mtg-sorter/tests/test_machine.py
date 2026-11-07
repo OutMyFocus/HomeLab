@@ -763,3 +763,18 @@ def test_sort_run_stops_when_two_cards_come_out_together(watched, quick_sort, db
     pins = config.SERVOS["pins"]
     assert machine.angles.get(pins[0]) == pins[1]["up"]      # nothing was dropped
     assert scanner.session == []
+
+
+def test_feed_waits_until_the_pins_are_all_the_way_up(machine, monkeypatch):
+    monkeypatch.setattr(config, "FEED_PINS_UP_SECONDS", 0.6)
+    slept = []
+    monkeypatch.setattr(__import__("mtgscanner.machine", fromlist=["time"]).time,
+                        "sleep", lambda s: slept.append(s))
+    machine.move("pins", "down")
+    waited = machine.pins_up()                      # just sent up: wait for the bar to rise
+    assert 0.5 < waited <= 0.6 and len(slept) == 1 and abs(slept[0] - waited) < 0.01
+    slept.clear()
+    machine.pins_up_at -= 1.0                       # up long enough already
+    assert machine.pins_up() == 0.0 and slept == []
+    machine.move("pins", "up")                      # sent up again while up: no new wait
+    assert machine.pins_up() == 0.0
