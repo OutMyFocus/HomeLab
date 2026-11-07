@@ -18,6 +18,7 @@
 //   hopper   floor and walls for the stack (replaces feeder_hopper)
 //   gate     hangs on the hopper's front wall (replaces feeder_gate)
 //   weight   sits on the stack
+//   weight_solid  the same, all plastic (no coins): 14 mm thick, 100 % infill, flat underneath
 //   "assembly" shows it all together (preview only)
 //
 // Coordinates: x across, y = 0 at the inside of the hopper's front wall (+y towards the back),
@@ -236,6 +237,23 @@ module weight() {
     }
 }
 
+// Solid weight (2026-11-07): all plastic, no coins. A flat 14 mm block, printed at 100 % infill,
+// about 95 g (the coin plate was about 80 g with eight loonies). Its whole underside is flat, so
+// it presses the stack down evenly and flattens curled cards (foils), and it is chamfered all
+// round underneath so it slides down the hopper without catching. A grip ridge on top; the notch
+// in the hopper's back wall lets you get a finger under it.
+wsolid_t = 14;
+module weight_solid() {
+    w = in_w - 3;  l = in_l - 3;  ch = 1.2;
+    hull() {
+        translate([0, 0, ch]) linear_extrude(wsolid_t - ch) offset(r = 3) offset(delta = -3) square([w, l], center = true);
+        linear_extrude(0.01) offset(r = 3 - ch) offset(delta = -3) square([w, l], center = true);
+    }
+    // grip ridge, rounded on top
+    hull() for (y = [-14, 14]) translate([0, y, wsolid_t]) rotate([0, 90, 0]) translate([-7, 0, 0]) cylinder(d = 4, h = 4, center = true);
+    translate([-2, -16, wsolid_t - 0.01]) cube([4, 32, 7]);
+}
+
 // ============================ OUTPUT =========================================
 if (part == "stand") stand();
 else if (part == "arm") translate([0, 0, -arm_z0]) arm();
@@ -243,6 +261,7 @@ else if (part == "roller") translate([0, 0, roller_x1]) rotate([0, 90, 0]) rolle
 else if (part == "hopper") translate([0, 0, -stand_h]) hopper();
 else if (part == "gate") translate([0, 0, -wall]) rotate([-90, 0, 0]) translate([0, 0, -(stand_h + floor_t + gate_gap)]) gate();
 else if (part == "weight") weight();
+else if (part == "weight_solid") weight_solid();
 else if (part == "none") { }
 else assembly();
 

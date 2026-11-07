@@ -8,6 +8,8 @@ writes, next to this script:
   MTG_Sorter_Feeder_And_Bed_v2.3mf   everything for the new feeder and scan bed
   MTG_Sorter_Chute_v3.3mf            chute v3 (tray, doors, cranks, links, hinge frame) and the
                                      new front bridge with its bearing cap
+  MTG_Sorter_Scan_Bed_v3.3mf         scan bed v3 plate (steeper, centring channel, ribs) and the
+                                     all-plastic hopper weight
   MTG_Sorter_DC_Jack_Holder.3mf      holder + bezel for the servo-power barrel jack (dc_jack_holder.scad)
 
   python3 make_small_projects.py MTG_Sorter_DC_Jack_Holder.3mf   builds just that one
@@ -40,6 +42,9 @@ mp.PER_PART.update({
     "enc_bridge_cap": SOLID,
     "dc_jack_holder": STRUCTURAL,
     "dc_jack_bezel": STRUCTURAL,
+    # scan bed v3: fine layers so the 24° rib tops are smooth steps, not 0.2 mm stairs
+    "bed_chute_bed_plate3": {"layer_height": "0.12", "wall_loops": "3", "sparse_infill_density": "20%"},
+    "feeder_weight_solid": SOLID,
 })
 
 PROJECTS = {
@@ -57,6 +62,10 @@ PROJECTS = {
                                                         "bed_chute_door_crank3", "bed_chute_door_crank3_left",
                                                         "bed_chute_servo_crank3", "bed_chute_servo_crank3_left",
                                                         "bed_chute_door_link3", "bed_chute_door_link3"]),
+    ],
+    "MTG_Sorter_Scan_Bed_v3.3mf": [
+        ("1 Scan bed v3 plate (WHITE)", ["bed_chute_bed_plate3"]),
+        ("2 Solid hopper weight (any colour, 100% infill)", ["feeder_weight_solid"]),
     ],
     "MTG_Sorter_DC_Jack_Holder.3mf": [
         ("1 DC jack holder and bezel (black)", ["dc_jack_holder", "dc_jack_bezel"]),
