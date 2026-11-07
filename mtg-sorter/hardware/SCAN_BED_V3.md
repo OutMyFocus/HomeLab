@@ -66,6 +66,8 @@ print (24°) still stopped cards: at the entrance, and anywhere on the slope.
 5. On the Machine page set **Pins down to 165** (up stays 130) and Save. Pins up: the bar comes up
    through the opening. Pins down: on the camera, check that the bar's top goes fully below the
    lands. If it doesn't, try 168. (CAD says it clears from about 162; the tray is clear up to 170.)
+   Don't go to 180: from about 172 the bar's ends catch the tray when it tilts, and from about 177
+   any stop gate (the old one too) presses on the tray's back axle and the servo stalls.
 6. On the Machine page, feed one card and check it lands at the stop. The camera stays where it was
    relative to the bed, so the saved landing zone should still work (the card is 2 mm closer).
 
