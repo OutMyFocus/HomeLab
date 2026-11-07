@@ -239,7 +239,15 @@ def test_straighten_setting_from_the_scan_page(db, monkeypatch, tmp_path):
     scanner._last_view = np.full((400, 400, 3), 170, np.uint8)
     r = client.post("/api/settings", json={"straighten": True})
     assert r.status_code == 400 and "No card" in r.get_json()["error"]
+    # a card turned 5° on the table: far more than the camera can be off, so refused
     scanner._last_view = photograph(fake_card(2))
+    r = client.post("/api/settings", json={"straighten": True})
+    assert r.status_code == 400 and "doesn't look right" in r.get_json()["error"]
+    # a card as the Pi camera shows it: about 1° tilt and a little keystone
+    src = np.float32([[0, 0], [CARD_W, 0], [CARD_W, CARD_H], [0, CARD_H]])
+    dst = np.float32([[300, 160], [640, 166], [650, 640], [282, 632]])
+    scanner._last_view = cv2.warpPerspective(fake_card(2), cv2.getPerspectiveTransform(src, dst), (960, 720),
+                                             dst=np.full((720, 960, 3), 170, np.uint8), borderMode=cv2.BORDER_TRANSPARENT)
     s = client.post("/api/settings", json={"straighten": True}).get_json()
     assert s["view"]["straight"] is True and scanner.straight
     assert app_module.load_settings()["straight"]["size"] == [960, 720]
@@ -251,3 +259,82 @@ def test_straighten_setting_from_the_scan_page(db, monkeypatch, tmp_path):
     s = client.post("/api/settings", json={"rotate": 90}).get_json()
     assert s["view"]["straight"] is False              # a new rotation needs a new straighten
     assert client.post("/api/settings", json={"straighten": False}).get_json()["view"]["straight"] is False
+
+
+def _camera_quad(centre, turn_deg, size=400.0):
+    """A card as the Pi camera shows it: 3 % squashed, bottom 1.5 % wider than the top,
+    1° tilted, plus the card's own turn on the bed."""
+    w, h = size * 63 / 88, size * 0.97
+    q = np.float32([[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2 * 1.015, h / 2], [-w / 2 * 1.015, h / 2]])
+    a = np.radians(1.0 + turn_deg)
+    rot = np.float32([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+    return q @ rot.T + np.float32(centre)
+
+
+def test_auto_straighten_learns_the_camera_from_many_cards(monkeypatch):
+    """Each sure card is a sample; the median of their shapes, with each card's own turn
+    averaged out and a bad outline left out, straightens the picture (Nic: make the
+    camera 100 % automatic, and perfect)."""
+    from mtgscanner import auto_straighten, view
+    rng = np.random.default_rng(5)
+    auto = auto_straighten.AutoStraighten()
+    size = (1080, 1600)
+    turns = rng.normal(0, 1.2, 9)
+    for i, turn in enumerate(turns):
+        assert auto.add(_camera_quad((540 + rng.normal(0, 8), 900), turn), None, size)
+        if i < 7:
+            assert auto.proposal(None) is None          # not enough cards yet
+    # an outline that caught a light bar: far off square, left out
+    bad = _camera_quad((540, 900), 0)
+    bad[1] += (60, -40)
+    assert not auto.add(bad, None, size)
+    assert not auto.add(_camera_quad((20, 900), 0), None, size)     # at the picture's edge
+    setting = auto.proposal(None)
+    assert setting is not None
+    m = np.float32(setting["m"]).reshape(3, 3)
+    straight = cv2.perspectiveTransform(_camera_quad((540, 900), 0).reshape(1, 4, 2), m).reshape(4, 2)
+    left, right = straight[3] - straight[0], straight[2] - straight[1]
+    top = straight[1] - straight[0]
+    tilt = max(abs(np.degrees(np.arctan2(v[0], v[1]))) for v in (left, right))
+    assert tilt < 0.6, tilt                                    # sides upright within 0.6°
+    assert abs(np.degrees(np.arctan2(top[1], top[0]))) < 0.6
+    width = (np.linalg.norm(top) + np.linalg.norm(straight[2] - straight[3])) / 2
+    height = (np.linalg.norm(left) + np.linalg.norm(right)) / 2
+    assert abs(width / height - view.CARD_ASPECT) < 0.01
+
+    # the next samples come from the straightened picture: mapped back, they agree, so
+    # nothing changes (the picture stays steady)
+    for turn in rng.normal(0, 1.2, 5):
+        q = cv2.perspectiveTransform(_camera_quad((540, 900), turn).reshape(1, 4, 2), m).reshape(4, 2)
+        assert auto.add(q, setting, size)
+    assert auto.proposal(setting) is None
+
+
+def test_auto_straighten_refuses_a_correction_the_camera_cannot_need(monkeypatch):
+    from mtgscanner import auto_straighten
+    auto = auto_straighten.AutoStraighten()
+    for _ in range(8):
+        auto.add(_camera_quad((540, 900), 6.0), None, (1080, 1600))   # every card 7° off
+    assert auto.proposal(None) is None and auto.last_refused["turn"] > 3
+
+
+def test_auto_straighten_waits_for_the_bed_to_be_clear(db, monkeypatch, tmp_path):
+    import app as app_module
+    from app import Scanner
+    from mtgscanner.tracking import Track
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    scanner = Scanner(db, None, source=None)
+
+    class Source:
+        def read(self):
+            return np.full((300, 200, 3), 120, np.uint8)
+    scanner.source = Source()
+    monkeypatch.setattr(scanner, "process", lambda frame: None)
+    new = {"m": [1.0, 0.01, 0, 0, 1.0, 0, 0, 0, 1.0], "size": [200, 300]}
+    scanner._pending_straight = new
+    scanner.tracks = [Track(id=1, number=1, corners=np.float32([[0, 0], [10, 0], [10, 10], [0, 10]]))]
+    scanner.turn()
+    assert scanner.straight is None                         # a card is being read: wait
+    scanner.tracks = []
+    scanner.turn()
+    assert scanner.straight == new and app_module.load_settings()["straight"] == new

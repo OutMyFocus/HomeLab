@@ -11,11 +11,15 @@ is dropped into its bin, with the usual check that the bed is clear.
 
 What each card ends up as:
   saved     recognized for sure: saved to the collection, dropped into its rules bin
-  unsure    the scanner's best guess wasn't sure: not saved, dropped into the fallback bin
-            (the Bins page's "everything else", or config.SORT_FALLBACK_BIN when that is
-            bin 0, which has no tray) so you can look at it by hand
+  unsure    the scanner's best guess wasn't sure, or
   unknown   not recognized in time (config.SORT_RECOGNIZE_SECONDS, with the light bars
-            dimmed for a second look after SORT_FOIL_AFTER: foils glare): the same, not saved
+            dimmed for a second look after SORT_FOIL_AFTER: foils glare). Nic (2026-11-07):
+            the pins only drop for a recognized card. So the run waits with the pins up
+            and the card on the bed ("waiting" in the status) until you choose on the page:
+            Look again, Unread bin (drop it into the fallback bin: the Bins page's
+            "everything else", or config.SORT_FALLBACK_BIN when that is bin 0), or Stop. If
+            the scanner reads the card meanwhile (you straightened it, say), it carries on
+            by itself. config.SORT_DROP_UNREAD = True drops it to the fallback bin at once.
   none      nothing reached the bed (the run stops after two in a row: hopper empty)
   stuck     a card came part way out and stopped moving: the gate holds it; the run stops
   double    two cards came out together: the run stops with the pins up, nothing dropped
@@ -39,13 +43,19 @@ class DoubleFeed(RuntimeError):
     """Two cards reached the bed at once; the run stops rather than sort them as one."""
 
 
+class StopHere(RuntimeError):
+    """Stop pressed while a card waited on the bed: the run ends with the pins up."""
+
+
 class SortRun:
     def __init__(self, watcher, scanner, machine):
         self.watcher, self.scanner, self.machine = watcher, scanner, machine
         self.lock = threading.Lock()
         self.thread = None
         self.stop_asked = False
-        self.state = {"running": False, "cards": [], "done": None, "speed": None, "max_cards": 0}
+        self.decision = None        # what was chosen for a card waiting on the bed
+        self.state = {"running": False, "cards": [], "done": None, "speed": None, "max_cards": 0,
+                      "waiting": None}
 
     # --- control ----------------------------------------------------------------
 
@@ -56,14 +66,25 @@ class SortRun:
             speed = round(min(1.0, max(0.1, float(speed or self.machine.feeder_defaults()["speed"]))), 2)
             max_cards = max(0, min(MAX_CARDS, int(max_cards or 0)))
             self.stop_asked = False
+            self.decision = None
             self.state = {"running": True, "cards": [], "done": None, "speed": speed,
-                          "max_cards": max_cards, "started_at": time.time()}
+                          "max_cards": max_cards, "started_at": time.time(), "waiting": None}
             self.thread = threading.Thread(target=self._run, args=(speed, max_cards), daemon=True)
             self.thread.start()
         return self.status()
 
     def stop(self) -> dict:
         self.stop_asked = True
+        return self.status()
+
+    def decide(self, action) -> dict:
+        """For a card waiting on the bed: "retry" (look again), "fallback" (drop it into
+        the unread bin and carry on) or "stop"."""
+        if action not in ("retry", "fallback", "stop"):
+            raise ValueError("Choose retry, fallback or stop")
+        if not self.state.get("waiting"):
+            raise ValueError("No card is waiting")
+        self.decision = action
         return self.status()
 
     def status(self) -> dict:
@@ -76,7 +97,8 @@ class SortRun:
             if c.get("bin") is not None:
                 tally[str(c["bin"])] = tally.get(str(c["bin"]), 0) + 1
         s["tally"] = [{"bin": int(b), "label": names.get(b, f"Bin {b}"), "cards": n} for b, n in sorted(tally.items())]
-        s["counts"] = {k: sum(1 for c in cards if c.get("status") == k) for k in ("saved", "unsure", "unknown", "none")}
+        s["counts"] = {k: sum(1 for c in cards if c.get("status") == k)
+                       for k in ("saved", "unsure", "unknown", "none", "stuck", "double")}
         s["value"] = round(sum(c.get("price") or 0 for c in cards if c.get("status") == "saved"), 2)
         warn = int(getattr(config, "SORT_BIN_WARN", 0) or 0)
         s["full"] = [t["bin"] for t in s["tally"] if warn and t["cards"] >= warn]
@@ -111,7 +133,7 @@ class SortRun:
                         pass
                 try:
                     out = self.watcher.sort_one(None, speed=speed, choose=lambda fed, c=card: self._choose(c))
-                except DoubleFeed as e:
+                except (DoubleFeed, StopHere) as e:
                     with self.lock:
                         self.state["cards"].append(card | {"seconds": round(time.monotonic() - t0, 1)})
                     reason = str(e)
@@ -139,6 +161,7 @@ class SortRun:
         finally:
             with self.lock:
                 self.state["running"] = False
+                self.state["waiting"] = None
                 self.state["done"] = reason
 
     @staticmethod
@@ -186,11 +209,88 @@ class SortRun:
             except Exception:
                 pass
 
+    def _read(self, card: dict, fed_at: float):
+        """The track the scanner has for the card on the teeth right now (locked, unsure or
+        "unknown" so far), or None. Raises DoubleFeed. Call with scanner.lock held."""
+        height = (self.scanner.frame_size or (0, 0))[1] or 1
+        # Only a card recognized since this feed began, in the lower half of the picture
+        # (cards come in at the top and stop at the teeth at the bottom): the scanner keeps
+        # a dropped card's track, and the next card hanging out of the slot shows at the
+        # top, and either would end the wait at once.
+        tracks = [t for t in self.scanner.tracks
+                  if t.status in ("locked", "unsure", "unknown") and t.checked_time >= fed_at
+                  and t.streak_key == (t.card.id if t.card else "unknown")   # latest look agrees
+                  and float(t.center[1]) / height >= LANDED_FROM]
+        if len(tracks) >= 2 and self._apart(tracks):
+            # Two cards on the bed at once: the feeder let a pair through. Sorting the pair
+            # as one card puts an unsaved card in the wrong bin, so stop with the pins up
+            # and let someone take them off (seen 2026-11-06).
+            card.update({"status": "double", "bin": None})
+            raise DoubleFeed("two cards came out together: take them off the bed and press Start again")
+        return max(tracks, key=lambda t: float(t.center[1]), default=None)
+
+    def _hold_for_decision(self, card: dict, fed_at: float):
+        """An unread card stays on the bed, pins up, until it is read after all (returns
+        the locked track), or the page says "retry" (returns "retry"), "fallback" (None)
+        or "stop" (raises StopHere)."""
+        self.decision = None
+        with self.lock:
+            self.state["waiting"] = {"n": card["n"], "status": card.get("status"), "name": card.get("name"),
+                                     "since": time.time(),
+                                     "message": "Card not recognized: the pins stay up. Straighten or turn it, "
+                                                "then Look again, or send it to the unread bin."}
+        try:
+            while True:
+                if self.stop_asked:
+                    raise StopHere("stopped with an unread card on the bed")
+                choice, self.decision = self.decision, None
+                if choice == "stop":
+                    self.stop_asked = True
+                    raise StopHere("stopped with an unread card on the bed: take it off")
+                if choice in ("retry", "fallback"):
+                    return choice if choice == "retry" else None
+                with self.scanner.lock:
+                    track = self._read(card, fed_at)
+                    if track is not None and track.status == "locked":
+                        return track            # read after all (moved by hand, say)
+                time.sleep(0.2)
+        finally:
+            with self.lock:
+                self.state["waiting"] = None
+
     def _choose(self, card: dict) -> int:
         """Asked by sort_one once the card is on the stop teeth: wait for the scanner to
-        recognize it, save it, and say which bin it goes in. Fills in `card` for the table."""
+        recognize it, save it, and say which bin it goes in. Fills in `card` for the table.
+        An unread card waits on the bed for a decision (see the top of this file)."""
         rules = sort_rules.load()
         fallback = self.real_bin(rules["fallback"])
+        while True:
+            track = self._look(card)
+            if track is not None and track.status == "locked":
+                break
+            with self.scanner.lock:
+                shown = track.card if track is not None else None
+            card.update({"status": "unsure" if shown is not None else "unknown",
+                         "name": shown.name if shown is not None else None})
+            if getattr(config, "SORT_DROP_UNREAD", False):
+                break
+            held = self._hold_for_decision(card, card.get("fed_at", 0.0))
+            if held == "retry":
+                # a fresh look: forget what was seen, so an old "unsure" doesn't end it at once
+                card["retries"] = card.get("retries", 0) + 1
+                with self.scanner.lock:
+                    self.scanner.forget_tracks()
+                card["fed_at"] = time.monotonic()
+                continue
+            track = held                # the locked track, or None for the unread bin
+            if track is None:
+                card["by_hand"] = "unread bin"
+            break
+        return self._finish(card, track, rules, fallback)
+
+    def _look(self, card: dict):
+        """Wait up to SORT_RECOGNIZE_SECONDS for the card to be read (dimming the bars for
+        a second look); the track found (locked or unsure), or None."""
         started = time.monotonic()
         deadline = started + float(getattr(config, "SORT_RECOGNIZE_SECONDS", 8.0))
         foil_after = float(getattr(config, "SORT_FOIL_AFTER", 3.0))
@@ -202,22 +302,7 @@ class SortRun:
                 dimmed = self._dim_lights()     # a second look with less glare (foils)
                 card["dimmed"] = dimmed is not None
             with self.scanner.lock:
-                height = (self.scanner.frame_size or (0, 0))[1] or 1
-                # Only a card recognized since this feed began, in the lower half of the
-                # picture (cards come in at the top and stop at the teeth at the bottom):
-                # the scanner keeps a dropped card's track, and the next card hanging out
-                # of the slot shows at the top, and either would end the wait at once.
-                tracks = [t for t in self.scanner.tracks
-                          if t.status in ("locked", "unsure", "unknown") and t.checked_time >= fed_at
-                          and t.streak_key == (t.card.id if t.card else "unknown")   # latest look agrees
-                          and float(t.center[1]) / height >= LANDED_FROM]
-                track = max(tracks, key=lambda t: float(t.center[1]), default=None)
-                if len(tracks) >= 2 and self._apart(tracks):
-                    # Two cards on the bed at once: the feeder let a pair through. Sorting
-                    # the pair as one card puts an unsaved card in the wrong bin, so stop
-                    # with the pins up and let someone take them off (seen 2026-11-06).
-                    card.update({"status": "double", "bin": None})
-                    raise DoubleFeed("two cards came out together: take them off the bed and press Start again")
+                track = self._read(card, fed_at)
                 if track is not None and track.status in ("locked", "unsure"):
                     break
                 # "unknown" so far: the first looks at a card are often while it is still
@@ -226,9 +311,14 @@ class SortRun:
             time.sleep(0.1)
         if dimmed is not None:
             self._restore_lights(dimmed)
-        card["seconds_reading"] = round(time.monotonic() - started, 1)
+        card["seconds_reading"] = round(card.get("seconds_reading", 0) + time.monotonic() - started, 1)
+        return track
+
+    def _finish(self, card: dict, track, rules, fallback) -> int:
+        """Save a recognized card and pick its bin; anything else goes to the fallback bin."""
         if track is None:
-            card.update({"status": "unknown", "bin": fallback, "bin_label": rules["names"][str(fallback)]})
+            card.update({"status": card.get("status") if card.get("status") in ("unsure", "unknown") else "unknown",
+                         "bin": fallback, "bin_label": rules["names"][str(fallback)]})
             return fallback
         with self.scanner.lock:
             shown = track.card
@@ -278,5 +368,13 @@ def add_sort_run_routes(app, watcher, scanner, machine):
     @app.post("/api/machine/sort/stop")
     def sort_stop():
         return answer(machine.sort_stop if run is None else run.stop)
+
+    @app.post("/api/machine/sort/decide")
+    def sort_decide():
+        """For a card waiting on the bed: {"action": "retry" | "fallback" | "stop"}."""
+        action = (request.get_json(silent=True) or {}).get("action")
+        if run is None:
+            return answer(lambda: machine.sort_decide(action))
+        return answer(lambda: run.decide(action))
 
     return run
