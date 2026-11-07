@@ -160,6 +160,7 @@ FEED_ZONE = (0.2, 0.62, 0.8, 0.70)
 FEED_LAND_SHARE = 0.25       # this much of the box looking different = a card is there
 FEED_DIFF_LEVEL = 30         # grey levels (0-255) a pixel must change by to count
 FEED_MAX_SECONDS = 3.0       # give up (motor off) if no card has landed by then
+FEED_PINS_UP_SECONDS = 0.6   # a feed waits until the stop pins were sent up at least this long ago
 FEED_SETTLE_SECONDS = 0.8    # then wait this long to see where it came to rest
 # After a card lands, the wheels turn backwards this long: the next card, which they drove
 # part way out of the slot behind the first (they touch it as soon as the first card's tail
