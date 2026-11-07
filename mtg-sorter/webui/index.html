@@ -385,6 +385,8 @@
                 <svg><use href="#i-crop" /></svg><span>Crop</span>
               </button>
               <button class="cam-btn" id="uncropBtn" title="Show the whole camera picture again" hidden>Full view</button>
+              <button class="cam-btn" id="straightBtn" title="Lay one card square on the bed against the stop pins, then press: the picture is warped so that card shows as a perfect upright rectangle (undoes the camera's tilt)" hidden>Straighten</button>
+              <button class="cam-btn" id="unstraightBtn" title="Show the camera's picture without the straightening" hidden>Undo straighten</button>
               <span class="cam-hint" id="cropHint" hidden>Drag a box around the scan bed</span>
               <label
                 class="cam-btn cam-focus"
@@ -452,6 +454,12 @@
             </div>
             <div class="card-list" id="cardList"></div>
             <div class="controls">
+              <div class="sorter" id="sorter" hidden>
+                <button class="btn primary start" id="sortBtn" title="Feed, read and sort every card in the hopper by your Bins rules">
+                  <svg><use href="#i-bolt" /></svg><span id="sortBtnText">Start sorting</span>
+                </button>
+                <small id="sortInfo">Feeds every card, reads it, saves it and drops it into the bin your <a href="/bins">Bins</a> rules give it.</small>
+              </div>
               <button class="btn primary" id="saveBtn" disabled>
                 Save all <kbd>Space</kbd>
               </button>

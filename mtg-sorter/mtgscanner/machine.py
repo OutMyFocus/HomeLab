@@ -87,7 +87,11 @@ class Machine:
         saved = load_saved().get("feeder", {})
         return {"seconds": float(saved.get("seconds", config.FEEDER_SECONDS)),
                 "speed": float(saved.get("speed", config.FEEDER_SPEED)),
-                "reverse": bool(saved.get("reverse", False))}
+                "reverse": bool(saved.get("reverse", False)),
+                # Feed one card: forward push after the card lands, then the wheels run
+                # backwards (feed_watch.py); only kept when saved from the Machine page
+                "backoff": float(saved.get("backoff", config.FEED_BACKOFF_SECONDS)),
+                "push": float(saved.get("push", getattr(config, "FEED_PUSH_SECONDS", 0.0)))}
 
     def _write(self, saved: dict):
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -104,11 +108,17 @@ class Machine:
         saved.setdefault("servos", {}).setdefault(part, {})[position] = angle
         self._write(saved)
 
-    def save_feeder(self, seconds: float, speed: float):
+    def save_feeder(self, seconds: float, speed: float, backoff=None, push=None):
+        """The timed push's seconds and speed (the speed is Feed one card's too), and, when
+        given, Feed one card's forward push after landing and its back-off, in seconds."""
         saved = load_saved()
         feeder = saved.setdefault("feeder", {})
         feeder.update(seconds=round(min(5.0, max(0.05, float(seconds))), 2),
                       speed=round(min(1.0, max(0.1, float(speed))), 2))
+        if backoff is not None:
+            feeder["backoff"] = round(min(float(getattr(config, "FEED_BACKOFF_MAX", 1.0)), max(0.0, float(backoff))), 2)
+        if push is not None:
+            feeder["push"] = round(min(1.0, max(0.0, float(push))), 2)
         self._write(saved)
 
     def sort_defaults(self) -> dict:
@@ -352,9 +362,27 @@ class Machine:
             else:
                 self.move("chute", position)
                 hold(position, tilt_seconds)        # and off the side of the tilted tray
+                self._shake(servos["chute"], position)
         finally:
             self.move("chute", "centre")
             self.move("pins", "up")
+
+    def _shake(self, chute, position, shakes=None, seconds=None):
+        """Rock the tilted tray half way back towards level and tilt it again, a few times
+        (config.SORT_TILT_SHAKES), so a card left on the tray slides off. Half way, not level:
+        a card nearly off the edge shouldn't slide back into the middle."""
+        shakes = int(getattr(config, "SORT_TILT_SHAKES", 0) if shakes is None else shakes)
+        seconds = float(getattr(config, "SORT_SHAKE_SECONDS", 0.4) if seconds is None else seconds)
+        channel, positions = chute
+        if shakes <= 0 or "centre" not in positions:
+            return
+        tilted, level = float(positions[position]), float(positions["centre"])
+        half = round(level + (tilted - level) / 2, 1)
+        for _ in range(shakes):
+            self.set_angle(channel, half)
+            time.sleep(seconds)
+            self.move("chute", position)
+            time.sleep(seconds)
 
     def self_test(self, pause: float = 0.6) -> list[dict]:
         """Moves every servo through its positions and back, then nudges the feeder.
@@ -498,7 +526,8 @@ def add_machine_routes(app, machine: Machine, web_dir):
             return answer(lambda: machine.save_sort(**(body["sort"] if isinstance(body["sort"], dict) else {})))
         if "reverse" in body and "seconds" not in body:
             return answer(lambda: machine.set_feeder_reverse(bool(body["reverse"])))
-        return answer(lambda: machine.save_feeder(body.get("seconds"), body.get("speed")))
+        return answer(lambda: machine.save_feeder(body.get("seconds"), body.get("speed"),
+                                                  body.get("backoff"), body.get("push")))
 
     @app.post("/api/machine/reset")
     def machine_reset():

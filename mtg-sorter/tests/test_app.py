@@ -137,12 +137,12 @@ def test_rotate_and_crop_the_picture(db, tmp_path, monkeypatch):  # noqa: F811
     client.post("/api/settings", json={"slots": [[0.5, 0.5, 1, 1]]})
 
     state = client.post("/api/settings", json={"crop": [0.5, 0.5, 1, 1]}).get_json()
-    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1]}
+    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False}
     assert state["slots"] == [[0, 0, 1, 1]]                      # same spot, now the whole picture
     state = client.post("/api/settings", json={"crop": [0, 0, 0.5, 0.5]}).get_json()
     assert state["view"]["crop"] == [0.5, 0.5, 0.75, 0.75]       # a crop of the crop
     state = client.post("/api/settings", json={"rotate": 90}).get_json()
-    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75]}
+    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False}
     saved = json.loads((tmp_path / "settings.json").read_text())
     assert saved["rotate"] == 90 and saved["crop"] == [0.25, 0.5, 0.5, 0.75]
 
@@ -460,3 +460,25 @@ def test_quiet_phone_pauses_then_goes_away(db):  # noqa: F811
     assert sc.stopped
     sc.run()                       # the thread's loop ends at once, and the app is told
     assert dropped == [sc]
+
+
+def test_scan_page_offers_start_sorting_only_where_there_is_a_sorter(client, monkeypatch):
+    """The Scan page's Start sorting button shows when the app runs the machine (the Pi,
+    or a server pointed at the Pi); /api/state says so."""
+    assert client.get("/api/state").get_json()["sorter"] is False       # tests: no Pi, no MTG_MACHINE_URL
+    page = client.get("/scan").get_data(as_text=True)
+    assert 'id="sortBtn"' in page and "Start sorting" in page
+
+
+def test_the_pages_scripts_parse():
+    """A syntax error in a page script kills the whole page (the Scan page lost its live
+    view and buttons on 2026-11-06 to a helper declared twice), so every script is parsed."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node isn't installed here")
+    for script in sorted((Path(__file__).resolve().parent.parent / "webui").glob("*.js")):
+        check = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
+        assert check.returncode == 0, f"{script.name}: {check.stderr.strip()}"

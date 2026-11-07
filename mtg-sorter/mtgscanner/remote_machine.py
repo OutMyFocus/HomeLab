@@ -86,7 +86,8 @@ class RemoteMachine:
                     "feeder": {"ok": False, "error": str(e), "running": False},
                     "parts": parts, "customized": False, "remote": self.url,
                     "feeder_defaults": {"seconds": config.FEEDER_SECONDS, "speed": config.FEEDER_SPEED,
-                                        "reverse": False},
+                                        "reverse": False, "backoff": config.FEED_BACKOFF_SECONDS,
+                                        "push": getattr(config, "FEED_PUSH_SECONDS", 0.0)},
                     "wide_travel": config.SERVO_WIDE_TRAVEL, "home_at_startup": config.HOME_AT_STARTUP}
         self._down_until = 0.0
         s["remote"] = self.url
@@ -119,18 +120,19 @@ class RemoteMachine:
     def stop_feeder(self):
         self._call("/api/machine/stop", {})
 
-    def feed_one(self, speed=None, max_seconds=None, zone=None, backoff=None) -> dict:
+    def feed_one(self, speed=None, max_seconds=None, zone=None, backoff=None, push=None) -> dict:
         """The Pi feeds a card watching its own camera (feed_watch.py) and says what happened."""
         return self._call("/api/machine/feed_one", {"speed": speed, "max_seconds": max_seconds, "zone": zone,
-                                                    "backoff": backoff}, timeout=(2, 15))
+                                                    "backoff": backoff, "push": push}, timeout=(2, 15))
 
     def drop(self, bin_no, pins_seconds=None, doors_seconds=None, tilt_seconds=None):
         self._call("/api/machine/drop", {"bin": bin_no, "pins_seconds": pins_seconds,
                                          "doors_seconds": doors_seconds, "tilt_seconds": tilt_seconds},
                    timeout=(2, 30))
 
-    def sort_one(self, bin_no, speed=None, drop=None, backoff=None) -> dict:
-        return self._call("/api/machine/sort_one", {"bin": bin_no, "speed": speed, "drop": drop, "backoff": backoff},
+    def sort_one(self, bin_no, speed=None, drop=None, backoff=None, push=None) -> dict:
+        return self._call("/api/machine/sort_one", {"bin": bin_no, "speed": speed, "drop": drop, "backoff": backoff,
+                                                    "push": push},
                           timeout=(2, 60))
 
     def sort_defaults(self) -> dict:
@@ -171,8 +173,8 @@ class RemoteMachine:
     def save_position(self, part: str, position: str, angle: float):
         self._call("/api/machine/save", {"part": part, "position": position, "angle": angle})
 
-    def save_feeder(self, seconds: float, speed: float):
-        self._call("/api/machine/save", {"seconds": seconds, "speed": speed})
+    def save_feeder(self, seconds: float, speed: float, backoff=None, push=None):
+        self._call("/api/machine/save", {"seconds": seconds, "speed": speed, "backoff": backoff, "push": push})
 
     def set_feeder_reverse(self, on: bool):
         self._call("/api/machine/save", {"reverse": bool(on)})
@@ -304,7 +306,7 @@ class RemoteCameraSource:
 
     def _watch(self):
         headers = {KEY_HEADER: self.key} if self.key else {}
-        with self.http.get(self.url + "/stream.mjpg", headers=headers, stream=True, timeout=(2, 15)) as r:
+        with self.http.get(self.url + "/stream.mjpg?full=1", headers=headers, stream=True, timeout=(2, 15)) as r:
             self._resp = r
             if r.status_code in (401, 403):
                 self.error = ("The sorter's Pi has a PIN or accounts on, so it refused. Put the Pi's "

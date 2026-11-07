@@ -126,10 +126,24 @@ class FeedWatcher:
         except Exception:
             pass
 
-    def feed_one(self, speed=None, max_seconds=None, zone=None, backoff=None, settle=None) -> dict:
-        """Run the feeder until a card lands in the zone (or max_seconds pass), then stop,
-        then turn the wheels backwards for `backoff` seconds (config.FEED_BACKOFF_SECONDS) so
-        the next card, which followed it out of the slot, goes back into the hopper. `settle`
+    def _feeder_setting(self, name, value, default, top):
+        """A per-call value, else the one saved from the Machine page (Machine.feeder_defaults),
+        else the config default; clamped to 0..top seconds."""
+        if value is None:
+            try:
+                value = self.machine.feeder_defaults().get(name)
+            except Exception:
+                value = None
+        if value is None:
+            value = default
+        return min(float(top), max(0.0, float(value)))
+
+    def feed_one(self, speed=None, max_seconds=None, zone=None, backoff=None, settle=None, push=None) -> dict:
+        """Run the feeder until a card lands in the zone (or max_seconds pass), keep pushing
+        for `push` seconds more so the card's tail clears the gate (config.FEED_PUSH_SECONDS,
+        or what the Machine page saved), then stop, then turn the wheels backwards for
+        `backoff` seconds (config.FEED_BACKOFF_SECONDS, or as saved) so the next card, which
+        followed it out of the slot, goes back into the hopper. `settle`
         (config.FEED_SETTLE_SECONDS) is how long to watch afterwards to see where the card
         came to rest; sort_one passes 0 and drops the pins straight away instead.
         Returns what happened: result is "landed", "over" (it went past the zone, over the
@@ -146,7 +160,11 @@ class FeedWatcher:
             seq, ref = self.tap.next(self.tap.seq, timeout=2.0)
             if ref is None:
                 raise RuntimeError("No camera picture to watch: is the Pi camera on and picked on the Scanner page?")
-            trace, landed_ms = [], None
+            trace, landed_ms, stuck = [], None, False
+            # The bed between the slot and the landing zone: a card held in the slot shows
+            # here and then stops moving while the motor runs on.
+            above = [zone[0], min(float(getattr(config, "FEED_STUCK_TOP", 0.3)), zone[1]), zone[2], zone[1]]
+            still_since, prev = None, ref
             t0 = time.monotonic()
             # The machine's own timer stops the motor at max_seconds even if this thread dies.
             self.machine.feed(seconds=max_seconds, speed=speed)
@@ -160,10 +178,29 @@ class FeedWatcher:
                     if share >= config.FEED_LAND_SHARE:
                         landed_ms = trace[-1][0]
                         break
+                    if above[1] < above[3] and changed_share(ref, now, above) >= config.FEED_LAND_SHARE / 2 \
+                            and changed_share(prev, now, above) < getattr(config, "FEED_STILL_SHARE", 0.02):
+                        still_since = still_since or time.monotonic()
+                        if time.monotonic() - still_since >= getattr(config, "FEED_STUCK_SECONDS", 0.6):
+                            stuck = True
+                            break
+                    else:
+                        still_since = None
+                    prev = now
+                if landed_ms is not None:
+                    # Seen landing, but its tail may still be under the gate: the motor stops
+                    # the moment the card shows in the zone, which sits above the pins. A
+                    # little more push frees it, so it slides down onto the pins and the
+                    # back-off can't drag it back up (2026-11-07: cards stopped 15 mm short).
+                    push = self._feeder_setting("push", push, getattr(config, "FEED_PUSH_SECONDS", 0.0), 1.0)
+                    left = max_seconds - (time.monotonic() - t0)
+                    if push > 0 and left > 0:
+                        time.sleep(min(push, left))
             finally:
                 self.machine.stop_feeder()
             motor_ms = round(1000 * (time.monotonic() - t0))
-            backoff = min(1.0, max(0.0, float(config.FEED_BACKOFF_SECONDS if backoff is None else backoff)))
+            backoff = self._feeder_setting("backoff", backoff, config.FEED_BACKOFF_SECONDS,
+                                           getattr(config, "FEED_BACKOFF_MAX", 1.0))
             if landed_ms is not None and backoff:
                 # The wheels drive the next card out behind the one that landed (they touch it as
                 # soon as the first card's tail passes them). It ends up hanging over the landed
@@ -179,11 +216,15 @@ class FeedWatcher:
                 if now is not None:
                     share = changed_share(ref, now, zone)
                     trace.append([round(1000 * (time.monotonic() - t0)), round(share, 3)])
-            if landed_ms is None:
+            if stuck:
+                result = "stuck"
+            elif landed_ms is None:
                 result = "landed" if share >= config.FEED_LAND_SHARE else "none"
             else:
                 result = "landed" if share >= config.FEED_LAND_SHARE / 2 else "over"
-            return {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms, "backoff_ms": round(1000 * backoff) if landed_ms is not None else 0,
+            return {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms,
+                    "push_ms": round(1000 * (push if landed_ms is not None else 0)) if landed_ms is not None else 0,
+                    "backoff_ms": round(1000 * backoff) if landed_ms is not None else 0,
                     "zone": zone, "settled_share": round(share, 3), "trace": trace}
         finally:
             self._hold_lights(False)
@@ -198,7 +239,7 @@ class FeedWatcher:
             raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
         return int(bin_no)
 
-    def sort_one(self, bin_no, speed=None, drop=None, backoff=None, choose=None) -> dict:
+    def sort_one(self, bin_no, speed=None, drop=None, backoff=None, choose=None, push=None) -> dict:
         """Feed one card and drop it into a bin, watching the camera: feed_one, then
         Machine.drop, then a look at the landing zone to see that the card has gone. If it
         is still there (a slow slider, or a card stuck half on the doors), the drop is done
@@ -222,11 +263,12 @@ class FeedWatcher:
             # timer stops it), so the card is on its way before the next one can follow
             # it out of the slot. Measured 2026-11-06: the old order dropped the pins 1.4 s
             # after landing, and the card behind caught the landed one meanwhile.
-            fed = self.feed_one(speed=speed, backoff=0, settle=0)
+            fed = self.feed_one(speed=speed, backoff=0, settle=0, push=push)
             out = fed | {"bin": bin_no, "dropped": None, "drop_tries": 0}
-            if fed["result"] == "none":
+            if fed["result"] in ("none", "stuck"):
                 return out
-            backoff = min(1.0, max(0.0, float(config.FEED_BACKOFF_SECONDS if backoff is None else backoff)))
+            backoff = self._feeder_setting("backoff", backoff, config.FEED_BACKOFF_SECONDS,
+                                           getattr(config, "FEED_BACKOFF_MAX", 1.0))
             if backoff:
                 self.machine.feed(seconds=backoff, speed=speed, backward=True)
                 out["backoff_ms"] = round(1000 * backoff)
@@ -280,6 +322,8 @@ MESSAGES = {
     "landed": "Fed one card: it landed on the bed.",
     "over": "A card came out but slid past the stop teeth: try a lower speed.",
     "none": "No card reached the bed: check the feeder's grip, or a card stuck in the slot.",
+    "stuck": "A card came part way out and stopped: the gate is holding it. Open the gate a little "
+             "(one card should slide through by hand, two together shouldn't) and take the card off the bed.",
 }
 
 
@@ -293,7 +337,8 @@ def add_feed_watch_routes(app, scanner, machine):
     def machine_feed_one():
         body = request.get_json(silent=True) or {}
         try:
-            out = run(body.get("speed"), body.get("max_seconds"), body.get("zone"), body.get("backoff"))
+            out = run(body.get("speed"), body.get("max_seconds"), body.get("zone"), body.get("backoff"),
+                      push=body.get("push"))
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
@@ -305,13 +350,14 @@ def add_feed_watch_routes(app, scanner, machine):
         body = request.get_json(silent=True) or {}
         run_sort = machine.sort_one if watcher is None else watcher.sort_one
         try:
-            out = run_sort(body.get("bin"), body.get("speed"), body.get("drop"), body.get("backoff"))
+            out = run_sort(body.get("bin"), body.get("speed"), body.get("drop"), body.get("backoff"),
+                           push=body.get("push"))
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
-        if out.get("result") == "none":
-            message = MESSAGES["none"]
+        if out.get("result") in ("none", "stuck"):
+            message = MESSAGES[out["result"]]
         elif out.get("dropped") is False:
             message = f"A card came out but it is still on the bed after {out['drop_tries']} drop(s): check the doors and the bin."
         elif out.get("dropped") is None:

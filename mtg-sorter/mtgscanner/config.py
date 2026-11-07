@@ -69,6 +69,18 @@ RECHECK_SECONDS = 2.0
 GONE_SECONDS = 0.8
 # Cards are recognized in parallel; 0 means one thread per CPU core (at most 8).
 IDENTIFY_THREADS = 0
+# While the picture stands still (nothing moving, no card waiting to be recognized) the
+# scanner only looks this many times a second, which keeps the Pi cool and the stream
+# quick; any change in the picture brings it back to every frame. A picture counts as
+# still when its small grey copy differs from the last one by under SCAN_STILL_LEVEL grey
+# levels on average.
+SCAN_IDLE_FPS = 4
+SCAN_STILL_LEVEL = 2.0
+# The live picture the pages show (/stream.mjpg): its long side in pixels and JPEG
+# quality. The full-size picture (about 400 KB a frame at 1080p) is only sent with
+# ?full=1, which the server's RemoteCameraSource uses to recognize cards from it.
+STREAM_PREVIEW_PX = 960
+STREAM_PREVIEW_QUALITY = 70
 
 # The smallest card the camera looks for, as a share of the whole picture. 0.05 (5%)
 # suits a camera close to the card, like the scan station. A camera high above a
@@ -154,6 +166,21 @@ FEED_SETTLE_SECONDS = 0.8    # then wait this long to see where it came to rest
 # passes them), goes back into the hopper instead of hanging over the landed card and
 # pinning it on the bed. Seen in the 2026-11-05 camera tests. 0 turns it off.
 FEED_BACKOFF_SECONDS = 0.25
+# Before that back-off, the wheels keep pushing forwards this long after the camera saw
+# the card land, so the card's tail clears the gate and the card is free on the bed: a
+# card stopped with its tail still under the gate stays short of the stop pins, and a
+# back-off then drags it back up (2026-11-07). Both are saved from the Machine page
+# ("feeder": {"push", "backoff"} in machine_settings.json); these are the starting values.
+FEED_PUSH_SECONDS = 0.1
+FEED_BACKOFF_MAX = 2.0
+# A card held in the slot (the gate set too tight) shows on the bed above the landing
+# zone and stops moving while the motor runs on. When the part of the picture from
+# FEED_STUCK_TOP (share of the height) down to the zone has something in it that hasn't
+# moved for FEED_STUCK_SECONDS, the motor stops and the feed says "stuck" (2026-11-07:
+# the motor ground on for the full 3 s with the card 25 mm short of the pins).
+FEED_STUCK_TOP = 0.3
+FEED_STUCK_SECONDS = 0.6
+FEED_STILL_SHARE = 0.02      # frame-to-frame change below this = the card isn't moving
 # Dropping a landed card into a bin (Machine.drop, the Machine page's "Sort to bin" buttons,
 # and POST /api/machine/sort_one, which feeds a card first). Bins 1 and 3 are the tilted
 # tray's sides; bin 2 is under the trapdoors. The stop pins drop first and the card slides
@@ -165,6 +192,16 @@ SORT_BINS = {1: "left", 2: "centre", 3: "right"}   # bin number: chute position
 # machine has no tray for: the sort run (sort_run.py) drops those cards, and the cards the
 # scanner couldn't read, into this real bin instead.
 SORT_FALLBACK_BIN = 1
+# The sort run gives the scanner this long to recognize a card on the teeth. A card not
+# read after SORT_FOIL_AFTER seconds gets a second look with the light bars dimmed to
+# SORT_FOIL_BRIGHTNESS percent (foils glare under the bars and hide their art; 2 of 2
+# misses on 2026-11-06 were foils); the lights go back up before the drop.
+SORT_RECOGNIZE_SECONDS = 8.0
+SORT_FOIL_AFTER = 3.0
+SORT_FOIL_BRIGHTNESS = 8
+# The run warns when this many cards have gone to one bin since it started (the centre
+# bin held about 20 before cards piled up on the doors, 2026-11-06).
+SORT_BIN_WARN = 15
 SORT_DOOR_BIN = 2             # the bin under the trapdoors
 SORT_PINS_SECONDS = 3.0       # pins down at most this long before the doors open / the tilt goes on
 SORT_PINS_MIN_SECONDS = 0.5   # and at least this long; sort_one goes on as soon as the camera sees the card leave
@@ -172,6 +209,10 @@ SORT_OVER_SECONDS = 0.3       # a card gone from the landing band sooner than th
                               # on the teeth: it went over them (the feed was too fast)
 SORT_DOORS_SECONDS = 2.5      # trapdoors open this long
 SORT_TILT_SECONDS = 2.0       # bins 1 and 3: tilted this long for the card to slide off
+# Then the tray rocks back half way and tilts again this many times, so a card that stuck
+# on the tray (a foil, a curled card) really falls (Nic, 2026-11-07). 0 turns it off.
+SORT_TILT_SHAKES = 2
+SORT_SHAKE_SECONDS = 0.4      # each half-way-back and each tilt again lasts this long
 SORT_RETRIES = 1              # drop again this many times if the camera still sees the card
 # After a drop, the card counts as gone when less than this share of the picture
 # (SORT_CHECK_ZONE, shares like FEED_ZONE: nearly the whole view, slot to tray) still looks
