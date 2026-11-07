@@ -15,6 +15,7 @@
 //   bed_side_left    side wall with the LED groove and the pin servo
 //   bed_side_right   side wall with the LED groove and the camera tower socket
 //   stop_gate        v2: four stop teeth on a bar across the bed, turned by the pin servo
+//   stop_gate3       v3: the same with one flat stop bar instead of the teeth (goes with bed_plate3)
 //   gate_bearing     v2: clips on the tilt bracket and holds the stop gate's right end
 //   pin_rocker       the older two-pin version, replaced by stop_gate
 //   tower_post       camera tower post
@@ -165,7 +166,9 @@ module bed_plate() {
 //   - Four lengthwise ribs, 0.8 mm tall, carry the card: less contact, nothing for a card (or lint)
 //     to stick to, the card sits above the teeth slots, and the print's diagonal top lines don't
 //     touch it. The ribs ramp in at the top so a card's edge can't catch on their ends.
-//   - The teeth slots are chamfered at the top.
+//   - Four pockets for camera marker stickers beside the walls (positions below).
+//   - One opening, chamfered at the top, for stop_gate3: one flat stop bar across the card
+//     instead of four teeth (the old four-tooth gate still fits it).
 // Built in bed coordinates like bed_plate (x across, y up the slope from the front edge, z square
 // to the side walls' 20° plane).
 bp3_extra = 4;                                  // degrees steeper than the walls' 20°
@@ -177,9 +180,16 @@ bp3_funnel_s = 88;                              // ... and opens out to bp3_top_
 bp3_top_half = 38;                              // (the hopper is 67 inside; its floor is 73 wide)
 bp3_wall_t = 2;
 bp3_wall_lo = 4;  bp3_wall_hi = 6;              // wall height over the surface: channel / funnel top
-bp3_rib_x = [-29, -15.5, 15.5, 29];             // clear of the teeth slots (x = +-8, +-24)
+bp3_rib_x = [-29, -15.5, 15.5, 29];             // the outer pair runs past the stop bar opening
 bp3_rib_h = 0.8;  bp3_rib_w = 2;  bp3_rib_top = 0.8;
 bp3_wedge_half = bp3_top_half + bp3_wall_t + 0.5;
+// Camera markers: four 5 mm square pockets, 0.4 mm deep, for printed ArUco stickers (OpenCV
+// DICT_4X4_50, ids 0-3), so the app can straighten the picture. Centres, measured in the 24°
+// surface from the bed's front edge (u, the same as s at the front) and across (x):
+//   id 0 (-37.75, 10)   id 1 (37.75, 10)   id 2 (37.75, 50)   id 3 (-37.75, 50)
+// x is seen from the camera with the bed's front edge (the stop) at the bottom, right = +x (the
+// camera tower side). A 75.5 x 40 mm rectangle, 0.8 mm under the card's face (the ribs).
+bp3_mk_x = 37.75;  bp3_mk_u = [10, 50];  bp3_mk_w = 5;  bp3_mk_d = 0.4;
 
 function bp3_n(s) = s <= bp3_crest ? s * tan(bp3_extra) : max(0, bp3_rise - (s - bp3_crest));  // 45° bevel under the hopper floor
 function bp3_wx(s) = s <= bp3_pocket ? bp3_half
@@ -214,13 +224,17 @@ module bed_plate3() {
                 for (x = [for (r = bp3_rib_x) if (r > 0) r], r = rib_s) hull() { bp3_rib_slab(x, r[0], r[2]); bp3_rib_slab(x, r[1], r[3]); }
             }
         }
-        // teeth slots (open at the front edge), chamfered 1 mm at the top
-        for (x = tooth_x) {
-            translate([x - 2.5, -1, -bed_t - 1]) cube([5, 6, bed_t + 2 + 2]);
-            hull() {
-                translate([x - 2.5, -1, -0.6]) cube([5, 6, 0.01]);
-                translate([x - 3.6, -1, bp3_n(6) + 0.5]) cube([7.2, 7.1, 0.01]);
-            }
+        // camera marker pockets (for 5 mm printed ArUco stickers), in the wedge's own surface so they
+        // lie in the card's plane, beside the channel walls
+        for (x = [-bp3_mk_x, bp3_mk_x], u = bp3_mk_u) rotate([bp3_extra, 0, 0])
+            translate([x - bp3_mk_w / 2 - 0.2, u - bp3_mk_w / 2 - 0.2, -bp3_mk_d]) cube([bp3_mk_w + 0.4, bp3_mk_w + 0.4, 2]);
+        // one opening for all four teeth (Nic: "one smooth area"), open at the front edge, its back
+        // and side edges chamfered 1 mm at the top so nothing can catch on them
+        bp3_gap = blade_half + 0.7;   // +-26.5: room for the v3 stop bar (or the old four teeth)
+        translate([-bp3_gap, -1, -bed_t - 1]) cube([2 * bp3_gap, 6, bed_t + 2 + 2]);
+        hull() {
+            translate([-bp3_gap, -1, -0.6]) cube([2 * bp3_gap, 6, 0.01]);
+            translate([-bp3_gap - 1.1, -1, bp3_n(6) + 0.5]) cube([2 * bp3_gap + 2.2, 7.1, 0.01]);
         }
     }
 }
@@ -234,6 +248,8 @@ module bed_plate3() {
 tooth_x = [-24, -8, 8, 24];
 tooth_w = 3.6;
 tooth_top = 8;          // teeth stand this far above the bed
+blade_half = 25.8;      // v3 stop: one flat bar as wide as the four teeth were (x = +-25.8; the card is
+                        // +-31.5). Any wider and its ends hit the tray when it tilts with the stop down
 gate_drop = 40;         // degrees the servo turns to drop the teeth. Checked in CAD: nothing touches
                         // from 6° past up (the bar meets the bed: the up stop) to 44° down (the bar
                         // meets the chute's back axle), with the tray level or tilted 22° either way
@@ -243,14 +259,16 @@ gate_axis_s = (pin_axis[0] - bed_y) * cos(bed_angle) + (pin_axis[1] - bed_z) * s
 gate_axis_n = -(pin_axis[0] - bed_y) * sin(bed_angle) + (pin_axis[1] - bed_z) * cos(bed_angle);
 gate_left = -side_in + sv_top - 1;   // outer face of the horn plate (as the old rocker)
 gate_right = 49;                     // outer face of the right plate
-module stop_gate_bed() {
+module stop_gate_bed(blade = false) {
     hub_r = 5.5;
     difference() {
         union() {
             // the bar
             translate([gate_left, gb_s0, gb_n0]) cube([gate_right - gate_left, gb_s1 - gb_s0, gb_n1 - gb_n0]);
             // teeth
-            for (x = tooth_x) translate([x - tooth_w / 2, gb_s0, gb_n0]) cube([tooth_w, 3 - gb_s0, tooth_top - gb_n0]);
+            if (blade) // v3: one flat stop across the card instead of four teeth (same profile)
+                translate([-blade_half, gb_s0, gb_n0]) cube([2 * blade_half, 3 - gb_s0, tooth_top - gb_n0]);
+            else for (x = tooth_x) translate([x - tooth_w / 2, gb_s0, gb_n0]) cube([tooth_w, 3 - gb_s0, tooth_top - gb_n0]);
             // end plates out to the axis
             for (x = [gate_left, gate_right - 3]) hull() {
                 translate([x, gb_s0, gb_n0]) cube([3, gb_s1 - gb_s0, gb_n1 - gb_n0]);
@@ -264,15 +282,15 @@ module stop_gate_bed() {
     }
 }
 // The horn screw holes are given in the machine's own coordinates, like the old rocker's.
-module stop_gate() {
+module stop_gate(blade = false) {
     difference() {
-        on_bed() stop_gate_bed();
+        on_bed() stop_gate_bed(blade);
         for (d = [-1, 1]) translate([gate_left - 1, pin_axis[0] + d * 5.5, pin_axis[1] - 1]) rotate([0, 90, 0]) cylinder(d = 1.5, h = 5);
     }
 }
 
-module stop_gate_print() {
-    translate([0, 0, -gb_s0]) rotate([90, 0, 0]) rotate([-bed_angle, 0, 0]) translate([0, -bed_y, -bed_z]) stop_gate();
+module stop_gate_print(blade = false) {
+    translate([0, 0, -gb_s0]) rotate([90, 0, 0]) rotate([-bed_angle, 0, 0]) translate([0, -bed_y, -bed_z]) stop_gate(blade);
 }
 
 // Clips down over the right end of the tilt bracket (between the bed walls) and carries the
@@ -807,6 +825,7 @@ else if (part == "bed_side_right") translate([0, 0, -side_in]) rotate([0, -90, 0
 else if (part == "pin_rocker") translate([0, 0, -rocker_bottom]) pin_rocker();
 // stop gate: printed standing on the front faces of its bar and teeth (s up), no supports
 else if (part == "stop_gate") stop_gate_print();
+else if (part == "stop_gate3") stop_gate_print(true);
 else if (part == "gate_bearing") translate([-160, -78, side_in - 0.3]) rotate([0, 90, 0]) gate_bearing();   // on its outer face, pin up
 else if (part == "tower_post") translate([0, 0, post_s / 2]) rotate([0, 90, 0]) tower_post();
 else if (part == "camera_head") camera_head();
@@ -836,7 +855,7 @@ module assembly() {
     // card resting against the stop teeth
     color("#c9a46a") on_bed() rotate([bp3_extra, 0, 0]) translate([-card_w / 2, 3, bp3_rib_h + 0.05]) cube([card_w, card_l, 0.3]);
     // pins + rocker (rotates about the pin servo shaft)
-    color("orange") translate([0, pin_axis[0], pin_axis[1]]) rotate([show_pins_down ? gate_drop : 0, 0, 0]) translate([0, -pin_axis[0], -pin_axis[1]]) stop_gate();
+    color("orange") translate([0, pin_axis[0], pin_axis[1]]) rotate([show_pins_down ? gate_drop : 0, 0, 0]) translate([0, -pin_axis[0], -pin_axis[1]]) stop_gate(true);
     color("#2b2b2b") gate_bearing();
     // camera tower
     color("#3a3f47") on_bed() translate([tower_x, card_s, -4]) tower_post();
