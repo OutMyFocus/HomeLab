@@ -557,11 +557,23 @@
     $("straightBtn").hidden = !machineCam || cropping;
     $("straightBtn").textContent = v.straight ? "Straighten again" : "Straighten";
     $("unstraightBtn").hidden = !machineCam || !v.straight || cropping;
+    $("autoStraightBtn").hidden = !machineCam || cropping;
+    $("autoStraightBtn").setAttribute("aria-pressed", !!v.auto_straight);
+    $("autoStraightBtn").textContent = v.auto_straight
+      ? (v.straight ? "Auto straighten: on" : `Auto straighten: learning (${v.straight_samples || 0} cards)`)
+      : "Auto straighten: off";
   }
+  $("autoStraightBtn").onclick = async () => {
+    const on = !(state?.view?.auto_straight);
+    render(await api("/api/settings", { auto_straight: on }));
+    toast(on ? "The picture now straightens itself from the cards it reads" : "Auto straighten off");
+  };
   async function straighten(on) {
     // api() throws on a 400, but "no card found" is worth showing as it is
     const r = await fetch("/api/settings", { method: "POST",
-      headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify({ straighten: on }) });
+      headers: { "Content-Type": "application/json", ...scannerHeaders() },
+      // Undo also stops it straightening itself again
+      body: JSON.stringify(on ? { straighten: true } : { straighten: false, auto_straight: false }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return toast(d.error || "Couldn't straighten the picture");
     render(d);
