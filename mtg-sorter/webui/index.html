@@ -460,6 +460,12 @@
                   <svg><use href="#i-bolt" /></svg><span id="sortBtnText">Start sorting</span>
                 </button>
                 <small id="sortInfo">Feeds every card, reads it, saves it and drops it into the bin your <a href="/bins">Bins</a> rules give it.</small>
+                <div class="sort-wait" id="sortWait" hidden>
+                  <small id="sortWaitText"></small>
+                  <button class="btn" data-decide="retry">Look again</button>
+                  <button class="btn" data-decide="fallback">Unread bin</button>
+                  <button class="btn ghost" data-decide="stop">Stop</button>
+                </div>
               </div>
               <button class="btn primary" id="saveBtn" disabled>
                 Save all <kbd>Space</kbd>
