@@ -209,6 +209,10 @@ SORT_OVER_SECONDS = 0.3       # a card gone from the landing band sooner than th
                               # on the teeth: it went over them (the feed was too fast)
 SORT_DOORS_SECONDS = 2.5      # trapdoors open this long
 SORT_TILT_SECONDS = 2.0       # bins 1 and 3: tilted this long for the card to slide off
+# Then the tray rocks back half way and tilts again this many times, so a card that stuck
+# on the tray (a foil, a curled card) really falls (Nic, 2026-11-07). 0 turns it off.
+SORT_TILT_SHAKES = 2
+SORT_SHAKE_SECONDS = 0.4      # each half-way-back and each tilt again lasts this long
 SORT_RETRIES = 1              # drop again this many times if the camera still sees the card
 # After a drop, the card counts as gone when less than this share of the picture
 # (SORT_CHECK_ZONE, shares like FEED_ZONE: nearly the whole view, slot to tray) still looks
