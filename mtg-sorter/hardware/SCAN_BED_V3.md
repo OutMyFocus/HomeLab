@@ -6,7 +6,7 @@ Print file: `bambu/MTG_Sorter_Scan_Bed_v3.3mf` (File > Open Project; answer **No
 |---|---|---|---|
 | 1 | `bed_plate3`, the scan bed (v3.1) | **white** | slippery-smooth settings set in the file (below), no supports, flat side down |
 | 2 | `weight_solid`, the hopper weight | any | 100 % infill (set in the file), about 95 g |
-| 3 | `stop_gate3`, one flat stop bar instead of the four teeth | black | same screws, horn, bearing and angles as the old stop gate. Reprint it for v3.1: it is 2 mm taller |
+| 3 | `stop_gate3`, one flat stop bar with a lip, instead of the four teeth | black | same screws, horn and bearing as the old stop gate. **Pins down goes from 155 to about 165** (below) |
 
 Also needed: **1/4" (6 mm) PTFE (Teflon) tape**, about 40 cm (the self-adhesive kind sold for heat
 sealers and 3D printer beds).
@@ -38,8 +38,10 @@ print (24°) still stopped cards: at the entrance, and anywhere on the slope.
   back in.
 - **One stop bar instead of four teeth**, 51.6 mm wide, coming up through one chamfered opening, so the
   card's edge sits square and nothing pokes up between gaps. A wider bar would hit the tray's edge
-  when it tilts with the stop down. It is 10 mm tall (7.2 mm above the lands, as the teeth were above
-  the old bed).
+  when it tilts with the stop down. On the printed v3, 1 card in 4 hopped the bar, so it is now 13.5 mm
+  tall (10.7 mm above the lands; the old teeth stood 8) with a 1.5 mm lip along its top on the card's
+  side, which catches a card that climbs the face. Being taller, it has to turn further to get out of
+  the card's way: about 32° instead of 25°, so **Pins down about 165** instead of 155 (up stays 130).
 - **Marker pockets for the camera.** Four 5 mm square pockets, 0.4 mm deep, beside the walls, for
   printed ArUco stickers (OpenCV DICT_4X4_50, ids 0-3), so the app can straighten the picture
   exactly. They are in the card's plane (0.8 mm under its face). Centres, in mm, measured along the
@@ -61,14 +63,17 @@ print (24°) still stopped cards: at the entrance, and anywhere on the slope.
 4. Slide the new plate in from the front, lands up, the edge with the opening at the front, until
    its front edge lines up with the front of the side walls. Don't force it further: the top end
    only has 2.4 mm under the hopper floor.
-5. Pins up: the stop comes up through the opening. No servo angle changes (130 up / 155 down).
+5. On the Machine page set **Pins down to 165** (up stays 130) and Save. Pins up: the bar comes up
+   through the opening. Pins down: on the camera, check that the bar's top goes fully below the
+   lands. If it doesn't, try 168. (CAD says it clears from about 162; the tray is clear up to 170.)
 6. On the Machine page, feed one card and check it lands at the stop. The camera stays where it was
    relative to the bed, so the saved landing zone should still work (the card is 2 mm closer).
 
 Checked in CAD (OpenSCAD intersections, each with a positive control): the plate clears the hopper
 floor by 2 to 3 mm and the feeder gate. The stop bar clears the plate from 6° past up to 44° down,
-the tray at 22° and 25° tilt either way up to 40° down, and is clear under the card from 15° down
-(your 130 / 155 pin angles are about 25° apart).
+and the tray at 22° and 25° tilt either way and with the doors open, up to 40° down. A card can slide
+out over it from 32° down. For scale: the old teeth cleared the card from 25°, which is your 155, so
+servo angle is about 130 + the CAD angle.
 
 ## Slippery-smooth settings (already in the 3MF, plate 1)
 
@@ -89,7 +94,6 @@ spray, wax or lubricant: it rubs off onto the cards.
 
 - **Sleeved cards don't fit** the 65 mm channel (they are 66 to 67 mm). Set `bp3_half` in
   `bed_chute.scad` to 34.5 and re-export if you ever sort sleeved cards.
-- Cards that come in fast because the feeder motor runs long can still ride over the stop.
 - A card held under the feeder gate is a gate problem, not a bed problem.
 - The lands show up in the camera as stripes on the empty bed; the app should compare against the
   empty bed rather than look for an all-white one.
