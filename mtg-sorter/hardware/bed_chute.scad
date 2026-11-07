@@ -154,44 +154,46 @@ module bed_plate() {
     }
 }
 
-// v3 bed plate (2026-11-07): drops into the same wall grooves, same stop-gate slots. Nic asked
-// for a bed that sets every card in the middle, square, over the trapdoors, and never stops it.
-//   - More slope: the top of the surface rises 6.3 mm to meet the hopper's floor edge, so the bed
-//     is 24° (the side walls stay 20°). The card slides off the hopper floor onto it instead of
-//     dropping 5 mm, and a card that has stopped has more pull to start again.
-//   - A 65 mm channel (an unsleeved card is 63: 1 mm each side) with 4 mm walls from the stop teeth
-//     to the card's middle, then a funnel out to 76 mm at the top, 6 mm tall. The old 2.5 mm rails
-//     let a turned card ride up on top of them. The walls' top inside edge is chamfered, so a corner
-//     that lands on one slides back in.
-//   - Four lengthwise ribs, 0.8 mm tall, carry the card: less contact, nothing for a card (or lint)
-//     to stick to, the card sits above the teeth slots, and the print's diagonal top lines don't
-//     touch it. The ribs ramp in at the top so a card's edge can't catch on their ends.
+// v3.1 bed plate (2026-11-07): drops into the same wall grooves. Nic asked for a bed that sets every
+// card in the middle, square, over the trapdoors, and never stops it.
+//   - Flat-printed card surface. v3 tilted the surface 4° against the plate (24° bed), so every print
+//     layer left a fine step across the slide direction, and cards stopped on it (live test). The
+//     card's surface is now parallel to the plate's underside, so it prints dead flat: 20°, as the
+//     walls. It stands 2 mm higher than the old plate's face, so the card drops 5.4 mm off the hopper
+//     floor instead of 8, and everything in front of the floor's edge only goes down (v3's crest sat
+//     in front of the edge, with a hollow under it, and cards stuck there).
+//   - A 65 mm channel (an unsleeved card is 63: 1 mm each side) with 4 mm walls from the stop to the
+//     card's middle, then a funnel out to 76 mm at the top, 6 mm tall. The walls' top inside edge
+//     is chamfered, so a corner that lands on one slides back in.
+//   - Four lengthwise lands, 6.5 mm wide and 0.8 mm tall, carry the card. Each takes a strip of
+//     1/4" (6.35 mm) PTFE tape: PLA is too grippy for a card to start sliding at 20° by itself.
+//     They ramp in at the top so a card's edge can't catch on their ends.
 //   - Four pockets for camera marker stickers beside the walls (positions below).
-//   - One opening, chamfered at the top, for stop_gate3: one flat stop bar across the card
-//     instead of four teeth (the old four-tooth gate still fits it).
+//   - One opening, chamfered at the top, for stop_gate3: one flat stop bar across the card.
 // Built in bed coordinates like bed_plate (x across, y up the slope from the front edge, z square
 // to the side walls' 20° plane).
-bp3_extra = 4;                                  // degrees steeper than the walls' 20°
-bp3_crest = 90;                                 // the surface's highest point, s (in front of the hopper floor's edge)
-bp3_rise = bp3_crest * tan(bp3_extra);          // 6.3 mm
+bp3_extra = 0;                                  // the card's surface is parallel to the plate (prints flat)
+bp3_lift = 2;                                   // ... and this much higher than the old plate's face
+bp3_crest = 95;                                 // the raised face ends here, under the hopper floor's front edge (y 142.6)
+bp3_rise = bp3_lift;                            // then a 45° bevel down (it clears the floor's underside by 2.4 mm)
 bp3_half = (card_w + 2) / 2;                    // channel half width: 32.5
 bp3_pocket = 55;                                // the channel is straight up to here ...
 bp3_funnel_s = 88;                              // ... and opens out to bp3_top_half by here
 bp3_top_half = 38;                              // (the hopper is 67 inside; its floor is 73 wide)
 bp3_wall_t = 2;
 bp3_wall_lo = 4;  bp3_wall_hi = 6;              // wall height over the surface: channel / funnel top
-bp3_rib_x = [-29, -15.5, 15.5, 29];             // the outer pair runs past the stop bar opening
-bp3_rib_h = 0.8;  bp3_rib_w = 2;  bp3_rib_top = 0.8;
+bp3_rib_x = [-24.5, -9, 9, 24.5];               // the PTFE tape lands
+bp3_rib_h = 0.8;  bp3_rib_w = 7.5;  bp3_rib_top = 6.5;
 bp3_wedge_half = bp3_top_half + bp3_wall_t + 0.5;
 // Camera markers: four 5 mm square pockets, 0.4 mm deep, for printed ArUco stickers (OpenCV
-// DICT_4X4_50, ids 0-3), so the app can straighten the picture. Centres, measured in the 24°
-// surface from the bed's front edge (u, the same as s at the front) and across (x):
+// DICT_4X4_50, ids 0-3), so the app can straighten the picture. Centres, measured on the surface
+// from the bed's front edge (u) and across (x):
 //   id 0 (-37.75, 10)   id 1 (37.75, 10)   id 2 (37.75, 50)   id 3 (-37.75, 50)
 // x is seen from the camera with the bed's front edge (the stop) at the bottom, right = +x (the
-// camera tower side). A 75.5 x 40 mm rectangle, 0.8 mm under the card's face (the ribs).
+// camera tower side). A 75.5 x 40 mm rectangle, 0.8 mm under the card's face (the lands).
 bp3_mk_x = 37.75;  bp3_mk_u = [10, 50];  bp3_mk_w = 5;  bp3_mk_d = 0.4;
 
-function bp3_n(s) = s <= bp3_crest ? s * tan(bp3_extra) : max(0, bp3_rise - (s - bp3_crest));  // 45° bevel under the hopper floor
+function bp3_n(s) = s <= bp3_crest ? bp3_lift + s * tan(bp3_extra) : max(0, bp3_rise - (s - bp3_crest));
 function bp3_wx(s) = s <= bp3_pocket ? bp3_half
                    : s >= bp3_funnel_s ? bp3_top_half
                    : bp3_half + (bp3_top_half - bp3_half) * (s - bp3_pocket) / (bp3_funnel_s - bp3_pocket);
@@ -212,13 +214,13 @@ module bp3_rib_slab(x, s, h) {
 }
 module bed_plate3() {
     wall_s = [0, bp3_pocket, bp3_funnel_s, bp3_crest, bp3_crest + bp3_rise, bed_len - 0.5];
-    rib_s = [[0, bp3_crest - 4, bp3_rib_h, bp3_rib_h], [bp3_crest - 4, bp3_crest, bp3_rib_h, 0.01]];
+    rib_s = [[0, bp3_crest - 8, bp3_rib_h, bp3_rib_h], [bp3_crest - 8, bp3_crest, bp3_rib_h, 0.01]];
     difference() {
         union() {
             translate([-side_in - 2 + 0.3, 0, -bed_t]) cube([2 * side_in + 4 - 0.6, bed_len, bed_t]);
             // the wedge: 0 at the front edge, bp3_rise at the crest, then a 45° bevel down
             yz_plate(-bp3_wedge_half, 2 * bp3_wedge_half)
-                polygon([[0, -0.01], [0, 0], [bp3_crest, bp3_rise], [bp3_crest + bp3_rise, 0], [bp3_crest + bp3_rise, -0.01]]);
+                polygon([[0, -0.01], [0, bp3_lift], [bp3_crest, bp3_rise], [bp3_crest + bp3_rise, 0], [bp3_crest + bp3_rise, -0.01]]);
             for (m = [0, 1]) mirror([m, 0, 0]) {
                 for (i = [0 : len(wall_s) - 2]) hull() { bp3_wall_slab(wall_s[i]); bp3_wall_slab(wall_s[i + 1]); }
                 for (x = [for (r = bp3_rib_x) if (r > 0) r], r = rib_s) hull() { bp3_rib_slab(x, r[0], r[2]); bp3_rib_slab(x, r[1], r[3]); }
@@ -227,7 +229,7 @@ module bed_plate3() {
         // camera marker pockets (for 5 mm printed ArUco stickers), in the wedge's own surface so they
         // lie in the card's plane, beside the channel walls
         for (x = [-bp3_mk_x, bp3_mk_x], u = bp3_mk_u) rotate([bp3_extra, 0, 0])
-            translate([x - bp3_mk_w / 2 - 0.2, u - bp3_mk_w / 2 - 0.2, -bp3_mk_d]) cube([bp3_mk_w + 0.4, bp3_mk_w + 0.4, 2]);
+            translate([x - bp3_mk_w / 2 - 0.2, u - bp3_mk_w / 2 - 0.2, bp3_lift - bp3_mk_d]) cube([bp3_mk_w + 0.4, bp3_mk_w + 0.4, 2]);
         // one opening for all four teeth (Nic: "one smooth area"), open at the front edge, its back
         // and side edges chamfered 1 mm at the top so nothing can catch on them
         bp3_gap = blade_half + 0.7;   // +-26.5: room for the v3 stop bar (or the old four teeth)
@@ -248,7 +250,7 @@ module bed_plate3() {
 tooth_x = [-24, -8, 8, 24];
 tooth_w = 3.6;
 tooth_top = 8;          // teeth stand this far above the bed
-blade_half = 25.8;      // v3 stop: one flat bar as wide as the four teeth were (x = +-25.8; the card is
+blade_half = 25.8;      // v3 stop: 10 mm tall (bed_plate3's face is 2 mm higher), one flat bar as wide as the four teeth were (x = +-25.8; the card is
                         // +-31.5). Any wider and its ends hit the tray when it tilts with the stop down
 gate_drop = 40;         // degrees the servo turns to drop the teeth. Checked in CAD: nothing touches
                         // from 6° past up (the bar meets the bed: the up stop) to 44° down (the bar
@@ -267,7 +269,7 @@ module stop_gate_bed(blade = false) {
             translate([gate_left, gb_s0, gb_n0]) cube([gate_right - gate_left, gb_s1 - gb_s0, gb_n1 - gb_n0]);
             // teeth
             if (blade) // v3: one flat stop across the card instead of four teeth (same profile)
-                translate([-blade_half, gb_s0, gb_n0]) cube([2 * blade_half, 3 - gb_s0, tooth_top - gb_n0]);
+                translate([-blade_half, gb_s0, gb_n0]) cube([2 * blade_half, 3 - gb_s0, tooth_top + bp3_lift - gb_n0]);
             else for (x = tooth_x) translate([x - tooth_w / 2, gb_s0, gb_n0]) cube([tooth_w, 3 - gb_s0, tooth_top - gb_n0]);
             // end plates out to the axis
             for (x = [gate_left, gate_right - 3]) hull() {
@@ -853,7 +855,7 @@ module assembly() {
     // LED strips
     for (m = [0, 1]) mirror([m, 0, 0]) color("#fff2b0") on_bed() translate([side_in - 0.5, 6, led_n - led_w / 2]) cube([0.5, bed_len - 12, led_w]);
     // card resting against the stop teeth
-    color("#c9a46a") on_bed() rotate([bp3_extra, 0, 0]) translate([-card_w / 2, 3, bp3_rib_h + 0.05]) cube([card_w, card_l, 0.3]);
+    color("#c9a46a") on_bed() rotate([bp3_extra, 0, 0]) translate([-card_w / 2, 3, bp3_lift + bp3_rib_h + 0.05]) cube([card_w, card_l, 0.3]);
     // pins + rocker (rotates about the pin servo shaft)
     color("orange") translate([0, pin_axis[0], pin_axis[1]]) rotate([show_pins_down ? gate_drop : 0, 0, 0]) translate([0, -pin_axis[0], -pin_axis[1]]) stop_gate(true);
     color("#2b2b2b") gate_bearing();
