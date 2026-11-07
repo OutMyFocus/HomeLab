@@ -158,6 +158,8 @@ class Scanner:
         ] = []  # each [x0, y0, x1, y1], as shares of the picture's width and height
         self.rotate = 0  # the camera picture turned clockwise this many degrees (view.py)
         self.crop: list[float] | None = None  # then cropped to this part of it; None = all of it
+        self.straight = None  # then the camera's tilt and keystone undone (view.straighten_from)
+        self._last_view = None  # the last picture after rotate and crop, before straightening
         self.outline = (
             46,
             119,
@@ -218,6 +220,23 @@ class Scanner:
         self.slots = clean_slots(saved.get("slots") or []) or []
         self.rotate = view.clean_rotation(saved.get("rotate", 0)) or 0
         self.crop = view.clean_box(saved["crop"]) if saved.get("crop") else None
+        self.straight = view.clean_straighten(saved.get("straight")) if saved.get("straight") else None
+
+    def set_straight(self, on, corners=None):
+        """Straighten the picture from the card on the bed now (True) or stop (False).
+        `corners`: the card's 4 corners by hand, [[x, y], ...] as shares of the picture.
+        Raises ValueError when there is no picture or no card in it. Call with the lock held."""
+        if not on:
+            self.straight = None
+        else:
+            frame = self._last_view
+            if frame is None:
+                raise ValueError("No camera picture yet")
+            setting = view.straighten_from(frame, corners)
+            if setting is None:
+                raise ValueError("No card found: lay one card square on the bed, against the stop pins, and try again")
+            self.straight = setting
+        self.forget_tracks()
 
     def set_view(self, rotate: int | None = None, crop=False):
         """Turn the picture to `rotate` degrees and/or crop it. `crop` is a box drawn on
@@ -237,6 +256,9 @@ class Scanner:
             full = [view.inside(sl, old) for sl in self.slots]
             self.crop = [round(v, 4) for v in new] if new else None
             self.slots = clean_slots([view.relative(sl, self.crop) for sl in full]) or []
+            self.straight = None  # measured on the old picture: straighten again
+        if rotate is not None:
+            self.straight = None
         self.forget_tracks()  # outlines and numbers belong to the old picture
 
     def _find(self, frame):
@@ -288,6 +310,9 @@ class Scanner:
             return
         if self.rotate or self.crop:
             frame = view.apply(frame, self.rotate, self.crop)
+        self._last_view = frame
+        if self.straight:
+            frame = view.straighten(frame, self.straight)
         if self.tap is not None and self.tap.watching:
             # A feed is watching for its card to land (feed_watch.py): hand it every
             # picture straight away and skip finding and recognizing cards until it's done,
@@ -602,7 +627,7 @@ class Scanner:
                 "auto": self.auto,
                 "mode": self.mode,
                 "slots": self.slots,
-                "view": {"rotate": self.rotate, "crop": self.crop},
+                "view": {"rotate": self.rotate, "crop": self.crop, "straight": bool(self.straight)},
                 "camera": camera_info(self._next_source or self.source),
                 "owner": self.owner,
                 "account": self.account,
@@ -878,7 +903,16 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                     return jsonify({"error": "Rotate must be 0, 90, 180 or 270"}), 400
                 sc.set_view(rotate, crop)
                 if remember:
-                    save_settings(rotate=sc.rotate, crop=sc.crop, slots=sc.slots)
+                    save_settings(rotate=sc.rotate, crop=sc.crop, slots=sc.slots, straight=sc.straight)
+            if "straighten" in body:
+                try:
+                    raw = body["straighten"]
+                    # true: find the card; a list of 4 [x, y] shares: the card's corners by hand
+                    sc.set_straight(bool(raw), raw if isinstance(raw, list) else None)
+                except ValueError as e:
+                    return jsonify({"error": str(e)}), 400
+                if remember:
+                    save_settings(straight=sc.straight)
             outline = str(body.get("outline", ""))
             if len(outline) == 7 and outline[0] == "#":
                 try:
