@@ -78,6 +78,8 @@
     <div class="row">
       <label class="inline">Seconds <input type="number" id="feedSecs" min="0.05" max="5" step="0.05"></label>
       <label class="inline">Speed <input type="number" id="feedSpeed" min="0.1" max="1" step="0.1"></label>
+      <label class="inline">Push after landing <input type="number" id="feedPush" min="0" max="1" step="0.05"> s</label>
+      <label class="inline">Back-off <input type="number" id="feedBackoff" min="0" max="2" step="0.05"> s</label>
     </div>
     <div class="row">
       <button class="btn primary" id="feedOne">Feed one card</button>
@@ -89,10 +91,13 @@
     <label class="switch"><input type="checkbox" id="feedReverse"><span></span>Feeder turns the other way
       (for a motor fitted the other way round)</label>
     <p class="sub" id="feedResult"></p>
-    <p class="sub"><b>Feed one card</b> runs the motor at the speed above while watching the Pi camera, and stops
-      the moment a card lands just above the stop teeth (or after 3 seconds), then turns the wheels backwards for a
-      moment so the next card, which followed it out of the slot, goes back into the hopper. Start with the bed empty.
-      <b>Timed push</b> runs it for the seconds above, whatever happens.</p>
+    <p class="sub"><b>Feed one card</b> runs the motor at the speed above while watching the Pi camera. When a card
+      lands just above the stop teeth it keeps pushing for <b>Push after landing</b> so the card's tail clears the gate,
+      stops, then turns the wheels backwards for <b>Back-off</b> so the next card, which followed it out of the slot,
+      goes back into the hopper (longer = pushed further back; too long drags the landed card back too). It gives up after
+      3 seconds, or sooner when a card stops moving half out of the slot (the gate is too tight). Start with the bed
+      empty. <b>Save as the usual push</b> keeps all four numbers; Start sorting uses them. <b>Timed push</b> runs the
+      motor for the seconds above, whatever happens.</p>
     <div class="row">
       <span class="sub">Feed and sort one card to</span>
       <button class="btn" data-sort="1">Bin 1</button>
@@ -219,6 +224,8 @@ function build(s) {
   };
   $("feedSecs").value = s.feeder_defaults.seconds;
   $("feedSpeed").value = s.feeder_defaults.speed;
+  if (s.feeder_defaults.push != null) $("feedPush").value = s.feeder_defaults.push;
+  if (s.feeder_defaults.backoff != null) $("feedBackoff").value = s.feeder_defaults.backoff;
   $("feedReverse").checked = !!s.feeder_defaults.reverse;
 }
 $("wideTravel").onchange = async (e) => {
@@ -242,9 +249,13 @@ $("resetAll").onclick = async () => {
       && await call("/api/machine/reset", {})) toast("Back to the original angles.");
 };
 $("feedSave").onclick = async () => {
-  if (await call("/api/machine/save", { seconds: +$("feedSecs").value, speed: +$("feedSpeed").value }))
+  if (await call("/api/machine/save", { seconds: +$("feedSecs").value, speed: +$("feedSpeed").value,
+                                        push: feedNum("feedPush"), backoff: feedNum("feedBackoff") }))
     toast("Saved. The feeder uses these from now on.");
 };
+// Blank = use the saved value (the page leaves the box empty on an old sorter that has none).
+const feedNum = (id) => $(id).value === "" ? null : +$(id).value;
+const feedOpts = () => ({ speed: +$("feedSpeed").value, push: feedNum("feedPush"), backoff: feedNum("feedBackoff") });
 const feed = (backward) => call("/api/machine/feed",
   { seconds: +$("feedSecs").value, speed: +$("feedSpeed").value, backward });
 $("feedFwd").onclick = () => feed(false);
@@ -254,7 +265,7 @@ $("feedOne").onclick = async () => {
   $("feedOne").disabled = true; $("feedResult").textContent = "Feeding, watching the camera…";
   try {
     const res = await fetch("/api/machine/feed_one", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ speed: +$("feedSpeed").value }) });
+      body: JSON.stringify(feedOpts()) });
     const d = await res.json();
     $("feedResult").textContent = d.error || (d.message + (d.landed_ms != null ? ` (landed after ${(d.landed_ms / 1000).toFixed(2)} s)` : ""));
   } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }
@@ -266,7 +277,7 @@ for (const b of document.querySelectorAll("[data-sort]")) b.onclick = async () =
   $("feedResult").textContent = `Feeding, then sorting to bin ${b.dataset.sort}…`;
   try {
     const res = await fetch("/api/machine/sort_one", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bin: +b.dataset.sort, speed: +$("feedSpeed").value }) });
+      body: JSON.stringify({ bin: +b.dataset.sort, ...feedOpts() }) });
     const d = await res.json();
     $("feedResult").textContent = d.error || d.message;
   } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }

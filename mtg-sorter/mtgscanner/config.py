@@ -166,6 +166,21 @@ FEED_SETTLE_SECONDS = 0.8    # then wait this long to see where it came to rest
 # passes them), goes back into the hopper instead of hanging over the landed card and
 # pinning it on the bed. Seen in the 2026-11-05 camera tests. 0 turns it off.
 FEED_BACKOFF_SECONDS = 0.25
+# Before that back-off, the wheels keep pushing forwards this long after the camera saw
+# the card land, so the card's tail clears the gate and the card is free on the bed: a
+# card stopped with its tail still under the gate stays short of the stop pins, and a
+# back-off then drags it back up (2026-11-07). Both are saved from the Machine page
+# ("feeder": {"push", "backoff"} in machine_settings.json); these are the starting values.
+FEED_PUSH_SECONDS = 0.1
+FEED_BACKOFF_MAX = 2.0
+# A card held in the slot (the gate set too tight) shows on the bed above the landing
+# zone and stops moving while the motor runs on. When the part of the picture from
+# FEED_STUCK_TOP (share of the height) down to the zone has something in it that hasn't
+# moved for FEED_STUCK_SECONDS, the motor stops and the feed says "stuck" (2026-11-07:
+# the motor ground on for the full 3 s with the card 25 mm short of the pins).
+FEED_STUCK_TOP = 0.3
+FEED_STUCK_SECONDS = 0.6
+FEED_STILL_SHARE = 0.02      # frame-to-frame change below this = the card isn't moving
 # Dropping a landed card into a bin (Machine.drop, the Machine page's "Sort to bin" buttons,
 # and POST /api/machine/sort_one, which feeds a card first). Bins 1 and 3 are the tilted
 # tray's sides; bin 2 is under the trapdoors. The stop pins drop first and the card slides

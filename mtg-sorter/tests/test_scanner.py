@@ -170,3 +170,24 @@ def test_scanner_takes_it_easy_while_the_picture_stands_still(db, monkeypatch):
     scanner.full_viewers = 1
     scanner._publish(big)                                                # ...until someone streams ?full=1
     assert cv2.imdecode(np.frombuffer(scanner.jpeg_full, np.uint8), cv2.IMREAD_COLOR).shape[0] == 1920
+
+
+def test_glare_is_painted_over_before_giving_up(db):
+    """A foil's bright patches pull the fingerprint off its card; when nothing matches,
+    the patches are painted over and the card looked up again (vision.tame_glare)."""
+    from mtgscanner.recognize import identify
+    from mtgscanner.vision import tame_glare
+    rng = np.random.default_rng(3)
+    found = {"tamed": 0}
+    for seed in range(4):
+        card = fake_card(seed)
+        shiny = card.copy()
+        for _ in range(3):
+            centre = (int(rng.integers(60, CARD_W - 60)), int(rng.integers(60, CARD_H - 60)))
+            axes = (int(rng.integers(60, 110)), int(rng.integers(30, 60)))
+            cv2.ellipse(shiny, centre, axes, int(rng.integers(0, 180)), 0, 360, (255, 255, 255), -1)
+        shiny = cv2.GaussianBlur(shiny, (9, 9), 0)
+        assert tame_glare(shiny) is not None
+        card_found, distance = identify(db, shiny)
+        found["tamed"] += card_found is not None and card_found.id == f"id{seed}"
+    assert found["tamed"] >= 3, found
