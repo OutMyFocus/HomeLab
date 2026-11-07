@@ -554,7 +554,21 @@
     $("cropBtn").setAttribute("aria-pressed", cropping);
     $("cropBtn").querySelector("span").textContent = cropping ? "Cancel" : "Crop";
     $("cropHint").hidden = !cropping;
+    $("straightBtn").hidden = !machineCam || cropping;
+    $("straightBtn").textContent = v.straight ? "Straighten again" : "Straighten";
+    $("unstraightBtn").hidden = !machineCam || !v.straight || cropping;
   }
+  async function straighten(on) {
+    // api() throws on a 400, but "no card found" is worth showing as it is
+    const r = await fetch("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify({ straighten: on }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || "Couldn't straighten the picture");
+    render(d);
+    toast(on ? "Straightened: the card on the bed now shows square" : "Showing the camera's picture as it is");
+  }
+  $("straightBtn").onclick = () => straighten(true);
+  $("unstraightBtn").onclick = () => straighten(false);
   function setCropping(on) { cropping = on; if (on) editing = false; drag = null; if (state) render(state); }
   $("cropBtn").onclick = () => setCropping(!cropping);
   $("uncropBtn").onclick = async () => { render(await api("/api/settings", { crop: null })); toast("Showing the whole picture"); };
