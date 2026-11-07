@@ -116,14 +116,22 @@
     <h2>Start sorting</h2>
     <p class="sub">The machine on its own: it feeds a card, the scanner recognizes it, it is saved to the collection
       and dropped into the bin your <a href="/bins">Bins</a> rules give it, then the next one, until the hopper is empty
-      or you press Stop. A card the scanner isn't sure of, or can't read in time, isn't saved and goes to the
-      fallback bin so you can look at it by hand. Keep your hands out while it runs.</p>
+      or you press Stop. The stop pins only drop for a card that is recognized: one the scanner isn't sure of, or
+      can't read in time, stays on the bed with the pins up until you choose Look again, Unread bin (not saved,
+      dropped into the fallback bin) or Stop. If the scanner reads it meanwhile, it carries on by itself. Keep your
+      hands out while it runs.</p>
     <div class="row">
       <label class="inline">Cards <input type="number" id="sortMax" min="0" max="1000" value="0" title="0 = until the hopper is empty"></label>
       <button class="btn primary" id="sortStart">Start sorting</button>
       <button class="btn ghost" id="sortStop">Stop</button>
     </div>
     <p class="sub" id="sortStatus"></p>
+    <div class="row" id="sortWait" hidden>
+      <span class="sub" id="sortWaitText"></span>
+      <button class="btn" data-decide="retry">Look again</button>
+      <button class="btn" data-decide="fallback">Unread bin</button>
+      <button class="btn ghost" data-decide="stop">Stop</button>
+    </div>
     <p class="sub" id="sortTally"></p>
     <table id="sortTable" hidden><thead><tr><th>#</th><th>Card</th><th>Price</th><th>Bin</th><th>Result</th><th>Time</th></tr></thead><tbody></tbody></table>
   </section>
@@ -326,12 +334,17 @@ function showSort(d) {
   $("sortTable").hidden = cards.length === 0;
   $("sortTable").querySelector("tbody").innerHTML = cards.slice().reverse().map((k) =>
     `<tr><td>${k.n}</td><td>${k.name ? `${k.name} <small>${k.set || ""} ${k.number || ""}</small>` : (k.status === "none" ? "nothing came out" : "not recognized")}${k.status === "unsure" ? " <small>(unsure)</small>" : ""}</td><td>${money(k.price)}</td><td>${k.bin == null ? "-" : `${k.bin} ${k.bin_label || ""}`}</td><td>${k.status === "none" ? "no card" : (k.dropped === false ? "still on the bed" : (k.drop_tries > 1 ? "dropped (2nd try)" : "dropped"))}</td><td>${k.seconds ?? "-"} s${k.seconds_reading != null ? ` <small>(read ${k.seconds_reading} s${k.dimmed ? ", dimmed" : ""})</small>` : ""}</td></tr>`).join("");
+  const w = d.running && d.waiting;
+  $("sortWait").hidden = !w;
+  if (w) $("sortWaitText").textContent = `Card ${w.n}${w.name ? ` (best guess ${w.name})` : ""}: ${w.message}`;
   $("sortStart").disabled = !!d.running;
   if (d.running && !sortTimer) sortTimer = setInterval(async () => showSort(await tuneApi("/api/machine/sort")), 2000);
   if (!d.running && sortTimer) { clearInterval(sortTimer); sortTimer = null; }
 }
 $("sortStart").onclick = async () => showSort(await tuneApi("/api/machine/sort", { max_cards: +$("sortMax").value, speed: +$("feedSpeed").value }));
 $("sortStop").onclick = async () => showSort(await tuneApi("/api/machine/sort/stop", {}));
+for (const b of document.querySelectorAll("[data-decide]"))
+  b.onclick = async () => showSort(await tuneApi("/api/machine/sort/decide", { action: b.dataset.decide }));
 tuneApi("/api/machine/sort").then(showSort).catch(() => {});
 fetch("/api/machine/feed_zone").then((r) => r.json()).then((d) => { if (d.zone) $("feedZone").value = d.zone.join(", "); }).catch(() => {});
 $("feedZoneSave").onclick = async () => {

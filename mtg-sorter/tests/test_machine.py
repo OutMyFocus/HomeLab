@@ -580,6 +580,7 @@ def test_sort_run_recognizes_saves_and_bins_each_card(watched, quick_sort, db):
 
 
 def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_sort, monkeypatch, db):
+    monkeypatch.setattr(config, "SORT_DROP_UNREAD", True)      # the old way: no waiting
     monkeypatch.setattr(config, "SORT_RECOGNIZE_SECONDS", 0.4)
     monkeypatch.setattr(config, "SORT_FOIL_AFTER", 0.1)
     monkeypatch.setattr(config, "SORT_FALLBACK_BIN", 3)
@@ -625,7 +626,8 @@ def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_
     assert scanner.session == []                                          # not saved
 
 
-def test_sort_run_does_not_save_an_unsure_guess(watched, quick_sort, db):
+def test_sort_run_does_not_save_an_unsure_guess(watched, quick_sort, db, monkeypatch):
+    monkeypatch.setattr(config, "SORT_DROP_UNREAD", True)
     client, scanner, machine, cams = watched
     cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
     cams.append(FakeRecognizer(scanner, db.get_card("id2"), status="unsure"))
@@ -634,6 +636,75 @@ def test_sort_run_does_not_save_an_unsure_guess(watched, quick_sort, db):
     c = d["cards"][0]
     assert c["status"] == "unsure" and c["name"] == "Card 2" and c["bin"] == config.SORT_FALLBACK_BIN, d
     assert scanner.session == []
+
+
+def _wait_for(client, test, seconds=5):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        d = client.get("/api/machine/sort").get_json()
+        if test(d):
+            return d
+        time.sleep(0.05)
+    raise AssertionError(d)
+
+
+def test_sort_run_keeps_an_unread_card_on_the_bed_until_you_choose(watched, quick_sort, db, monkeypatch):
+    """Nic: the pins only fall when the card is recognized. An unsure card waits with the
+    pins up; Look again reads it afresh, and the unread bin drops it."""
+    monkeypatch.setattr(config, "SORT_RECOGNIZE_SECONDS", 0.3)
+    monkeypatch.setattr(config, "SORT_FOIL_AFTER", 5)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    reader = FakeRecognizer(scanner, db.get_card("id2"), status="unsure")
+    cams.append(reader)
+    pins = config.SERVOS["pins"]
+    assert client.post("/api/machine/sort/decide", json={"action": "retry"}).status_code == 400   # nothing waits
+    client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
+    d = _wait_for(client, lambda d: d.get("waiting"))
+    assert d["running"] and "not recognized" in d["waiting"]["message"]
+    time.sleep(0.3)
+    assert machine.angles.get(pins[0]) == pins[1]["up"]          # still holding it
+    assert client.post("/api/machine/sort/decide", json={"action": "jump"}).status_code == 400
+    first = d["waiting"]["since"]
+    client.post("/api/machine/sort/decide", json={"action": "retry"})
+    _wait_for(client, lambda d: d.get("waiting") and d["waiting"]["since"] > first)   # looked again, still unsure
+    client.post("/api/machine/sort/decide", json={"action": "fallback"})
+    d = wait_sort(client)
+    c = d["cards"][0]
+    assert c["bin"] == config.SORT_FALLBACK_BIN and c["by_hand"] == "unread bin" and c["retries"] == 1, d
+    assert scanner.session == []                                   # an unsure guess isn't saved
+
+
+def test_sort_run_carries_on_when_the_waiting_card_is_read_after_all(watched, quick_sort, db, monkeypatch):
+    monkeypatch.setattr(config, "SORT_RECOGNIZE_SECONDS", 0.3)
+    monkeypatch.setattr(config, "SORT_FOIL_AFTER", 5)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    reader = FakeRecognizer(scanner, db.get_card("id1"), status="unsure")
+    cams.append(reader)
+    client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
+    _wait_for(client, lambda d: d.get("waiting"))
+    with scanner.lock:                           # Nic turned the card the right way: read now
+        reader.status = "locked"
+        for t in scanner.tracks:
+            t.status, t.checked_time = "locked", time.monotonic()
+    d = wait_sort(client)
+    assert d["cards"][0]["status"] == "saved" and d["cards"][0]["bin"] == 2, d
+    assert d["waiting"] is None
+
+
+def test_sort_run_stop_while_a_card_waits_leaves_it_on_the_bed(watched, quick_sort, db, monkeypatch):
+    monkeypatch.setattr(config, "SORT_RECOGNIZE_SECONDS", 0.3)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    cams.append(FakeRecognizer(scanner, None, status="unknown"))
+    client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
+    _wait_for(client, lambda d: d.get("waiting"))
+    client.post("/api/machine/sort/decide", json={"action": "stop"})
+    d = wait_sort(client)
+    assert "unread card on the bed" in d["done"] and d["cards"][0]["bin"] is None, d
+    pins = config.SERVOS["pins"]
+    assert machine.angles.get(pins[0]) == pins[1]["up"]
 
 
 def test_sort_run_warns_when_a_bin_is_filling_up(watched, quick_sort, db, monkeypatch):

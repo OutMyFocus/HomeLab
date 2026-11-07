@@ -199,6 +199,10 @@ SORT_FALLBACK_BIN = 1
 SORT_RECOGNIZE_SECONDS = 8.0
 SORT_FOIL_AFTER = 3.0
 SORT_FOIL_BRIGHTNESS = 8
+# A card still not read after that waits on the bed with the pins up for you to choose
+# (Nic, 2026-11-07: "I only want the pins to fall when the card is recognized"). True
+# drops it into the fallback bin at once instead, as before.
+SORT_DROP_UNREAD = False
 # The run warns when this many cards have gone to one bin since it started (the centre
 # bin held about 20 before cards piled up on the doors, 2026-11-06).
 SORT_BIN_WARN = 15
