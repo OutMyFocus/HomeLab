@@ -146,8 +146,8 @@ Frost), and our bins keep that outside size:
 
 | Dock size (from the Card Catalog drawer) | mm |
 |---|---|
-| Tray | 76 wide × 67.4 tall × 223 long (our bin: 70 tall, 226 long, same 231 overall) |
-| Front plate | 86 wide × 109 tall × 8 thick, plus a clip-on top bar (ours: 5 thick, no bar) |
+| Tray | 76 wide × 67.4 tall × 223 long (our bin: 70 tall, same 231 overall) |
+| Front plate | 86 wide × 109 tall × 8 thick, plus a clip-on top bar (ours: 7.5 thick, removable, no bar) |
 | Plate pitch in the Card Catalog box | 86.5 (0.5 between plates) |
 | Room above the cubby floor in the box | 113.5 |
 
@@ -219,7 +219,7 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `splice` | 26 | any | 24 used (floor 6, bridge 2, deck 2, fascia 4, back 4, sides 6), 2 spare |
 | `tower`, `tower_lid` | 1 each | black | |
 | `post_sleeve`, `head_cover` | 1 each | black | |
-| `bins_bin` | 3 | your choice | the bins, see [BINS.md](BINS.md); `bambu/MTG_Sorter_Bins_And_Organizer.3mf` |
+| `bins_tray` + `bins_plate` | 3 each | your choice | the bins, with removable front plates that hold a showcase card, see [BINS.md](BINS.md); `bambu/MTG_Sorter_Bins_And_Organizer.3mf` |
 
 Plus `stl/bed_chute_bed_side_left_enclosure.stl` and `..._right_enclosure.stl` (the bed
 walls starting at the bridge, with screw holes in their bottom edge) and

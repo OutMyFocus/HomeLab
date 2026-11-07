@@ -43,6 +43,7 @@ mp.PER_PART.update({
     "bins_organizer_2x2": {"brim_type": "outer_only", "brim_width": "5"},
     "bins_organizer_1x2": {"brim_type": "outer_only", "brim_width": "5"},
     "bins_key": SOLID,
+    "bins_plate": {"brim_type": "outer_only", "brim_width": "5"},   # thin and 109 tall
 })
 
 PROJECTS = {
@@ -62,11 +63,12 @@ PROJECTS = {
                                                         "bed_chute_door_link3", "bed_chute_door_link3"]),
     ],
     "MTG_Sorter_Bins_And_Organizer.3mf": [
-        ("1 Bins (2)", ["bins_bin", "bins_bin"]),
-        ("2 Bin, 6 keys", ["bins_bin"] + ["bins_key"] * 6),
-        ("3 Dividers and labels (WHITE)", ["bins_divider_l", "bins_divider_m", "bins_divider_r"] * 2 + ["bins_label"] * 3),
-        ("4 Organizer 2x2 (brim)", ["bins_organizer_2x2"]),
-        ("5 Organizer 1x2 (brim)", ["bins_organizer_1x2"]),
+        ("1 Trays (3)", ["bins_tray"] * 3),
+        ("2 Front plates (3, brim), 6 keys", ["bins_plate"] * 3 + ["bins_key"] * 6),
+        ("3 Dividers (WHITE)", ["bins_divider_l", "bins_divider_m", "bins_divider_r"] * 2),
+        ("4 Blank showcase cards (WHITE, optional)", ["bins_label"] * 3),
+        ("5 Organizer 2x2 (brim)", ["bins_organizer_2x2"]),
+        ("6 Organizer 1x2 (brim)", ["bins_organizer_1x2"]),
     ],
 }
 

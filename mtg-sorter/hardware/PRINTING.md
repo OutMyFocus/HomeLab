@@ -74,7 +74,7 @@ Bambu Studio's estimate is the real one.
 | Plate | What's on it | Colour | About | Note |
 |---|---|---|---|---|
 | 1 | `floor_fl` + `post_front` + 2 × `splice` | black | 100 g, 5 h | **fit check A** |
-| - | one bin, plate 2 of `MTG_Sorter_Bins_And_Organizer.3mf` | black | 5 h | **fit check B**, print it after plate 1 |
+| - | the bin trays and front plates, plates 1 and 2 of `MTG_Sorter_Bins_And_Organizer.3mf` | black | 17 h | **fit check B**, print them after plate 1 |
 | 2 | 2 × `divider` | black | 110 g, 6 h | **fit check C** |
 | 3 | `bridge_front` | black | 60 g, 4 h (estimate) | the mechanism moves onto the bridge from here. v3 since 2026-11-04 (bearing wall, drop-in tray); it's also on plate 2 of `MTG_Sorter_Chute_v3.3mf` with its cap ([CHUTE_V3.md](CHUTE_V3.md)) |
 | 4 | `bridge_back` | black | 70 g, 3.5 h | |
@@ -94,7 +94,6 @@ Bambu Studio's estimate is the real one.
 | 21 | `deck_fr` | black | 70 g, 3.5 h | |
 | 22 | `deck_bl` | black | 50 g, 2.5 h | |
 | 23 | `deck_br` | black | 50 g, 2.5 h | |
-| - | two more bins, plate 1 of `MTG_Sorter_Bins_And_Organizer.3mf` | black | 10 h | |
 
 **Splices:** the build uses 24 of them (floor 6, bridge 2, front deck 2, fascia 4, back panel 4,
 sides 6), more than the 10 on plates 1 and 7. Count the ones in your project and add more

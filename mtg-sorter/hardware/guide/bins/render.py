@@ -15,12 +15,14 @@ W = os.path.join(V3, "w", "bins")
 OUT = os.path.join(HERE, "..", "..", "img", "bins")
 PIECES = {"org22": {}, "org12": {}, "bin_l": {}, "bin_r": {}, "bin_m_top": {}, "bin_m": {"out": 0},
           "bin_m_out": {"what": "bin_m", "out": 130}, "cards_out": {"what": "cards", "out": 130},
-          "dividers_out": {"what": "dividers", "out": 130}, "bin": {}, "org22_alone": {}, "keys": {}}
+          "dividers_out": {"what": "dividers", "out": 130}, "bin": {}, "org22_alone": {}, "keys": {},
+          "tray": {}, "plate_off": {}, "toploader_off": {}, "card_off": {}, "plate_on": {}, "card_on": {}, "cards_shown": {}}
 # the bins in the sorter's dock (sorter_scene.scad)
 SORTER = {"s_floor": {"what": "floor"}, "s_dividers": {"what": "dividers"}, "s_posts": {"what": "posts"},
           "s_fascia": {"what": "fascia"}, "s_bridge": {"what": "bridge"}, "s_chute": {"what": "chute"},
           "s_bin_l": {"what": "bin_l"}, "s_bin_r": {"what": "bin_r"}, "s_bin_m": {"what": "bin_m", "out": 110}}
 ORG, BLUE, CREAM, RED, CARD, WHITE = "#2a2d33", "#2d63b8", "#e5e2d6", "#d8262a", "#c9a46a", "#f4f4f4"
+SHOW = "#7b4fb0"   # a showcase card
 
 
 def export():
@@ -46,15 +48,17 @@ def m(name, color, **kw):
 cabinet = [m("org22", ORG), m("org12", ORG)]
 jobs = [
     ({"meshes": cabinet + [m("bin_l", BLUE), m("bin_r", RED), m("bin_m_top", CREAM), m("bin_m_out", CREAM),
-                           m("cards_out", CARD, edgeOpacity=0.15), m("dividers_out", WHITE)],
+                           m("cards_out", CARD, edgeOpacity=0.15), m("dividers_out", WHITE), m("cards_shown", SHOW)],
       "eye": [520, -760, 520], "ctr": [10, -40, 110]}, "organizer_full.png"),
     ({"meshes": [m("s_floor", "#3a3f47"), m("s_dividers", "#3a3f47"), m("s_posts", "#1b1d21"), m("s_fascia", "#2c3036", opacity=0.35),
                  m("s_bridge", "#555b63"), m("s_chute", "#e8772e"), m("s_bin_l", BLUE), m("s_bin_r", RED), m("s_bin_m", CREAM)],
       "eye": [430, -720, 420], "ctr": [0, -40, 80]}, "bins_in_sorter.png"),
     ({"meshes": [m("org22_alone", ORG)], "eye": [420, -620, 380], "ctr": [0, 110, 110]}, "organizer_2x2.png"),
     ({"meshes": [m("org22_alone", ORG)], "eye": [-380, 760, 300], "ctr": [0, 110, 110]}, "organizer_back.png"),
-    ({"meshes": [m("bin", CREAM)], "eye": [260, -380, 260], "ctr": [0, 100, 45]}, "bin.png"),
-    ({"meshes": [m("bin", CREAM)], "eye": [90, -260, 150], "ctr": [0, 0, 70], "fov": 26}, "bin_front.png"),
+    ({"meshes": [m("tray", CREAM), m("plate_off", CREAM), m("toploader_off", "#cfe3ee", opacity=0.45), m("card_off", SHOW)],
+      "arrows": [[[0, -48, 330], [0, -48, 300]], [[70, -40, 170], [70, -40, 110]]],
+      "eye": [480, -680, 420], "ctr": [0, 50, 160]}, "bin.png"),
+    ({"meshes": [m("tray", CREAM), m("plate_on", CREAM), m("card_on", SHOW)], "eye": [120, -300, 150], "ctr": [0, 0, 60], "fov": 28}, "bin_front.png"),
 ]
 
 

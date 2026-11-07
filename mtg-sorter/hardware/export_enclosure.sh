@@ -22,6 +22,6 @@ for p in bed_plate stop_gate gate_bearing chute3 door3 door3_left door_crank3 do
   openscad -q --export-format binstl -o "stl/bed_chute_$p.stl" -D "part=\"$p\"" bed_chute.scad
 done
 # the bins (drawers) and the organizer they go into (bins.scad)
-for p in bin divider_l divider_m divider_r label key organizer_2x2 organizer_1x2 organizer_2x1 organizer_1x1; do
+for p in bin tray plate divider_l divider_m divider_r label key organizer_2x2 organizer_1x2 organizer_2x1 organizer_1x1; do
   openscad -q --export-format binstl -o "stl/bins_$p.stl" -D "part=\"$p\"" bins.scad
 done
