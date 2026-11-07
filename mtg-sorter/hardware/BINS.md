@@ -22,12 +22,24 @@ fit the enclosure you've printed without changing anything there.
 
 ![bin](img/bins/bin.png)
 
+A bin is two parts: the **tray**, and a **front plate** that slides down onto it and lifts off.
+
 | | mm |
 |---|---|
-| Tray | 76 wide × 70 tall, 226 long behind the plate (72 × 224 inside) |
-| Front plate | 86 wide × 109 tall × 5 thick |
+| Tray | 76 wide × 70 tall × 223.5 long, with its own 2 mm front wall (72 × 219.5 inside) |
+| Front plate | 86 wide × 109 tall × 7.5 thick |
 | Whole bin | 231 long (plate front to tray back), 244 with the pull |
 
+- **Removable front plate:** two dovetail rails run up the tray's front wall. The plate's
+  grooves slide down over them until the plate rests on the rail tops. Lift it straight up to
+  take it off. The dovetails hold it when you pull the bin out by its handle. The tray has its
+  own front wall, so it holds cards with the plate off. Swap plates between bins, or print
+  plates in another colour.
+- **Showcase card:** the plate has a pocket open at the top for a card in a standard 3 × 4
+  inch toploader (76.2 × 101.6). Drop it in from above. The card shows through a 64 mm wide
+  window, and the notch at the top lets you pinch the toploader and pull it out. You can also
+  write on one of the blank white cards (plate 4) and drop that in. The pocket is sized for a
+  toploader: a sleeved card on its own will be loose in it.
 - **In the sorter** cards land flat, long side front to back. About 220 fit before the pile
   reaches the rim. Empty the bin before it gets there.
 - **In the organizer** stand the cards on end, faces to the front, and flip through them like
@@ -35,9 +47,6 @@ fit the enclosure you've printed without changing anything there.
   they're easy to grab.
 - **Divider grooves** run up both inside walls every 20 mm. A divider drops into any pair.
   Take the dividers out before a bin goes back in the sorter: they stand taller than the rim.
-- **Label pocket** at the top of the plate, open at the top. Slide in the printed label card,
-  or any 66 × 25 mm piece of card or paper. The window is 60 × 22. The notch at the top lets
-  you push it back out.
 - **Finger pull** along the bottom of the plate: hook your fingertips into the cup and pull.
 
 ![front plate](img/bins/bin_front.png)
@@ -79,16 +88,17 @@ has the same A1 settings as the enclosure project.
 
 | Plate | What's on it | Colour | About | Note |
 |---|---|---|---|---|
-| 1 | 2 × `bin` | black (or any) | 350 g, 10 h | they print standing on their floors, the plate up, no supports |
-| 2 | `bin` + 6 × `key` | black (or any) | 180 g, 5 h | |
-| 3 | 6 dividers (tabs left, middle, right) + 3 labels | **white** | 60 g, 2 h | white takes pencil or marker |
-| 4 | `organizer_2x2` | black | 400 g, 13 h | stands on its back, 230 mm tall, with a brim |
-| 5 | `organizer_1x2` | black | 240 g, 8 h | the same |
+| 1 | 3 × `tray` | black (or any) | 400 g, 11 h | standing on their floors, no supports |
+| 2 | 3 × `plate` + 6 × `key` | black (or any) | 140 g, 6 h | the plates stand on their bottom edges, with a brim |
+| 3 | 6 dividers (tabs left, middle, right) | **white** | 60 g, 2 h | white takes pencil or marker |
+| 4 | 3 blank showcase cards | **white** | 25 g, 1 h | optional: write a name and drop it in the plate |
+| 5 | `organizer_2x2` | black | 400 g, 13 h | stands on its back, 230 mm tall, with a brim |
+| 6 | `organizer_1x2` | black | 240 g, 8 h | the same |
 
 Weights are the parts' volumes (the walls are thin enough to print solid), and times are
 guesses: Bambu Studio's estimate is the real one. Everything is about **1.2 kg**, more than one
-spool. Print the bins first. They're what the sorter needs. Then the organizer when you want
-it. **Fit check:** before plate 4, slide one bin into each bay of the sorter. It should run
+spool. Print the trays and plates first (plates 1 and 2). They're what the sorter needs. Then the organizer when you want
+it. **Fit check:** before plate 5, slide one bin into each bay of the sorter. It should run
 between the curbs with a little side play, and the plate should end flush with the fascia.
 
 To change sizes, edit the numbers at the top of `bins.scad` and run

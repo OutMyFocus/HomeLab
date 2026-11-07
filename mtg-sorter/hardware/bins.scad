@@ -14,10 +14,14 @@
 // through them like an index; the dividers slot into the grooves along the walls.
 //
 // Printable parts (set `part`). All fit the A1's 256 mm bed, no supports:
-//   bin            the drawer (module sorter_bin). Prints standing on its floor (x3 for the sorter)
+//   tray           the bin itself, a box with divider grooves. Prints standing on its floor (x3)
+//   plate          the removable front plate (x3): slides down onto the tray's two dovetail rails
+//                  and lifts off. A showcase card in a 3 x 4 toploader slides into its pocket from
+//                  the top. Prints standing on its bottom edge
+//   bin            tray + plate together (preview, and what the clash check uses)
 //   divider        card divider with a tab ("divider_l", "divider_m", "divider_r": where the tab
 //                  sits). Prints flat; white filament writes well with a pencil or marker
-//   label          a blank 66 x 25 card for the label pocket on the front plate (or cut paper)
+//   label          a blank toploader-sized card (76 x 101) for the showcase pocket, to write on
 //   organizer_2x2  4 cubbies, 2 wide x 2 high (173 x 222 x 229.5). Prints standing on its back
 //   organizer_1x2  2 cubbies, 1 wide x 2 high (86.5 x 222 x 229.5): next to a 2x2 it makes
 //                  a 3-wide cabinet, the same as the sorter
@@ -39,9 +43,8 @@ card_w = 63;  card_l = 88;
 bin_w = 76;               // tray outside width (dock slot is 77 between the floor curbs)
 bin_h = 70;               // tray height (the dock has room to ~100; 70 keeps standing cards easy to flip)
 bin_len = 231;            // front of the plate to the back of the tray (dock: dr_l)
-face_w = 86;  face_h = 109;  face_t = 5;     // front plate (dock: 86 x 109, 8 thick; 5 is enough, the
-                                            // bin's length keeps the plate flush with the fascia)
-wall = 2.0;               // tray side and back walls
+face_w = 86;  face_h = 109;  face_t = 7.5;   // front plate (dock: 86 x 109, 8 thick)
+wall = 2.0;               // tray walls (front, sides, back)
 floor_th = 1.6;           // tray floor
 corner_r = 3;             // tray's back corners, plate corners
 foot_ch = 0.8;            // chamfer round the tray's bottom edge (no elephant foot catching the curbs)
@@ -50,9 +53,21 @@ foot_ch = 0.8;            // chamfer round the tray's bottom edge (no elephant f
 groove_d = 0.8;  groove_w = 1.8;
 groove_y = [for (y = [35 : 20 : 215]) y];   // from the plate's front face
 
-// label pocket at the top of the plate, open at the top: a 66 x 25 card or paper slides in
-lab_w = 66.6;  lab_h = 26;  lab_t = 1.2;    // the slot
-lip_t = 1.2;  lip_side = 3;  lip_bot = 4;   // the lips in front of it (window 60.6 x 22)
+// The front plate is a separate part: it slides down onto two dovetail rails on the tray's
+// front wall and lifts off again. The rails stop it (it sits on their tops), and the dovetails
+// hold it when you pull the bin out by the plate.
+rail_x = 24;              // rails at x = +-24
+rail_base = 6;  rail_tip = 9;  rail_d = 2.5;   // dovetail: width at the wall, width at its tip, depth
+rail_clr = 0.25;          // play in the plate's grooves, all round
+plate_lift = 0.3;         // the plate sits this far above the tray's bottom (it never drags)
+
+// showcase pocket in the plate, open at the top: a card in a standard 3 x 4 inch toploader
+// (76.2 x 101.6) slides in from above, behind a window the card shows through
+show_w = 77.2;  show_h = 103;  show_t = 2.0;   // the pocket (bottom at z = 6)
+show_z0 = 6;
+lip_t = 1.2;                                   // the lips in front of it
+win_w = 64;  win_z0 = 13;                      // window: 64 wide, from 13 up, open at the top
+notch_r = 8;                                   // finger notch at the top, to pinch the toploader
 
 // finger pull: a cup along the bottom of the plate, its upturned lip catches your fingertips
 pull_w = 56;  pull_out = 13;  pull_h = 12;  pull_t = 2.6;  pull_base = 3;
@@ -82,9 +97,9 @@ $fn = 48;
 
 module rrect(w, l, r) { offset(r = r) offset(delta = -r) square([w, l], center = true); }
 
-// tray outline seen from above: square at the front (it joins the plate), rounded at the back
+// tray outline seen from above: square at the front wall (y = face_t), rounded at the back
 module tray_2d(inset = 0) {
-    w = bin_w - 2 * inset;  y0 = inset;  y1 = bin_len - inset;  r = max(corner_r - inset, 0.5);
+    w = bin_w - 2 * inset;  y0 = face_t + inset;  y1 = bin_len - inset;  r = max(corner_r - inset, 0.5);
     hull() {
         translate([-w / 2, y0]) square([w, 1]);
         for (s = [-1, 1]) translate([s * (w / 2 - r), y1 - r]) circle(r = r);
@@ -94,33 +109,52 @@ module tray_2d(inset = 0) {
 // the plate seen from the front (x, z), rounded corners
 module plate_2d() { translate([0, face_h / 2]) rrect(face_w, face_h, corner_r); }
 
-module sorter_bin() {
+// a dovetail rail's profile in (x, y), its base on y = face_t and its tip rail_d in front
+module rail_2d(c = 0) {
+    polygon([[-rail_base / 2 - c, face_t + 0.01], [rail_base / 2 + c, face_t + 0.01],
+             [rail_tip / 2 + c, face_t - rail_d - c], [-rail_tip / 2 - c, face_t - rail_d - c]]);
+}
+
+// The tray: a box with its own front wall, so it holds cards with or without the plate.
+module bin_tray() {
     difference() {
         union() {
-            // tray, with a chamfer round the bottom edge
             hull() {
                 translate([0, 0, foot_ch]) linear_extrude(bin_h - foot_ch) tray_2d();
                 linear_extrude(foot_ch) tray_2d(foot_ch);
             }
-            // front plate
-            translate([0, face_t, 0]) rotate([90, 0, 0]) linear_extrude(face_t) plate_2d();
-            // finger pull: base flat on the bed, lip straight up, so it prints without support
-            translate([0, 0, 0]) pull();
+            // the two rails up the front wall, floor to rim
+            for (s = [-1, 1]) translate([s * rail_x, 0, foot_ch]) linear_extrude(bin_h - foot_ch) rail_2d();
         }
-        // inside of the tray
-        translate([0, 0, floor_th]) linear_extrude(bin_h) intersection() {
-            tray_2d(wall);
-            translate([-50, face_t]) square([100, bin_len]);
-        }
+        translate([0, 0, floor_th]) linear_extrude(bin_h) tray_2d(wall);
         // divider grooves, floor to rim, both walls
         for (y = groove_y, s = [-1, 1])
             translate([s * (bin_w / 2 - wall + groove_d / 2) - groove_d / 2 - 0.01 * s, y - groove_w / 2, floor_th]) cube([groove_d + 0.02, groove_w, bin_h]);
-        // label pocket: slot behind the lips, window in front, both open at the top
-        translate([-lab_w / 2, lip_t, face_h - lab_h]) cube([lab_w, lab_t, lab_h + 1]);
-        translate([-lab_w / 2 + lip_side, -1, face_h - lab_h + lip_bot]) cube([lab_w - 2 * lip_side, lip_t + 1.01, lab_h]);
-        // a thumb notch at the top of the window to slide the label out
-        translate([0, -1, face_h]) rotate([-90, 0, 0]) cylinder(r = 7, h = lip_t + lab_t + 1.5);
     }
+}
+
+// The front plate, as it sits on the tray (but z from its own bottom edge). Prints standing
+// on that edge, like this: the grooves, pocket and window all run straight up.
+module bin_plate() {
+    difference() {
+        union() {
+            translate([0, face_t, 0]) rotate([90, 0, 0]) linear_extrude(face_t) plate_2d();
+            pull();
+        }
+        // dovetail grooves, open at the bottom, closed at the top: the plate rests on the rails
+        for (s = [-1, 1]) translate([s * rail_x, 0, -1]) linear_extrude(bin_h - plate_lift + rail_clr + 1) rail_2d(rail_clr);
+        // showcase pocket behind the lips, and the window in front, both open at the top
+        translate([-show_w / 2, lip_t, show_z0]) cube([show_w, show_t, face_h]);
+        translate([-win_w / 2, -1, win_z0]) cube([win_w, lip_t + 1.01, face_h]);
+        // finger notch at the top, right through, to pinch the toploader and pull it up
+        translate([0, -1, face_h]) rotate([-90, 0, 0]) cylinder(r = notch_r, h = face_t + 2);
+    }
+}
+
+// both together, as the bin goes in the sorter or the organizer
+module sorter_bin() {
+    bin_tray();
+    translate([0, 0, plate_lift]) bin_plate();
 }
 
 module pull() {
@@ -160,7 +194,8 @@ module divider(tab = 0) {   // tab: -1 left, 0 middle, 1 right
     }
 }
 
-module label() { linear_extrude(0.8) translate([0, 12.5]) rrect(66, 25, 1.5); }
+// a blank card the size of a toploader, for the showcase pocket when you'd rather write a name
+module label() { linear_extrude(0.8) translate([0, 101 / 2]) rrect(76, 101, 2); }
 
 // ============================ ORGANIZER =====================================
 
@@ -260,6 +295,8 @@ module assembly() {
 }
 
 if (part == "bin") sorter_bin();
+else if (part == "tray") bin_tray();
+else if (part == "plate") bin_plate();
 else if (part == "divider_l") divider(-1);
 else if (part == "divider_m" || part == "divider") divider(0);
 else if (part == "divider_r") divider(1);
