@@ -362,9 +362,27 @@ class Machine:
             else:
                 self.move("chute", position)
                 hold(position, tilt_seconds)        # and off the side of the tilted tray
+                self._shake(servos["chute"], position)
         finally:
             self.move("chute", "centre")
             self.move("pins", "up")
+
+    def _shake(self, chute, position, shakes=None, seconds=None):
+        """Rock the tilted tray half way back towards level and tilt it again, a few times
+        (config.SORT_TILT_SHAKES), so a card left on the tray slides off. Half way, not level:
+        a card nearly off the edge shouldn't slide back into the middle."""
+        shakes = int(getattr(config, "SORT_TILT_SHAKES", 0) if shakes is None else shakes)
+        seconds = float(getattr(config, "SORT_SHAKE_SECONDS", 0.4) if seconds is None else seconds)
+        channel, positions = chute
+        if shakes <= 0 or "centre" not in positions:
+            return
+        tilted, level = float(positions[position]), float(positions["centre"])
+        half = round(level + (tilted - level) / 2, 1)
+        for _ in range(shakes):
+            self.set_angle(channel, half)
+            time.sleep(seconds)
+            self.move("chute", position)
+            time.sleep(seconds)
 
     def self_test(self, pause: float = 0.6) -> list[dict]:
         """Moves every servo through its positions and back, then nudges the feeder.

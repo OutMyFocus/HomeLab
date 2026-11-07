@@ -364,7 +364,7 @@ def quick_sort(monkeypatch):
     """Short drop timings: pins down up to 0.7 s (the fake card leaves 0.4 s after they drop),
     doors and tilt 0.05 s."""
     monkeypatch.setattr(config, "SORT_PINS_SECONDS", 0.7)
-    for name in ("SORT_DOORS_SECONDS", "SORT_TILT_SECONDS"):
+    for name in ("SORT_DOORS_SECONDS", "SORT_TILT_SECONDS", "SORT_SHAKE_SECONDS"):
         monkeypatch.setattr(config, name, 0.05)
 
 
@@ -403,6 +403,22 @@ def test_drop_to_a_side_bin_drops_the_pins_before_tilting(client, logged, quick_
     assert not any(part.startswith("door") for part, _ in m)
     assert m[-2:] == [("chute", "centre"), ("pins", "up")]
     assert client.post("/api/machine/drop", json={"bin": 7}).status_code == 400
+
+
+def test_side_bin_tray_rocks_half_way_back_and_tilts_again(client, logged, quick_sort, monkeypatch):
+    """Nic: tilt a couple of times so the card really falls. The tray goes half way back
+    towards level, never fully level, between tilts."""
+    monkeypatch.setattr(config, "SORT_TILT_SHAKES", 2)
+    channel, positions = logged.servos()["chute"]
+    angles = []
+    real = logged.set_angle
+    monkeypatch.setattr(logged, "set_angle", lambda ch, a: (angles.append((ch, a)), real(ch, a)))
+    client.post("/api/machine/drop", json={"bin": 1})
+    tilts = [x for x in moves(logged) if x == ("chute", "left")]
+    assert len(tilts) >= 3                              # the tilt, then two more
+    half = round(positions["centre"] + (positions["left"] - positions["centre"]) / 2, 1)
+    assert [a for ch, a in angles if ch == channel].count(half) == 2
+    assert moves(logged)[-2:] == [("chute", "centre"), ("pins", "up")]
 
 
 def test_sort_one_feeds_then_drops_and_sees_the_bed_clear(watched, quick_sort):
