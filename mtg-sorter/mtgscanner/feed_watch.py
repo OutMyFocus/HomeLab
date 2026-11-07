@@ -157,6 +157,10 @@ class FeedWatcher:
         self.tap.watching += 1
         self._hold_lights(True)
         try:
+            # Never feed into a stop bar that is still on its way up (or down).
+            pins_up = getattr(self.machine, "pins_up", None)
+            if pins_up is not None:
+                pins_up()
             seq, ref = self.tap.next(self.tap.seq, timeout=2.0)
             if ref is None:
                 raise RuntimeError("No camera picture to watch: is the Pi camera on and picked on the Scanner page?")
