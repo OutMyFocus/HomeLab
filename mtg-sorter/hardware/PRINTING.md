@@ -12,7 +12,7 @@ Open **`bambu/MTG_Sorter_Enclosure.3mf`** with **File → Open Project** in Bamb
 all 23 plates of the enclosure laid out, each on its own plate tab, named after what's on it,
 and every setting below already applied (the per-part ones too). Pick a plate, check the
 filament is your black PLA (white for the light bar), and press **Slice plate**, then
-**Print plate**. The Card Catalog drawers aren't in it; they come from their own file (see the end).
+**Print plate**. The bins aren't in it; they're in `bambu/MTG_Sorter_Bins_And_Organizer.3mf` (see the end).
 
 If Bambu Studio asks whether to load the project's settings, say **yes**. The process then reads
 "0.20mm Standard @BBL A1" with a few values changed; that's correct.
@@ -74,7 +74,7 @@ Bambu Studio's estimate is the real one.
 | Plate | What's on it | Colour | About | Note |
 |---|---|---|---|---|
 | 1 | `floor_fl` + `post_front` + 2 × `splice` | black | 100 g, 5 h | **fit check A** |
-| - | one Card Catalog drawer + one drawer top, from the Card Catalog 3MF | black | 4 h | **fit check B**, print it after plate 1 |
+| - | the bin trays and front plates, plates 1 and 2 of `MTG_Sorter_Bins_And_Organizer.3mf` | black | 17 h | **fit check B**, print them after plate 1 |
 | 2 | 2 × `divider` | black | 110 g, 6 h | **fit check C** |
 | 3 | `bridge_front` | black | 60 g, 4 h (estimate) | the mechanism moves onto the bridge from here. v3 since 2026-11-04 (bearing wall, drop-in tray); it's also on plate 2 of `MTG_Sorter_Chute_v3.3mf` with its cap ([CHUTE_V3.md](CHUTE_V3.md)) |
 | 4 | `bridge_back` | black | 70 g, 3.5 h | |
@@ -94,7 +94,6 @@ Bambu Studio's estimate is the real one.
 | 21 | `deck_fr` | black | 70 g, 3.5 h | |
 | 22 | `deck_bl` | black | 50 g, 2.5 h | |
 | 23 | `deck_br` | black | 50 g, 2.5 h | |
-| - | two more Card Catalog drawers + tops | black | 8 h | from the Card Catalog 3MF |
 
 **Splices:** the build uses 24 of them (floor 6, bridge 2, front deck 2, fascia 4, back panel 4,
 sides 6), more than the 10 on plates 1 and 7. Count the ones in your project and add more
@@ -121,10 +120,9 @@ After the drawer (fit check B), still on `floor_fl`:
 - With the post on, slide the drawer all the way in: the plate's left edge passes the
   post's flat inner face with about a quarter millimetre to spare. If it rubs, say so;
   that's a one-number change in `enclosure.scad` (`dr_pitch`).
-- Clip the top bar onto the plate and measure from the floor tile's top surface to the
-  top of the bar. **Tell me that number.** The fascia starts 114 mm up; the box the drawer
-  comes from allows 113.5. If the bar is taller than that, `dr_cap` changes and the fascia
-  and posts are re-exported before you print them.
+- Our bin has no top bar: its plate is 109 tall, so it stops 5 mm under the fascia (which
+  starts 114 mm above the floor tile). (With a Card Catalog drawer instead, clip its top bar on and check it
+  clears the fascia.)
 
 After plate 2:
 
@@ -134,13 +132,12 @@ After plate 2:
 If all of that fits, print the rest. If something binds, post what binds and where, and
 I'll adjust the numbers before you print another plate.
 
-## The drawers
+## The bins
 
-Open `Card_Catalog_v1.2_All-in-one.3mf` in Bambu Studio. It carries its own plates and
-settings (the drawer prints standing, front plate vertical); use them as they are and
-print only the **drawer** and **drawer top** objects, three of each. The box, dividers
-and connectors are for your shelf, not the sorter. The sorter's dock is measured from
-this exact file, so a drawer that fits your shelf fits the sorter.
+Our own bins (`bins.scad`), the same outside size as the Card Catalog drawer the dock was sized
+from: open `bambu/MTG_Sorter_Bins_And_Organizer.3mf`. It also has card dividers, labels and the
+organizer the full bins slide into. Everything about them is in [BINS.md](BINS.md). Card Catalog
+drawers from `Card_Catalog_v1.2_All-in-one.3mf` still fit the dock if you'd rather print those.
 
 ## DC jack holder (servo power)
 

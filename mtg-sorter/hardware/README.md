@@ -129,7 +129,7 @@ come off its exit shelf straight onto the bed.
 
 # Enclosure
 
-`enclosure.scad`, `card_catalog_drawer.scad`. A countertop box in the style of the Roca Sorter:
+`enclosure.scad`, `bins.scad`. A countertop box in the style of the Roca Sorter:
 black shell with rounded corners, a lighter band across the front, the scan bed sunk into
 the top deck, a rounded tower over the hopper and a rounded arm over the camera post.
 Everything inside is the same bed, pins, camera tower, chute and feeder as above.
@@ -138,17 +138,16 @@ Everything inside is the same bed, pins, camera tower, chute and feeder as above
 ![face](img/enclosure_face.png)
 ![inside](img/enclosure_inside.png)
 
-The three bins are **Card Catalog v1.2 drawers** (MakerWorld
+The three bins are drawers that slide out of the front: **`bins.scad`**, with an organizer
+cabinet they slide straight into when they're full. See **[BINS.md](BINS.md)**. The dock was
+first sized from the **Card Catalog v1.2** drawer (MakerWorld
 [Card Catalog](https://makerworld.com/en/models/3016550-card-catalog-v1-0), by Aspect of
-Frost): the long tray with a 3 × 4 toploader pocket in its front plate that Nic's card
-shelf is built from. A full drawer slides out of the sorter and straight into a cubby of
-the shelf. The drawers themselves are printed from the MakerWorld 3MF, which isn't in this
-repo; the dock is sized from it:
+Frost), and our bins keep that outside size:
 
-| Measured from the 3MF | mm |
+| Dock size (from the Card Catalog drawer) | mm |
 |---|---|
-| Tray | 76 wide × 67.4 tall × 223 long |
-| Front plate | 86 wide × 109 tall × 8 thick, plus a clip-on top bar |
+| Tray | 76 wide × 67.4 tall × 223 long (our bin: 70 tall, same 231 overall) |
+| Front plate | 86 wide × 109 tall × 8 thick, plus a clip-on top bar (ours: 7.5 thick, removable, no bar) |
 | Plate pitch in the Card Catalog box | 86.5 (0.5 between plates) |
 | Room above the cubby floor in the box | 113.5 |
 
@@ -220,7 +219,7 @@ the bench with **splice** strips that sit in pockets on the underside (M2 screws
 | `splice` | 26 | any | 24 used (floor 6, bridge 2, deck 2, fascia 4, back 4, sides 6), 2 spare |
 | `tower`, `tower_lid` | 1 each | black | |
 | `post_sleeve`, `head_cover` | 1 each | black | |
-| Card Catalog v1.2 drawer + drawer top | 3 each | your choice | from the MakerWorld 3MF, not this repo |
+| `bins_tray` + `bins_plate` | 3 each | your choice | the bins, with removable front plates that hold a showcase card, see [BINS.md](BINS.md); `bambu/MTG_Sorter_Bins_And_Organizer.3mf` |
 
 Plus `stl/bed_chute_bed_side_left_enclosure.stl` and `..._right_enclosure.stl` (the bed
 walls starting at the bridge, with screw holes in their bottom edge) and
