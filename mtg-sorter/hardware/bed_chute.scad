@@ -250,6 +250,8 @@ module bed_plate3() {
 tooth_x = [-24, -8, 8, 24];
 tooth_w = 3.6;
 tooth_top = 8;          // teeth stand this far above the bed
+blade_top = tooth_top + 2 + 3.5;   // v3.2: 13.5 mm over the old bed face (10.7 over bed_plate3's lands): 1 card in 4 hopped the 10 mm bar
+blade_lip = 1.5;
 blade_half = 25.8;      // v3 stop: 10 mm tall (bed_plate3's face is 2 mm higher), one flat bar as wide as the four teeth were (x = +-25.8; the card is
                         // +-31.5). Any wider and its ends hit the tray when it tilts with the stop down
 gate_drop = 40;         // degrees the servo turns to drop the teeth. Checked in CAD: nothing touches
@@ -269,7 +271,10 @@ module stop_gate_bed(blade = false) {
             translate([gate_left, gb_s0, gb_n0]) cube([gate_right - gate_left, gb_s1 - gb_s0, gb_n1 - gb_n0]);
             // teeth
             if (blade) // v3: one flat stop across the card instead of four teeth (same profile)
-                translate([-blade_half, gb_s0, gb_n0]) cube([2 * blade_half, 3 - gb_s0, tooth_top + bp3_lift - gb_n0]);
+                translate([-blade_half, gb_s0, gb_n0]) cube([2 * blade_half, 3 - gb_s0, blade_top - gb_n0]);
+            // v3.2: a 1.5 mm lip along the top on the card's side, so a card that climbs the bar's
+            // face is caught instead of going over
+            if (blade) translate([-blade_half, 3 - 0.01, blade_top - blade_lip]) cube([2 * blade_half, blade_lip + 0.01, blade_lip]);
             else for (x = tooth_x) translate([x - tooth_w / 2, gb_s0, gb_n0]) cube([tooth_w, 3 - gb_s0, tooth_top - gb_n0]);
             // end plates out to the axis
             for (x = [gate_left, gate_right - 3]) hull() {
