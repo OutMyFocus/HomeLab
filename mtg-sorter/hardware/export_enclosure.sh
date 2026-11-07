@@ -25,3 +25,7 @@ done
 for p in bin tray plate divider_l divider_m divider_r label key organizer_2x2 organizer_1x2 organizer_2x1 organizer_1x1; do
   openscad -q --export-format binstl -o "stl/bins_$p.stl" -D "part=\"$p\"" bins.scad
 done
+# holder + bezel for the servo-power barrel jack in the back panel's power cut-out
+for p in holder bezel; do
+  openscad -q --export-format binstl -o "stl/dc_jack_$p.stl" -D "part=\"$p\"" dc_jack_holder.scad
+done

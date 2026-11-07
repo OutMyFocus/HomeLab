@@ -40,6 +40,26 @@ def fingerprint_pil(img: Image.Image) -> bytes:
     return _phash(img) + _phash(art)
 
 
+# Glare: a foil (or a glossy card under the light bars) shows bright patches that aren't
+# on the stock picture, and they pull the fingerprint away from it. tame_glare() paints
+# over the brightest patches with what surrounds them before fingerprinting again.
+GLARE_LEVEL = 200          # at least this bright (0-255 grey)...
+GLARE_PERCENTILE = 97      # ...and in the brightest few percent of the card
+GLARE_GROW = 7             # pixels to grow each patch by, so its soft edge goes too
+
+
+def tame_glare(card_bgr: np.ndarray) -> np.ndarray | None:
+    """The card with its glare patches painted over, or None when there's no glare
+    worth the trouble (under 0.5 % of the card that bright)."""
+    gray = cv2.cvtColor(card_bgr, cv2.COLOR_BGR2GRAY)
+    level = max(GLARE_LEVEL, int(np.percentile(gray, GLARE_PERCENTILE)))
+    mask = (gray >= level).astype(np.uint8) * 255
+    if cv2.countNonZero(mask) < 0.005 * mask.size:
+        return None
+    mask = cv2.dilate(mask, np.ones((GLARE_GROW, GLARE_GROW), np.uint8))
+    return cv2.inpaint(card_bgr, mask, GLARE_GROW, cv2.INPAINT_TELEA)
+
+
 def fingerprint(card_bgr: np.ndarray) -> bytes:
     """Same as fingerprint_pil(), for an upright, cropped card from the camera (OpenCV's BGR)."""
     return fingerprint_pil(Image.fromarray(cv2.cvtColor(card_bgr, cv2.COLOR_BGR2RGB)))

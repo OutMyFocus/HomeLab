@@ -241,6 +241,7 @@
     save.innerHTML = !unsaved && saved ? '<svg><use href="#i-check"/></svg>All saved'
       : unsaved > 1 ? `Save all ${unsaved} cards <kbd>Space</kbd>` : "Save card <kbd>Space</kbd>";
     $("learnSwitch").checked = s.learn;
+    showSorter(s);
     $("foilBtn").setAttribute("aria-pressed", s.foil);
     $("autoBtn").setAttribute("aria-pressed", s.auto);
     $("collectBtn").setAttribute("aria-pressed", s.collect);
@@ -553,7 +554,21 @@
     $("cropBtn").setAttribute("aria-pressed", cropping);
     $("cropBtn").querySelector("span").textContent = cropping ? "Cancel" : "Crop";
     $("cropHint").hidden = !cropping;
+    $("straightBtn").hidden = !machineCam || cropping;
+    $("straightBtn").textContent = v.straight ? "Straighten again" : "Straighten";
+    $("unstraightBtn").hidden = !machineCam || !v.straight || cropping;
   }
+  async function straighten(on) {
+    // api() throws on a 400, but "no card found" is worth showing as it is
+    const r = await fetch("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify({ straighten: on }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || "Couldn't straighten the picture");
+    render(d);
+    toast(on ? "Straightened: the card on the bed now shows square" : "Showing the camera's picture as it is");
+  }
+  $("straightBtn").onclick = () => straighten(true);
+  $("unstraightBtn").onclick = () => straighten(false);
   function setCropping(on) { cropping = on; if (on) editing = false; drag = null; if (state) render(state); }
   $("cropBtn").onclick = () => setCropping(!cropping);
   $("uncropBtn").onclick = async () => { render(await api("/api/settings", { crop: null })); toast("Showing the whole picture"); };
@@ -605,6 +620,54 @@
   const setting = (key) => api("/api/settings", { [key]: !state[key] }).then(render);
 
   $("saveBtn").onclick = saveCurrent;
+
+  // ---------- Start sorting: the machine on its own (sort_run.py) ----------
+  let sortRun = null, sortT = null;
+  const cash = v => v == null ? "" : "$" + Number(v).toFixed(2);
+  function showSortRun(d) {
+    sortRun = d;
+    const btn = $("sortBtn"), running = !!d?.running;
+    btn.classList.toggle("running", running);
+    $("sortBtnText").textContent = running ? "Stop sorting" : "Start sorting";
+    if (!d || d.error) { $("sortInfo").textContent = d?.error || ""; return; }
+    const cards = d.cards || [], c = d.counts || {};
+    if (!cards.length && !running) {
+      $("sortInfo").innerHTML = 'Feeds every card, reads it, saves it and drops it into the bin your <a href="/bins">Bins</a> rules give it.';
+      return;
+    }
+    const last = cards[cards.length - 1];
+    const tally = (d.tally || []).map(t => `bin ${t.bin}: ${t.cards}`).join(", ");
+    const now = running ? (last?.name ? `Last: <b>${last.name}</b> ${cash(last.price)} → bin ${last.bin}.` : "Working…")
+      : `Done: ${d.done || ""}.`;
+    $("sortInfo").innerHTML = `${now} <b>${c.saved || 0}</b> saved (${cash(d.value)}), ${c.unsure || 0} unsure, ${c.unknown || 0} unread${tally ? ` · ${tally}` : ""}${d.warning ? ` · <b>${d.warning}</b>` : ""}`;
+    if (running && !sortT) sortT = setInterval(pollSortRun, 2000);
+    if (!running && sortT) { clearInterval(sortT); sortT = null; }
+  }
+  // The run's answers carry their own "error" text (409 when one is already going, 503
+  // when the machine can't), which is worth showing: so no throwing on those statuses.
+  const sortApi = async (path, body) => (await fetch(path, body === undefined ? { headers: scannerHeaders() }
+    : { method: "POST", headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify(body) })).json();
+  async function pollSortRun() {
+    try { showSortRun(await sortApi("/api/machine/sort")); } catch (e) { /* no machine here */ }
+  }
+  $("sortBtn").onclick = async () => {
+    $("sortBtn").disabled = true;
+    try {
+      if (sortRun?.running) showSortRun(await sortApi("/api/machine/sort/stop", {}));
+      else {
+        const d = await sortApi("/api/machine/sort", {});
+        if (d.error) toast(d.error); else { showSortRun(d); toast("Sorting. Keep your hands out of the machine."); }
+      }
+    } catch (e) { toast("Couldn't reach the sorter."); }
+    $("sortBtn").disabled = false;
+  };
+  let sorterShown = false;
+  function showSorter(s) {
+    if (!s.sorter || sorterShown) return;
+    sorterShown = true;
+    $("sorter").hidden = false;
+    pollSortRun();
+  }
   $("foilBtn").onclick = () => setting("foil");
   $("autoBtn").onclick = () => setting("auto");
   $("collectBtn").onclick = () => setting("collect").then(() => toast(state.collect ? "Collecting scans" : "Stopped collecting"));

@@ -140,3 +140,114 @@ def test_empty_database_still_runs(tmp_path):
     hit = matcher.rank(fingerprint(fake_card(1)))
     assert hit.id == "" and hit.distance == 256
     assert matcher.search("Card") == []
+
+
+def test_scanner_takes_it_easy_while_the_picture_stands_still(db, monkeypatch):
+    """The same picture again and again is looked at only SCAN_IDLE_FPS times a second;
+    a change brings the scanner back to every frame."""
+    from app import Scanner
+    monkeypatch.setattr(config, "SCAN_IDLE_FPS", 2)
+    scanner = Scanner(db, None, source=None)
+    frames = {"frame": np.full((200, 100, 3), 120, np.uint8)}
+
+    class Source:
+        def read(self):
+            return frames["frame"]
+
+    scanner.source = Source()
+    looked = []
+    monkeypatch.setattr(scanner, "process", lambda frame: looked.append(frame))
+    for _ in range(5):
+        scanner.turn()
+    assert len(looked) == 1          # the first look, then nothing changed
+    frames["frame"] = np.full((200, 100, 3), 200, np.uint8)
+    scanner.turn()
+    assert len(looked) == 2          # a change: looked at straight away
+    big = np.full((1920, 1080, 3), 60, np.uint8)
+    scanner._publish(big)
+    assert scanner.jpeg is not None and scanner.jpeg_full is None       # a preview only...
+    assert cv2.imdecode(np.frombuffer(scanner.jpeg, np.uint8), cv2.IMREAD_COLOR).shape[0] == config.STREAM_PREVIEW_PX
+    scanner.full_viewers = 1
+    scanner._publish(big)                                                # ...until someone streams ?full=1
+    assert cv2.imdecode(np.frombuffer(scanner.jpeg_full, np.uint8), cv2.IMREAD_COLOR).shape[0] == 1920
+
+
+def test_glare_is_painted_over_before_giving_up(db):
+    """A foil's bright patches pull the fingerprint off its card; when nothing matches,
+    the patches are painted over and the card looked up again (vision.tame_glare)."""
+    from mtgscanner.recognize import identify
+    from mtgscanner.vision import tame_glare
+    rng = np.random.default_rng(3)
+    found = {"tamed": 0}
+    for seed in range(4):
+        card = fake_card(seed)
+        shiny = card.copy()
+        for _ in range(3):
+            centre = (int(rng.integers(60, CARD_W - 60)), int(rng.integers(60, CARD_H - 60)))
+            axes = (int(rng.integers(60, 110)), int(rng.integers(30, 60)))
+            cv2.ellipse(shiny, centre, axes, int(rng.integers(0, 180)), 0, 360, (255, 255, 255), -1)
+        shiny = cv2.GaussianBlur(shiny, (9, 9), 0)
+        assert tame_glare(shiny) is not None
+        card_found, distance = identify(db, shiny)
+        found["tamed"] += card_found is not None and card_found.id == f"id{seed}"
+    assert found["tamed"] >= 3, found
+
+
+def test_straighten_turns_a_tilted_card_into_an_upright_rectangle(db):
+    """Straighten (Scan page) measures the card on the bed and warps the whole picture so
+    that card shows square: the camera's small tilt and keystone undone (2026-11-07)."""
+    from mtgscanner import view
+    from mtgscanner.recognize import find_cards
+    from mtgscanner.vision import _order_corners
+    card = fake_card(1)
+    src = np.float32([[0, 0], [CARD_W, 0], [CARD_W, CARD_H], [0, CARD_H]])
+    # like the Pi camera: about 1° of tilt, the bottom edge 3 % wider than the top
+    dst = np.float32([[300, 160], [640, 166], [650, 640], [282, 632]])
+    table = np.full((800, 960, 3), 170, np.uint8)
+    photo = cv2.warpPerspective(card, cv2.getPerspectiveTransform(src, dst), (960, 800),
+                                dst=table, borderMode=cv2.BORDER_TRANSPARENT)
+    setting = view.straighten_from(photo)
+    assert setting is not None and setting["size"] == [960, 800]
+    assert view.clean_straighten(setting) == setting
+    straight = view.straighten(photo, setting)
+    assert straight.shape == photo.shape
+    quad = _order_corners(np.asarray(find_cards(straight)[0][0], np.float32).reshape(4, 2))
+    xs, ys = quad[:, 0], quad[:, 1]
+    assert abs(xs[0] - xs[3]) < 4 and abs(xs[1] - xs[2]) < 4      # upright sides
+    assert abs(ys[0] - ys[1]) < 4 and abs(ys[2] - ys[3]) < 4      # level top and bottom
+    w, h = xs[1] - xs[0], ys[3] - ys[0]
+    assert abs(w / h - view.CARD_ASPECT) < 0.02
+    # a picture of another size (a new crop) still gets a sensible warp, not an error
+    assert view.straighten(cv2.resize(photo, (480, 400)), setting).shape == (400, 480, 3)
+    assert view.straighten_from(np.full((400, 400, 3), 170, np.uint8)) is None    # no card
+    # the same from corners given by hand (shares of the picture), for a card the
+    # detector can't outline against a dark bed
+    by_hand = view.straighten_from(photo, [[x / 960, y / 800] for x, y in dst])
+    moved = [cv2.perspectiveTransform(dst.reshape(1, 4, 2), np.float32(x["m"]).reshape(3, 3)) for x in (by_hand, setting)]
+    assert np.abs(moved[0] - moved[1]).max() < 2      # the corners land within 2 px of each other
+    assert view.straighten_from(photo, [[0.1, 0.1], [0.2]]) is None
+
+
+def test_straighten_setting_from_the_scan_page(db, monkeypatch, tmp_path):
+    import app as app_module
+    from app import Scanner, create_app
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    scanner = Scanner(db, None, source=None)
+    client = create_app(scanner).test_client()
+    r = client.post("/api/settings", json={"straighten": True})
+    assert r.status_code == 400 and "picture" in r.get_json()["error"]
+    scanner._last_view = np.full((400, 400, 3), 170, np.uint8)
+    r = client.post("/api/settings", json={"straighten": True})
+    assert r.status_code == 400 and "No card" in r.get_json()["error"]
+    scanner._last_view = photograph(fake_card(2))
+    s = client.post("/api/settings", json={"straighten": True}).get_json()
+    assert s["view"]["straight"] is True and scanner.straight
+    assert app_module.load_settings()["straight"]["size"] == [960, 720]
+    fresh = Scanner(db, None, source=None)
+    fresh.restore(app_module.load_settings())
+    assert fresh.straight == scanner.straight          # kept for next time
+    s = client.post("/api/settings", json={"straighten": [[0.2, 0.1], [0.8, 0.1], [0.82, 0.9], [0.18, 0.9]]}).get_json()
+    assert s["view"]["straight"] is True
+    s = client.post("/api/settings", json={"rotate": 90}).get_json()
+    assert s["view"]["straight"] is False              # a new rotation needs a new straighten
+    assert client.post("/api/settings", json={"straighten": False}).get_json()["view"]["straight"] is False

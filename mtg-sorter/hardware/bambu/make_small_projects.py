@@ -8,8 +8,9 @@ writes, next to this script:
   MTG_Sorter_Feeder_And_Bed_v2.3mf   everything for the new feeder and scan bed
   MTG_Sorter_Chute_v3.3mf            chute v3 (tray, doors, cranks, links, hinge frame) and the
                                      new front bridge with its bearing cap
-  MTG_Sorter_Bins_And_Organizer.3mf  three bins for the sorter (bins.scad), card dividers and
-                                     labels, and a 3-wide, 2-high organizer to keep the bins in
+  MTG_Sorter_Bins_And_Organizer.3mf  three bins for the sorter (bins.scad) with removable
+                                     showcase front plates, card dividers, and a 3-wide, 2-high organizer to keep the bins in
+  MTG_Sorter_DC_Jack_Holder.3mf      holder + bezel for the servo-power barrel jack (dc_jack_holder.scad)
 
   python3 make_small_projects.py MTG_Sorter_Bins_And_Organizer.3mf   builds just that one
 
@@ -44,6 +45,8 @@ mp.PER_PART.update({
     "bins_organizer_1x2": {"brim_type": "outer_only", "brim_width": "5"},
     "bins_key": SOLID,
     "bins_plate": {"brim_type": "outer_only", "brim_width": "5"},   # thin and 109 tall
+    "dc_jack_holder": STRUCTURAL,
+    "dc_jack_bezel": STRUCTURAL,
 })
 
 PROJECTS = {
@@ -70,12 +73,15 @@ PROJECTS = {
         ("5 Organizer 2x2 (brim)", ["bins_organizer_2x2"]),
         ("6 Organizer 1x2 (brim)", ["bins_organizer_1x2"]),
     ],
+    "MTG_Sorter_DC_Jack_Holder.3mf": [
+        ("1 DC jack holder and bezel (black)", ["dc_jack_holder", "dc_jack_bezel"]),
+    ],
 }
 
 if __name__ == "__main__":
     import sys
     for name, plates in PROJECTS.items():
-        if len(sys.argv) > 1 and name not in sys.argv[1:]:
+        if sys.argv[1:] and name not in sys.argv[1:]:
             continue
         mp.PLATES = plates
         mp.OUT = os.path.join(mp.HERE, name)

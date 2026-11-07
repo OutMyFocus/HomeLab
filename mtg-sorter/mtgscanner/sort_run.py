@@ -14,8 +14,11 @@ What each card ends up as:
   unsure    the scanner's best guess wasn't sure: not saved, dropped into the fallback bin
             (the Bins page's "everything else", or config.SORT_FALLBACK_BIN when that is
             bin 0, which has no tray) so you can look at it by hand
-  unknown   not recognized in time: the same, not saved
+  unknown   not recognized in time (config.SORT_RECOGNIZE_SECONDS, with the light bars
+            dimmed for a second look after SORT_FOIL_AFTER: foils glare): the same, not saved
   none      nothing reached the bed (the run stops after two in a row: hopper empty)
+  stuck     a card came part way out and stopped moving: the gate holds it; the run stops
+  double    two cards came out together: the run stops with the pins up, nothing dropped
 
 The run stops on its own when a card is left on the bed after the retries (something is
 caught) or when nothing came out twice in a row.
@@ -28,9 +31,12 @@ from flask import jsonify, request
 
 from . import config, sort_rules
 
-RECOGNIZE_SECONDS = 6.0     # how long to give the scanner to make its mind up
 LANDED_FROM = 0.45          # a landed card's middle is below this share of the picture's height
 MAX_CARDS = 1000
+
+
+class DoubleFeed(RuntimeError):
+    """Two cards reached the bed at once; the run stops rather than sort them as one."""
 
 
 class SortRun:
@@ -72,6 +78,10 @@ class SortRun:
         s["tally"] = [{"bin": int(b), "label": names.get(b, f"Bin {b}"), "cards": n} for b, n in sorted(tally.items())]
         s["counts"] = {k: sum(1 for c in cards if c.get("status") == k) for k in ("saved", "unsure", "unknown", "none")}
         s["value"] = round(sum(c.get("price") or 0 for c in cards if c.get("status") == "saved"), 2)
+        warn = int(getattr(config, "SORT_BIN_WARN", 0) or 0)
+        s["full"] = [t["bin"] for t in s["tally"] if warn and t["cards"] >= warn]
+        s["warning"] = (f"Bin {', '.join(map(str, s['full']))} has had {warn}+ cards since the start: "
+                        "empty it so the cards keep dropping clear" if s["full"] else None)
         return s
 
     # --- the run ----------------------------------------------------------------
@@ -88,17 +98,36 @@ class SortRun:
                 card = {"n": len(self.state["cards"]) + 1, "status": "none", "bin": None, "name": None}
                 t0 = time.monotonic()
                 card["fed_at"] = t0
+                # Start this card with a clean table: a new card lands where the last one
+                # sat, and the scanner would carry on that card's track (and name) for it.
+                with self.scanner.lock:
+                    self.scanner.forget_tracks()
+                # Held servos let go after SERVO_HOLD_LIMIT with no new move, and the
+                # trapdoors sag open once they do: tell them "closed" again for every card.
+                for part, position in (("door_l", "closed"), ("door_r", "closed"), ("pins", "up")):
+                    try:
+                        self.machine.move(part, position)
+                    except Exception:
+                        pass
                 try:
                     out = self.watcher.sort_one(None, speed=speed, choose=lambda fed, c=card: self._choose(c))
+                except DoubleFeed as e:
+                    with self.lock:
+                        self.state["cards"].append(card | {"seconds": round(time.monotonic() - t0, 1)})
+                    reason = str(e)
+                    return
                 except (RuntimeError, ValueError) as e:
                     reason = f"error: {e}"
                     return
                 card.update({"result": out["result"], "dropped": out.get("dropped"),
                              "drop_tries": out.get("drop_tries", 0), "seconds": round(time.monotonic() - t0, 1)})
-                if out["result"] == "none":
-                    card["status"], card["bin"] = "none", None
+                if out["result"] in ("none", "stuck"):
+                    card["status"], card["bin"] = out["result"], None
                 with self.lock:
                     self.state["cards"].append(card)
+                if out["result"] == "stuck":
+                    reason = "a card is held in the slot: open the gate a little and take the card off the bed"
+                    return
                 nothing_in_a_row = nothing_in_a_row + 1 if out["result"] == "none" else 0
                 if out.get("dropped") is False:
                     reason = "a card is still on the bed after the retries: take it out and look at what it caught on"
@@ -113,20 +142,65 @@ class SortRun:
                 self.state["done"] = reason
 
     @staticmethod
+    def _apart(tracks) -> bool:
+        """Two tracks whose middles are a fifth of a card apart or more (a card the scanner
+        sees twice at nearly the same spot doesn't count)."""
+        import itertools
+        for a, b in itertools.combinations(tracks, 2):
+            gap = float(abs(a.center - b.center).max())
+            if gap > 0.2 * max(a.size, b.size, 1.0):
+                return True
+        return False
+
+    @staticmethod
     def real_bin(bin_no) -> int:
         """The rules' bin 0 (unknown price) has no tray: config.SORT_FALLBACK_BIN instead."""
         bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
         return int(bin_no) if int(bin_no) in bins else int(getattr(config, "SORT_FALLBACK_BIN", 1))
+
+    def _lights(self):
+        lights = getattr(self.scanner, "lights", None)
+        return lights if lights is not None and hasattr(lights, "update") and hasattr(lights, "settings") else None
+
+    def _dim_lights(self):
+        """Turn the light bars down for a second look at a card that glares (a foil).
+        Returns the brightness to put back, or None when there are no bars to dim."""
+        lights = self._lights()
+        if lights is None:
+            return None
+        try:
+            before = int(lights.settings.get("brightness", 0))
+            level = int(getattr(config, "SORT_FOIL_BRIGHTNESS", 8))
+            if before <= level:
+                return None
+            lights.update({"brightness": level})
+            return before
+        except Exception:
+            return None
+
+    def _restore_lights(self, brightness):
+        lights = self._lights()
+        if lights is not None:
+            try:
+                lights.update({"brightness": int(brightness)})
+            except Exception:
+                pass
 
     def _choose(self, card: dict) -> int:
         """Asked by sort_one once the card is on the stop teeth: wait for the scanner to
         recognize it, save it, and say which bin it goes in. Fills in `card` for the table."""
         rules = sort_rules.load()
         fallback = self.real_bin(rules["fallback"])
-        deadline = time.monotonic() + RECOGNIZE_SECONDS
+        started = time.monotonic()
+        deadline = started + float(getattr(config, "SORT_RECOGNIZE_SECONDS", 8.0))
+        foil_after = float(getattr(config, "SORT_FOIL_AFTER", 3.0))
         track = None
+        dimmed = None
         fed_at = card.get("fed_at", 0.0)
         while time.monotonic() < deadline and not self.stop_asked:
+            if dimmed is None and time.monotonic() - started >= foil_after:
+                dimmed = self._dim_lights()     # a second look with less glare (foils)
+                card["dimmed"] = dimmed is not None
             with self.scanner.lock:
                 height = (self.scanner.frame_size or (0, 0))[1] or 1
                 # Only a card recognized since this feed began, in the lower half of the
@@ -135,14 +209,24 @@ class SortRun:
                 # of the slot shows at the top, and either would end the wait at once.
                 tracks = [t for t in self.scanner.tracks
                           if t.status in ("locked", "unsure", "unknown") and t.checked_time >= fed_at
+                          and t.streak_key == (t.card.id if t.card else "unknown")   # latest look agrees
                           and float(t.center[1]) / height >= LANDED_FROM]
                 track = max(tracks, key=lambda t: float(t.center[1]), default=None)
+                if len(tracks) >= 2 and self._apart(tracks):
+                    # Two cards on the bed at once: the feeder let a pair through. Sorting
+                    # the pair as one card puts an unsaved card in the wrong bin, so stop
+                    # with the pins up and let someone take them off (seen 2026-11-06).
+                    card.update({"status": "double", "bin": None})
+                    raise DoubleFeed("two cards came out together: take them off the bed and press Start again")
                 if track is not None and track.status in ("locked", "unsure"):
                     break
                 # "unknown" so far: the first looks at a card are often while it is still
                 # sliding or blurred, so keep waiting for a match until the deadline
                 track = None
             time.sleep(0.1)
+        if dimmed is not None:
+            self._restore_lights(dimmed)
+        card["seconds_reading"] = round(time.monotonic() - started, 1)
         if track is None:
             card.update({"status": "unknown", "bin": fallback, "bin_label": rules["names"][str(fallback)]})
             return fallback

@@ -75,3 +75,82 @@ def turn_box(box, quarter_turns: int):
         # turning clockwise: a point (x, y) lands at (1 - y, x)
         x0, y0, x1, y1 = 1 - y1, x0, 1 - y0, x1
     return [round(v, 4) for v in (x0, y0, x1, y1)]
+
+
+# --- Straighten: undo the camera's tilt and keystone, measured on a card --------------
+#
+# The camera looks at the bed from an angle, so a card that lies square on the bed shows
+# as a slightly turned trapezoid. Straighten (Scan page, with a card on the bed) finds that
+# card and works out the perspective warp that turns it back into an upright rectangle the
+# shape of a card, centred where it was and about as big; the whole picture gets the same
+# warp. It runs after Rotate and Crop and keeps the picture's size, so the feeder's landing
+# zone and the slots stay about where they were. Kept as {"m": 3x3 matrix, "size": [w, h]}.
+
+CARD_ASPECT = 63 / 88       # width / height of a Magic card
+
+
+def straighten_from(frame, corners=None):
+    """The straighten setting for this picture, from the biggest card in it, or None when
+    no card is found. `corners` instead gives the card's four corners by hand, as [x, y]
+    shares of the picture (any order): for a card whose border the detector can't see
+    against a dark bed. Raises nothing."""
+    import numpy as np
+    from .recognize import find_cards
+    from .vision import _order_corners
+    fh, fw = frame.shape[:2]
+    if corners is not None:
+        try:
+            pts = np.float32([[float(x) * fw, float(y) * fh] for x, y in corners])
+        except (TypeError, ValueError):
+            return None
+        if pts.shape != (4, 2):
+            return None
+        quad = _order_corners(pts)
+    else:
+        try:
+            cards = find_cards(frame)
+        except Exception:
+            return None
+        if not cards:
+            return None
+        quad = _order_corners(np.asarray(cards[0][0], np.float32).reshape(4, 2))   # tl, tr, br, bl
+    top, bottom = np.linalg.norm(quad[1] - quad[0]), np.linalg.norm(quad[2] - quad[3])
+    left, right = np.linalg.norm(quad[3] - quad[0]), np.linalg.norm(quad[2] - quad[1])
+    w, h = (top + bottom) / 2, (left + right) / 2
+    if w < 8 or h < 8:
+        return None
+    aspect = CARD_ASPECT if h >= w else 1 / CARD_ASPECT      # upright card, or lying sideways
+    scale = (w * h / aspect) ** 0.5                            # keep its area
+    tw, th = aspect * scale, scale
+    cx, cy = quad.mean(axis=0)
+    target = np.float32([[cx - tw / 2, cy - th / 2], [cx + tw / 2, cy - th / 2],
+                         [cx + tw / 2, cy + th / 2], [cx - tw / 2, cy + th / 2]])
+    m = cv2.getPerspectiveTransform(quad, target)
+    return {"m": [round(float(v), 8) for v in m.reshape(-1)], "size": [int(fw), int(fh)]}
+
+
+def clean_straighten(raw):
+    """A saved straighten setting, or None if it isn't one."""
+    try:
+        m = [float(v) for v in raw["m"]]
+        w, h = (int(v) for v in raw["size"])
+    except (TypeError, ValueError, KeyError):
+        return None
+    if len(m) != 9 or w < 16 or h < 16:
+        return None
+    return {"m": m, "size": [w, h]}
+
+
+def straighten(frame, setting):
+    """The picture with the straighten warp applied. A picture of another size than the one
+    it was measured on (the camera or the crop changed) is scaled to fit the warp."""
+    import numpy as np
+    if not setting:
+        return frame
+    fh, fw = frame.shape[:2]
+    w, h = setting["size"]
+    m = np.float32(setting["m"]).reshape(3, 3)
+    if (fw, fh) != (w, h):
+        sx, sy = fw / w, fh / h
+        m = np.float32([[sx, 0, 0], [0, sy, 0], [0, 0, 1]]) @ m @ np.float32([[1 / sx, 0, 0], [0, 1 / sy, 0], [0, 0, 1]])
+    return cv2.warpPerspective(frame, m, (fw, fh), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)

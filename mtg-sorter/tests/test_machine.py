@@ -187,9 +187,10 @@ class FakeCamera:
     teeth as soon as the motor stops; "shifts" = the pins push it up out of the landing
     band but it stays on the bed."""
 
-    def __init__(self, tap, machine, card_after=3, card_stays=True):
+    def __init__(self, tap, machine, card_after=3, card_stays=True, stuck=False):
         self.tap, self.machine = tap, machine
         self.card_after, self.card_stays = card_after, card_stays
+        self.stuck = stuck      # the card shows above the landing zone and never moves on
         self.running = True
         threading.Thread(target=self.loop, daemon=True).start()
 
@@ -209,6 +210,12 @@ class FakeCamera:
                 motor_frames += 1
                 if self.card_after is not None and motor_frames >= self.card_after:
                     landed = True
+            if self.stuck:
+                if motor_frames >= 2:
+                    frame[120:230, 60:240] = 230   # half out of the slot (y 0.3-0.575), not moving
+                self.tap.put(frame)
+                time.sleep(0.02)
+                continue
             if landed and self.card_stays == "over" and not self.machine.feeding:
                 landed, gone = False, True     # it went over the teeth
             if landed and pins_down and self.card_stays in (False, "shifts"):
@@ -228,6 +235,8 @@ class FakeCamera:
 def watched(db, machine, monkeypatch):  # noqa: F811
     monkeypatch.setattr(config, "FEED_SETTLE_SECONDS", 0.2)
     monkeypatch.setattr(config, "FEED_BACKOFF_SECONDS", 0.05)
+    monkeypatch.setattr(config, "FEED_PUSH_SECONDS", 0.0)
+    monkeypatch.setattr(config, "FEED_STUCK_SECONDS", 0.2)
     monkeypatch.setattr(config, "FEED_ZONE", (0.2, 0.62, 0.8, 0.70))
     scanner = Scanner(db, None, source=None)
     app = create_app(scanner, machine)
@@ -248,6 +257,42 @@ def test_feed_one_stops_the_motor_when_a_card_lands(watched):
     kinds = [c[0] for c in machine._motor.calls]
     assert kinds[:3] == ["forward", "stop", "backward"] and kinds[-1] == "stop"
     assert out["backoff_ms"] == 50
+    assert not machine.feeding
+
+
+def test_feed_one_keeps_pushing_after_landing_then_backs_off_as_saved(watched):
+    """The card shows in the landing zone while its tail is still under the gate: the
+    motor runs on for the saved push so it comes free, then the saved back-off runs
+    the wheels backwards (both kept with Save as the usual push on the Machine page)."""
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3))
+    s = client.post("/api/machine/save", json={"seconds": 1.0, "speed": 0.8, "push": 0.3, "backoff": 0.7}).get_json()
+    assert s["feeder_defaults"]["push"] == 0.3 and s["feeder_defaults"]["backoff"] == 0.7
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2}).get_json()
+    assert out["result"] == "landed", out
+    assert out["push_ms"] == 300 and out["motor_ms"] >= out["landed_ms"] + 250
+    assert out["backoff_ms"] == 700
+    # a value sent with the call wins over the saved one
+    cams[0].running = False
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3))    # a fresh, empty bed
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2, "push": 0, "backoff": 0.1}).get_json()
+    assert out["result"] == "landed", out
+    assert out["push_ms"] == 0 and out["backoff_ms"] == 100
+    # the back-off can be long (Nic wants the extra cards pushed well back), but not endless
+    s = client.post("/api/machine/save", json={"seconds": 1.0, "speed": 0.8, "backoff": 9}).get_json()
+    assert s["feeder_defaults"]["backoff"] == config.FEED_BACKOFF_MAX
+
+
+def test_feed_one_stops_the_motor_when_a_card_is_held_in_the_slot(watched):
+    """A card that comes part way out and stops (the gate too tight) used to leave the
+    motor grinding for the full 3 s; now the feed stops and says so."""
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, stuck=True))
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2}).get_json()
+    assert out["result"] == "stuck", out
+    assert out["motor_ms"] < 1500 and out["landed_ms"] is None
+    assert "gate" in out["message"]
+    assert "backward" not in [c[0] for c in machine._motor.calls]   # nothing landed: no back-off
     assert not machine.feeding
 
 
@@ -319,7 +364,7 @@ def quick_sort(monkeypatch):
     """Short drop timings: pins down up to 0.7 s (the fake card leaves 0.4 s after they drop),
     doors and tilt 0.05 s."""
     monkeypatch.setattr(config, "SORT_PINS_SECONDS", 0.7)
-    for name in ("SORT_DOORS_SECONDS", "SORT_TILT_SECONDS"):
+    for name in ("SORT_DOORS_SECONDS", "SORT_TILT_SECONDS", "SORT_SHAKE_SECONDS"):
         monkeypatch.setattr(config, name, 0.05)
 
 
@@ -358,6 +403,22 @@ def test_drop_to_a_side_bin_drops_the_pins_before_tilting(client, logged, quick_
     assert not any(part.startswith("door") for part, _ in m)
     assert m[-2:] == [("chute", "centre"), ("pins", "up")]
     assert client.post("/api/machine/drop", json={"bin": 7}).status_code == 400
+
+
+def test_side_bin_tray_rocks_half_way_back_and_tilts_again(client, logged, quick_sort, monkeypatch):
+    """Nic: tilt a couple of times so the card really falls. The tray goes half way back
+    towards level, never fully level, between tilts."""
+    monkeypatch.setattr(config, "SORT_TILT_SHAKES", 2)
+    channel, positions = logged.servos()["chute"]
+    angles = []
+    real = logged.set_angle
+    monkeypatch.setattr(logged, "set_angle", lambda ch, a: (angles.append((ch, a)), real(ch, a)))
+    client.post("/api/machine/drop", json={"bin": 1})
+    tilts = [x for x in moves(logged) if x == ("chute", "left")]
+    assert len(tilts) >= 3                              # the tilt, then two more
+    half = round(positions["centre"] + (positions["left"] - positions["centre"]) / 2, 1)
+    assert [a for ch, a in angles if ch == channel].count(half) == 2
+    assert moves(logged)[-2:] == [("chute", "centre"), ("pins", "up")]
 
 
 def test_sort_one_feeds_then_drops_and_sees_the_bed_clear(watched, quick_sort):
@@ -485,6 +546,7 @@ class FakeRecognizer:
                 if self.scanner.tap.watching == 0 and not self.scanner.tracks and self.card is not None:
                     t = Track(next(self.ids), 1, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
                     t.card, t.status, t.checked_time = self.card, self.status, time.monotonic()
+                    t.streak_key = self.card.id
                     self.scanner.tracks.append(t)
                 elif self.scanner.tap.watching > 0:
                     self.scanner.tracks.clear()
@@ -518,8 +580,8 @@ def test_sort_run_recognizes_saves_and_bins_each_card(watched, quick_sort, db):
 
 
 def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_sort, monkeypatch, db):
-    from mtgscanner import sort_run
-    monkeypatch.setattr(sort_run, "RECOGNIZE_SECONDS", 0.3)
+    monkeypatch.setattr(config, "SORT_RECOGNIZE_SECONDS", 0.4)
+    monkeypatch.setattr(config, "SORT_FOIL_AFTER", 0.1)
     monkeypatch.setattr(config, "SORT_FALLBACK_BIN", 3)
     client, scanner, machine, cams = watched
     cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
@@ -532,10 +594,34 @@ def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_
     unread = Track(3, 3, np.array([[40, 240], [260, 240], [260, 290], [40, 290]], float))
     unread.status, unread.checked_time = "unknown", time.monotonic() + 100      # no match yet: keep waiting
     scanner.tracks.extend([stale, top, unread])
+
+    class Sticky:   # the scanner keeps re-planting the stale tracks, as it would carry on a track
+        def __init__(self):
+            self.running = True
+            threading.Thread(target=self.loop, daemon=True).start()
+
+        def loop(self):
+            while self.running:
+                with scanner.lock:
+                    if not scanner.tracks:
+                        for t in (stale, top, unread):
+                            t.checked_time = time.monotonic() + 100
+                        scanner.tracks.extend([stale, top, unread])
+                time.sleep(0.02)
+    cams.append(Sticky())
     scanner.frame_size = (300, 400)
+    class Bars:   # the light bars: dimmed for the second look, then put back
+        settings = {"brightness": 30}
+        changes = []
+
+        def update(self, raw):
+            self.settings = self.settings | raw
+            self.changes.append(raw["brightness"])
+    scanner.lights = Bars()
     client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
     d = wait_sort(client)
     assert d["cards"][0]["status"] == "unknown" and d["cards"][0]["bin"] == 3, d
+    assert d["cards"][0]["dimmed"] is True and scanner.lights.changes == [8, 30]
     assert scanner.session == []                                          # not saved
 
 
@@ -550,6 +636,18 @@ def test_sort_run_does_not_save_an_unsure_guess(watched, quick_sort, db):
     assert scanner.session == []
 
 
+def test_sort_run_warns_when_a_bin_is_filling_up(watched, quick_sort, db, monkeypatch):
+    monkeypatch.setattr(config, "SORT_BIN_WARN", 2)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    cams.append(FakeRecognizer(scanner, db.get_card("id1")))
+    client.post("/api/machine/sort", json={"max_cards": 2, "speed": 0.8})
+    d = wait_sort(client)
+    assert d["full"] == [2] and "Bin 2" in d["warning"], d
+    door = config.SERVOS["door_l"]
+    assert machine.angles.get(door[0]) == door[1]["closed"]     # the doors are told "closed" again each card
+
+
 def test_sort_run_stops_when_the_hopper_is_empty(watched, quick_sort):
     client, scanner, machine, cams = watched
     cams.append(FakeCamera(scanner.tap, machine, card_after=None))
@@ -557,3 +655,40 @@ def test_sort_run_stops_when_the_hopper_is_empty(watched, quick_sort):
     d = wait_sort(client)
     assert "hopper is empty" in d["done"] and d["counts"]["none"] == 2, d
     assert client.post("/api/machine/sort/stop", json={}).get_json()["running"] is False
+
+
+def test_sort_run_stops_when_a_card_is_held_in_the_slot(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, stuck=True))
+    client.post("/api/machine/sort", json={"speed": 0.8, "max_cards": 0})
+    d = wait_sort(client)
+    assert "gate" in d["done"] and d["cards"][-1]["status"] == "stuck" and d["cards"][-1]["bin"] is None, d
+
+
+def test_sort_run_stops_when_two_cards_come_out_together(watched, quick_sort, db):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    pair = FakeRecognizer(scanner, db.get_card("id1"))
+    cams.append(pair)
+
+    class Second:   # a second card next to the first, as a stacked pair looks to the scanner
+        def __init__(self):
+            self.running = True
+            threading.Thread(target=self.loop, daemon=True).start()
+
+        def loop(self):
+            while self.running:
+                with scanner.lock:
+                    if len(scanner.tracks) == 1 and scanner.tap.watching == 0:
+                        t = Track(999, 2, np.array([[40, 185], [260, 185], [260, 235], [40, 235]], float))
+                        t.card, t.status, t.checked_time, t.streak_key = db.get_card("id2"), "locked", time.monotonic(), "id2"
+                        scanner.tracks.append(t)
+                time.sleep(0.01)
+    cams.append(Second())
+    client.post("/api/machine/sort", json={"max_cards": 3, "speed": 0.8})
+    d = wait_sort(client)
+    assert "two cards came out together" in d["done"], d
+    assert d["cards"][-1]["status"] == "double" and d["cards"][-1]["bin"] is None
+    pins = config.SERVOS["pins"]
+    assert machine.angles.get(pins[0]) == pins[1]["up"]      # nothing was dropped
+    assert scanner.session == []
