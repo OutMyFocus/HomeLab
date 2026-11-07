@@ -387,6 +387,7 @@
               <button class="cam-btn" id="uncropBtn" title="Show the whole camera picture again" hidden>Full view</button>
               <button class="cam-btn" id="straightBtn" title="Lay one card square on the bed against the stop pins, then press: the picture is warped so that card shows as a perfect upright rectangle (undoes the camera's tilt)" hidden>Straighten</button>
               <button class="cam-btn" id="unstraightBtn" title="Show the camera's picture without the straightening" hidden>Undo straighten</button>
+              <button class="cam-btn" id="autoStraightBtn" aria-pressed="true" title="Straighten by itself: every card recognized for sure tells the scanner how the camera sees a card, and it keeps the picture square (needs about 8 cards; a correction bigger than the camera could be off is refused)" hidden>Auto straighten</button>
               <span class="cam-hint" id="cropHint" hidden>Drag a box around the scan bed</span>
               <label
                 class="cam-btn cam-focus"
@@ -459,6 +460,12 @@
                   <svg><use href="#i-bolt" /></svg><span id="sortBtnText">Start sorting</span>
                 </button>
                 <small id="sortInfo">Feeds every card, reads it, saves it and drops it into the bin your <a href="/bins">Bins</a> rules give it.</small>
+                <div class="sort-wait" id="sortWait" hidden>
+                  <small id="sortWaitText"></small>
+                  <button class="btn" data-decide="retry">Look again</button>
+                  <button class="btn" data-decide="fallback">Unread bin</button>
+                  <button class="btn ghost" data-decide="stop">Stop</button>
+                </div>
               </div>
               <button class="btn primary" id="saveBtn" disabled>
                 Save all <kbd>Space</kbd>

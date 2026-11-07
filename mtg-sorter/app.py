@@ -44,6 +44,7 @@ from mtgscanner.decks import add_deck_routes
 from mtgscanner.upgrades import add_upgrade_routes
 from mtgscanner.library import add_collection_routes, lookup
 from mtgscanner.lights import Lights, add_lights_routes
+from mtgscanner.auto_straighten import AutoStraighten
 from mtgscanner.wishlist import add_wishlist_routes
 from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
@@ -160,6 +161,9 @@ class Scanner:
         self.crop: list[float] | None = None  # then cropped to this part of it; None = all of it
         self.straight = None  # then the camera's tilt and keystone undone (view.straighten_from)
         self._last_view = None  # the last picture after rotate and crop, before straightening
+        self.auto_straight = config.AUTO_STRAIGHTEN  # straighten by itself from sure cards
+        self._auto_straight = AutoStraighten()
+        self._pending_straight = None  # a new straightening, put in between cards
         self.outline = (
             46,
             119,
@@ -221,13 +225,16 @@ class Scanner:
         self.rotate = view.clean_rotation(saved.get("rotate", 0)) or 0
         self.crop = view.clean_box(saved["crop"]) if saved.get("crop") else None
         self.straight = view.clean_straighten(saved.get("straight")) if saved.get("straight") else None
+        self.auto_straight = bool(saved.get("auto_straight", config.AUTO_STRAIGHTEN))
 
     def set_straight(self, on, corners=None):
         """Straighten the picture from the card on the bed now (True) or stop (False).
         `corners`: the card's 4 corners by hand, [[x, y], ...] as shares of the picture.
         Raises ValueError when there is no picture or no card in it. Call with the lock held."""
+        self._pending_straight = None
         if not on:
             self.straight = None
+            self._auto_straight.reset()
         else:
             frame = self._last_view
             if frame is None:
@@ -235,6 +242,12 @@ class Scanner:
             setting = view.straighten_from(frame, corners)
             if setting is None:
                 raise ValueError("No card found: lay one card square on the bed, against the stop pins, and try again")
+            from mtgscanner.auto_straighten import correction
+            turn, stretch = correction(setting, setting["size"])
+            if corners is None and (turn > config.AUTO_STRAIGHT_MAX_TURN or stretch > config.AUTO_STRAIGHT_MAX_STRETCH):
+                # far more than the camera is off: the outline caught something else
+                raise ValueError(f"That card's outline doesn't look right (it would turn the picture {turn:.1f}°): "
+                                 "lay it square against the pins, or use a white-bordered card, and try again")
             self.straight = setting
         self.forget_tracks()
 
@@ -259,6 +272,9 @@ class Scanner:
             self.straight = None  # measured on the old picture: straighten again
         if rotate is not None:
             self.straight = None
+        if rotate is not None or crop is not False:
+            self._auto_straight.reset()
+            self._pending_straight = None
         self.forget_tracks()  # outlines and numbers belong to the old picture
 
     def _find(self, frame):
@@ -311,6 +327,11 @@ class Scanner:
         if self.rotate or self.crop:
             frame = view.apply(frame, self.rotate, self.crop)
         self._last_view = frame
+        if self._pending_straight is not None:
+            with self.lock:
+                if not self.tracks:     # between cards: the new warp can't upset a reading
+                    self.straight, self._pending_straight = self._pending_straight, None
+                    save_settings(straight=self.straight)
         if self.straight:
             frame = view.straighten(frame, self.straight)
         if self.tap is not None and self.tap.watching:
@@ -419,6 +440,14 @@ class Scanner:
             return
         card = result.card
         t.corners, t.distance, t.margin = result.corners, result.distance, result.margin
+        if (self.auto_straight and card is not None and result.confidence == "sure"
+                and result.corners is not None and not isinstance(self.source, BrowserSource)):
+            # a sure match: its outline lined up with the stock picture, a good sample
+            size = (frame.shape[1], frame.shape[0])
+            if self._auto_straight.add(result.corners, self.straight, size):
+                new = self._auto_straight.proposal(self.straight)
+                if new is not None:
+                    self._pending_straight = new
         t.candidates, t.checked_at, t.checked_time = (
             result.candidates,
             result.corners.mean(axis=0),
@@ -627,7 +656,10 @@ class Scanner:
                 "auto": self.auto,
                 "mode": self.mode,
                 "slots": self.slots,
-                "view": {"rotate": self.rotate, "crop": self.crop, "straight": bool(self.straight)},
+                "view": {"rotate": self.rotate, "crop": self.crop, "straight": bool(self.straight),
+                         "auto_straight": self.auto_straight,
+                         "straight_samples": len(self._auto_straight.samples),
+                         "straight_refused": self._auto_straight.last_refused},
                 "camera": camera_info(self._next_source or self.source),
                 "owner": self.owner,
                 "account": self.account,
@@ -904,6 +936,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 sc.set_view(rotate, crop)
                 if remember:
                     save_settings(rotate=sc.rotate, crop=sc.crop, slots=sc.slots, straight=sc.straight)
+            if "auto_straight" in body:
+                sc.auto_straight = bool(body["auto_straight"])
+                if remember:
+                    save_settings(auto_straight=sc.auto_straight)
             if "straighten" in body:
                 try:
                     raw = body["straighten"]

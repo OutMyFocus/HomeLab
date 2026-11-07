@@ -557,11 +557,23 @@
     $("straightBtn").hidden = !machineCam || cropping;
     $("straightBtn").textContent = v.straight ? "Straighten again" : "Straighten";
     $("unstraightBtn").hidden = !machineCam || !v.straight || cropping;
+    $("autoStraightBtn").hidden = !machineCam || cropping;
+    $("autoStraightBtn").setAttribute("aria-pressed", !!v.auto_straight);
+    $("autoStraightBtn").textContent = v.auto_straight
+      ? (v.straight ? "Auto straighten: on" : `Auto straighten: learning (${v.straight_samples || 0} cards)`)
+      : "Auto straighten: off";
   }
+  $("autoStraightBtn").onclick = async () => {
+    const on = !(state?.view?.auto_straight);
+    render(await api("/api/settings", { auto_straight: on }));
+    toast(on ? "The picture now straightens itself from the cards it reads" : "Auto straighten off");
+  };
   async function straighten(on) {
     // api() throws on a 400, but "no card found" is worth showing as it is
     const r = await fetch("/api/settings", { method: "POST",
-      headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify({ straighten: on }) });
+      headers: { "Content-Type": "application/json", ...scannerHeaders() },
+      // Undo also stops it straightening itself again
+      body: JSON.stringify(on ? { straighten: true } : { straighten: false, auto_straight: false }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return toast(d.error || "Couldn't straighten the picture");
     render(d);
@@ -640,9 +652,18 @@
     const now = running ? (last?.name ? `Last: <b>${last.name}</b> ${cash(last.price)} → bin ${last.bin}.` : "Working…")
       : `Done: ${d.done || ""}.`;
     $("sortInfo").innerHTML = `${now} <b>${c.saved || 0}</b> saved (${cash(d.value)}), ${c.unsure || 0} unsure, ${c.unknown || 0} unread${tally ? ` · ${tally}` : ""}${d.warning ? ` · <b>${d.warning}</b>` : ""}`;
+    const w = running && d.waiting;
+    $("sortWait").hidden = !w;
+    if (w) $("sortWaitText").textContent = `Card ${w.n}${w.name ? ` (best guess ${w.name})` : ""}: ${w.message}`;
     if (running && !sortT) sortT = setInterval(pollSortRun, 2000);
     if (!running && sortT) { clearInterval(sortT); sortT = null; }
   }
+  for (const b of document.querySelectorAll("[data-decide]")) b.onclick = async () => {
+    try {
+      const d = await sortApi("/api/machine/sort/decide", { action: b.dataset.decide });
+      if (d.error) toast(d.error); else showSortRun(d);
+    } catch (e) { toast("Couldn't reach the sorter."); }
+  };
   // The run's answers carry their own "error" text (409 when one is already going, 503
   // when the machine can't), which is worth showing: so no throwing on those statuses.
   const sortApi = async (path, body) => (await fetch(path, body === undefined ? { headers: scannerHeaders() }

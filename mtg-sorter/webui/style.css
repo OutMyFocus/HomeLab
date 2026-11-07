@@ -642,3 +642,7 @@ a.brand { color: inherit; text-decoration: none; }
 }
 .camera.no-cam .cam-pick { z-index: 3; }
 @media (max-width: 560px) { .no-camera { padding-top: 62px; } }
+
+.sorter .sort-wait { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px;
+  padding: 8px; border-radius: 8px; background: color-mix(in srgb, var(--accent, #e8772e) 14%, transparent); }
+.sorter .sort-wait small { flex: 1 1 100%; }

@@ -164,6 +164,9 @@ class RemoteMachine:
     def sort_stop(self) -> dict:
         return self._call("/api/machine/sort/stop", {})
 
+    def sort_decide(self, action) -> dict:
+        return self._call("/api/machine/sort/decide", {"action": action})
+
     def feed_zone(self) -> list:
         return self._call("/api/machine/feed_zone")["zone"]
 
