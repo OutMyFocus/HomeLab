@@ -12,7 +12,8 @@ writes, next to this script:
                                      all-plastic hopper weight and the one-bar stop gate
   MTG_Sorter_DC_Jack_Holder.3mf      holder + bezel for the servo-power barrel jack (dc_jack_holder.scad)
   MTG_Sorter_Feeder_Box_v4.3mf       feeder box v4 (feeder4.scad): stand, hopper, separator shoe, roller,
-                                     and the scan bed v3.1 plate with the wheel slots
+                                     and the scan bed v3.1 plate with the wheel slots, and the hopper tower
+                                     with its front open
 
   python3 make_small_projects.py MTG_Sorter_DC_Jack_Holder.3mf   builds just that one
 
@@ -84,6 +85,7 @@ PROJECTS = {
         ("3 Separator shoe and roller (100% infill)", ["feeder4_shoe4", "feeder4_roller4"]),
         ("4 Scan bed v3.1 plate with wheel slots (WHITE)", ["bed_chute_bed_plate3"]),
         ("5 Stop bar v3.2 (black), if not printed yet", ["bed_chute_stop_gate3"]),
+        ("6 Hopper tower with the open front (black, brim), if you fit the tower", ["enc_tower"]),
     ],
     "MTG_Sorter_DC_Jack_Holder.3mf": [
         ("1 DC jack holder and bezel (black)", ["dc_jack_holder", "dc_jack_bezel"]),
