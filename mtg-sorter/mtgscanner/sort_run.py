@@ -26,6 +26,12 @@ What each card ends up as:
 
 The run stops on its own when a card is left on the bed after the retries (something is
 caught) or when nothing came out twice in a row.
+
+Wanted cards (Bins page, 2026-11-08): a card on the wanted list goes to the wanted bin,
+whatever the price rules say, until the listed number of copies has been pulled in this
+run. The rules are fixed when the run starts. Started from the server (MTG_MACHINE_URL),
+the server sends its own Bins page rules with the start, so the list you made there is
+the one the Pi uses; started on the Pi's own page, the Pi's saved rules are used.
 """
 
 import threading
@@ -54,12 +60,16 @@ class SortRun:
         self.thread = None
         self.stop_asked = False
         self.decision = None        # what was chosen for a card waiting on the bed
+        self.rules = None           # the Bins page rules for this run (fixed at the start)
+        self.taken = {}             # wanted cards pulled this run: {name key: copies}
         self.state = {"running": False, "cards": [], "done": None, "speed": None, "max_cards": 0,
                       "waiting": None}
 
     # --- control ----------------------------------------------------------------
 
-    def start(self, speed=None, max_cards=None) -> dict:
+    def start(self, speed=None, max_cards=None, rules=None) -> dict:
+        """`rules`: Bins page rules sent with the start (from the server); else the saved ones."""
+        rules = sort_rules.clean(rules) if isinstance(rules, dict) else sort_rules.load()
         with self.lock:
             if self.state["running"]:
                 raise RuntimeError("A sort run is already going: stop it first")
@@ -67,6 +77,7 @@ class SortRun:
             max_cards = max(0, min(MAX_CARDS, int(max_cards or 0)))
             self.stop_asked = False
             self.decision = None
+            self.rules, self.taken = rules, {}
             self.state = {"running": True, "cards": [], "done": None, "speed": speed,
                           "max_cards": max_cards, "started_at": time.time(), "waiting": None}
             self.thread = threading.Thread(target=self._run, args=(speed, max_cards), daemon=True)
@@ -91,7 +102,8 @@ class SortRun:
         with self.lock:
             s = dict(self.state)
             cards = s["cards"]
-        names = sort_rules.names()
+        rules = self.rules or sort_rules.load()
+        names = rules["names"]
         tally = {}
         for c in cards:
             if c.get("bin") is not None:
@@ -99,6 +111,10 @@ class SortRun:
         s["tally"] = [{"bin": int(b), "label": names.get(b, f"Bin {b}"), "cards": n} for b, n in sorted(tally.items())]
         s["counts"] = {k: sum(1 for c in cards if c.get("status") == k)
                        for k in ("saved", "unsure", "unknown", "none", "stuck", "double")}
+        want = sort_rules.wanted_counts(rules)
+        s["wanted"] = {"bin": rules["wanted"]["bin"], "cards": sum(want.values()),
+                       "found": sum(min(self.taken.get(k, 0), q) for k, q in want.items()),
+                       "pulled": [c["name"] for c in cards if c.get("wanted")]} if want else None
         s["value"] = round(sum(c.get("price") or 0 for c in cards if c.get("status") == "saved"), 2)
         warn = int(getattr(config, "SORT_BIN_WARN", 0) or 0)
         s["full"] = [t["bin"] for t in s["tally"] if warn and t["cards"] >= warn]
@@ -262,8 +278,8 @@ class SortRun:
         """Asked by sort_one once the card is on the stop teeth: wait for the scanner to
         recognize it, save it, and say which bin it goes in. Fills in `card` for the table.
         An unread card waits on the bed for a decision (see the top of this file)."""
-        rules = sort_rules.load()
-        fallback = self.real_bin(rules["fallback"])
+        rules = self.rules or sort_rules.load()
+        fallback = self.real_bin(sort_rules.unread_bin(rules))
         while True:
             track = self._look(card)
             if track is not None and track.status == "locked":
@@ -327,14 +343,21 @@ class SortRun:
                 if not track.saved:
                     self.scanner._save(shown, foil, track, auto=True)
                 saved = self.scanner.session[-1] if self.scanner.session else {}
-                bin_no = int(saved.get("bin", fallback)) if saved.get("track") == track.id else None
-                if bin_no is None:
-                    bin_no, _ = sort_rules.pick(shown, foil, saved.get("price"), rules)
-                bin_no = self.real_bin(bin_no)
+                if saved.get("track") != track.id:
+                    saved = {}
+                # this run's rules (and wanted copies left), not the bin the scan was saved with
+                wanted = sort_rules.wanted_for(shown, rules, self.taken)
+                bin_no, label = sort_rules.pick(shown, foil, saved.get("price"), rules, self.taken)
+                if wanted:
+                    self.taken[wanted] = self.taken.get(wanted, 0) + 1
+                    card["wanted"] = True
+                real = self.real_bin(bin_no)
+                if real != bin_no and not wanted:       # bin 0 → the tray for unread cards
+                    real = self.real_bin(sort_rules.unread_bin({**rules, "fallback": real}))
                 card.update({"status": "saved", "name": shown.name, "set": shown.set_code,
                              "number": shown.collector_number, "price": saved.get("price"),
-                             "bin": bin_no, "bin_label": rules["names"][str(bin_no)]})
-                return bin_no
+                             "bin": real, "bin_label": label if real == bin_no else rules["names"][str(real)]})
+                return real
             card.update({"status": "unsure" if shown is not None else "unknown",
                          "name": shown.name if shown is not None else None,
                          "bin": fallback, "bin_label": rules["names"][str(fallback)]})
@@ -358,8 +381,9 @@ def add_sort_run_routes(app, watcher, scanner, machine):
     def sort_start():
         body = request.get_json(silent=True) or {}
         if run is None:
-            return answer(lambda: machine.sort_start(body))
-        return answer(lambda: run.start(body.get("speed"), body.get("max_cards")), 409)
+            # the Pi sorts by the rules (and wanted list) on this server's Bins page
+            return answer(lambda: machine.sort_start({**body, "rules": sort_rules.load()}))
+        return answer(lambda: run.start(body.get("speed"), body.get("max_cards"), body.get("rules")), 409)
 
     @app.get("/api/machine/sort")
     def sort_status():

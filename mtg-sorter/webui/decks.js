@@ -52,6 +52,16 @@
       toast(`Saved ${js.deck.name}`);
     } catch (e) { toast(e.message); }
   };
+  // The sorter pulls this deck's cards into the Bins page's wanted bin while it sorts.
+  $("pullDeck").onclick = async () => {
+    if (!$("deckText").value.trim()) return toast("Paste a decklist first");
+    const name = $("deckName").value.trim() || "a pasted deck";
+    try {
+      const js = await api("/api/bins/wanted", { on: true, text: $("deckText").value, source: name });
+      const w = js.rules.wanted;
+      toast(`The sorter now pulls ${w.cards.length} card${w.cards.length === 1 ? "" : "s"} into bin ${w.bin} · Bins page to change it`);
+    } catch (e) { toast(e.message); }
+  };
   $("deleteDeck").onclick = async () => {
     const d = decks.find(x => x.id === currentId);
     if (!d || !confirm(`Delete the saved deck "${d.name}"? Your cards aren't touched.`)) return;

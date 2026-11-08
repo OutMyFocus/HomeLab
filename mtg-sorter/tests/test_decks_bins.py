@@ -157,3 +157,86 @@ def test_broken_rules_file_falls_back_to_price_bins(db):  # noqa: F811
 @pytest.mark.parametrize("name", list(sort_rules.PRESETS))
 def test_presets_are_valid(name):
     sort_rules.clean(sort_rules.preset(name))
+
+
+# --- Wanted cards (pull a list out of the bulk into one bin) ------------------------------------
+
+def named(name, colors="R"):
+    return Card("x", name, "dmu", "Set", "1", "rare", colors, None, None)
+
+
+def wanted_rules(**wanted):
+    return sort_rules.clean({**sort_rules.default_rules(), "wanted": {"on": True, **wanted}})
+
+
+def test_wanted_cards_win_over_the_price_rules():
+    rules = wanted_rules(bin=3, only=False, text="Commander\n1 Sol Ring (C21) 263\n4x Lightning Bolt\n"
+                                                "1 Fire // Ice\nMaybeboard\n1 Ponder")
+    assert [c["name"] for c in rules["wanted"]["cards"]] == ["Sol Ring", "Lightning Bolt", "Fire // Ice"]
+    assert sort_rules.pick(named("Sol Ring"), False, 0.25, rules)[0] == 3        # bulk price, still wanted
+    assert sort_rules.pick(named("Sol Ring"), False, 0.25, rules)[1] == "Wanted cards"
+    assert sort_rules.pick(named("Fire // Ice"), False, 0.25, rules)[0] == 3     # front face matches
+    assert sort_rules.pick(named("Ponder"), False, 0.25, rules)[0] == 1          # maybeboard left out
+    assert sort_rules.pick(named("Other"), False, 4, rules)[0] == 2
+    rules["wanted"]["on"] = False
+    assert sort_rules.pick(named("Sol Ring"), False, 0.25, rules)[0] == 1
+
+
+def test_wanted_only_bin_sends_the_other_cards_elsewhere():
+    rules = wanted_rules(bin=2, only=True, others=3, text="1 Sol Ring")
+    assert sort_rules.pick(named("Sol Ring"), False, 0.25, rules)[0] == 2
+    assert sort_rules.pick(named("Other"), False, 4, rules) == (3, "$10+ (valuable!)")      # $1-$10 kept out of bin 2
+    assert sort_rules.pick(named("Other"), False, 0.25, rules)[0] == 1
+    empty = wanted_rules(bin=2, only=True, others=3, text="")
+    assert sort_rules.pick(named("Other"), False, 4, empty)[0] == 2              # empty list: bin 2 as usual
+    with pytest.raises(ValueError):
+        wanted_rules(bin=2, only=True, others=2, text="1 Sol Ring")
+    with pytest.raises(ValueError):
+        wanted_rules(bin=0, text="1 Sol Ring")
+
+
+def test_wanted_copies_and_basic_lands():
+    rules = wanted_rules(bin=3, only=False, text="2 Lightning Bolt\n30 Forest")
+    taken = {}
+    for want in (3, 3, 1):          # two copies pulled, the third sorted by price
+        key = sort_rules.wanted_for(named("Lightning Bolt"), rules, taken)
+        assert sort_rules.pick(named("Lightning Bolt"), False, 0.25, rules, taken)[0] == want
+        if key:
+            taken[key] = taken.get(key, 0) + 1
+    assert sort_rules.pick(named("Forest", ""), False, 0.1, rules)[0] == 1        # basics skipped
+    rules["wanted"]["skip_basics"] = False
+    assert sort_rules.pick(named("Forest", ""), False, 0.1, rules)[0] == 3
+    rules["wanted"]["limit"] = False
+    assert sort_rules.pick(named("Lightning Bolt"), False, 0.25, rules, {"lightning bolt": 9})[0] == 3
+
+
+def test_presets_keep_the_wanted_list():
+    rules = sort_rules.preset("rarity", {"on": True, "bin": 3, "only": False, "text": "1 Sol Ring"})
+    assert rules["wanted"]["cards"] == [{"name": "Sol Ring", "qty": 1}] and rules["names"]["1"] == "Commons"
+    assert sort_rules.preset("rarity")["wanted"]["on"] is False
+
+
+def test_wanted_list_from_a_deck_and_the_bins_page(db):  # noqa: F811
+    client = make_client(db)
+    client.post("/api/add", json={"id": "id0"})   # Card 0, US$0.10: bulk
+    deck = client.post("/api/decks/save", json={"name": "Pauper", "text": "1 Card 0\n4 Lightning Bolt"}).get_json()["deck"]
+    js = client.get("/api/bins").get_json()
+    assert js["decks"] == [{"id": deck["id"], "name": "Pauper"}] and js["rules"]["wanted"]["on"] is False
+    listed = client.post("/api/bins/wanted/list", json={"deck": deck["id"]}).get_json()
+    assert listed == {"text": "1 Card 0\n4 Lightning Bolt", "source": "Pauper"}
+    assert client.post("/api/bins/wanted/list", json={"deck": "nope"}).status_code == 404
+    # the Bins page preview, not saved: Card 0 moves out of bin 1 into bin 3
+    rules = {**js["rules"], "wanted": {**js["rules"]["wanted"], "on": True, "bin": 3, "only": False,
+                                         "text": listed["text"]}}
+    pv = client.post("/api/bins/preview", json=rules).get_json()
+    assert pv["preview"]["3"]["cards"] == 1 and pv["preview"]["1"]["cards"] == 0
+    assert pv["wanted"]["cards"] == 5 and pv["wanted"]["found"] == 1
+    assert pv["wanted"]["missing"] == [{"name": "Lightning Bolt", "qty": 4}]
+    assert not sort_rules.is_custom()
+    # the deck page's Pull from my bulk: changes the wanted list only
+    js = client.post("/api/bins/wanted", json={"on": True, "deck": deck["id"]}).get_json()
+    assert js["custom"] and js["rules"]["wanted"]["source"] == "Pauper" and js["rules"]["wanted"]["bin"] == 2
+    assert js["rules"]["rules"] == sort_rules.default_rules()["rules"]
+    assert choose_bin(db.get_card("id0"))[0] == 2                       # new scans use it too
+    bad = client.post("/api/bins/wanted", json={"others": 2})           # bin 2 can't be both
+    assert bad.status_code == 400 and bad.get_json()["error"]

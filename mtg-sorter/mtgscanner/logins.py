@@ -26,6 +26,7 @@ GET_NEEDS = [
 # Pressing these needs a permission. Ones that only look (export, check, preview) need none.
 POST_NEEDS = {
     "": ["/api/collection/export", "/api/collection/refresh", "/api/decks/check", "/api/bins/preview",
+         "/api/bins/wanted/list",
          "/api/history/export", "/api/password", "/api/logout/everywhere"],
     "scan": ["/api/frame", "/api/camera", "/api/camera/release", "/api/add", "/api/save_all",
              "/api/correct", "/api/undo", "/api/wrong", "/api/photos", "/api/settings"],
