@@ -137,12 +137,12 @@ def test_rotate_and_crop_the_picture(db, tmp_path, monkeypatch):  # noqa: F811
     client.post("/api/settings", json={"slots": [[0.5, 0.5, 1, 1]]})
 
     state = client.post("/api/settings", json={"crop": [0.5, 0.5, 1, 1]}).get_json()
-    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False, "auto_straight": True, "straight_samples": 0, "straight_refused": None}
+    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False, "auto_straight": True, "min_card": None, "straight_samples": 0, "straight_refused": None}
     assert state["slots"] == [[0, 0, 1, 1]]                      # same spot, now the whole picture
     state = client.post("/api/settings", json={"crop": [0, 0, 0.5, 0.5]}).get_json()
     assert state["view"]["crop"] == [0.5, 0.5, 0.75, 0.75]       # a crop of the crop
     state = client.post("/api/settings", json={"rotate": 90}).get_json()
-    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False, "auto_straight": True, "straight_samples": 0, "straight_refused": None}
+    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False, "auto_straight": True, "min_card": None, "straight_samples": 0, "straight_refused": None}
     saved = json.loads((tmp_path / "settings.json").read_text())
     assert saved["rotate"] == 90 and saved["crop"] == [0.25, 0.5, 0.5, 0.75]
 
@@ -482,3 +482,38 @@ def test_the_pages_scripts_parse():
     for script in sorted((Path(__file__).resolve().parent.parent / "webui").glob("*.js")):
         check = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
         assert check.returncode == 0, f"{script.name}: {check.stderr.strip()}"
+
+
+def test_whole_cards_only_measures_the_card_on_the_bed(db, tmp_path, monkeypatch):  # noqa: F811
+    """Nic: the scanner shouldn't look at small sections of the card. "Whole cards
+    only" sets the smallest card from the card on the bed, so its art box or text box
+    is no longer read as a card of its own."""
+    import app
+    from mtgscanner.tracking import Track
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    client = create_app(scanner).test_client()
+    # no picture or card yet: say so
+    assert client.post("/api/settings", json={"min_card": "bed"}).status_code == 400
+
+    scanner.frame_size = (100, 200)
+    card = np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32)    # 60 x 100 = 0.3 of the picture
+    art = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)       # 50 x 40 = 0.1
+    scanner.tracks = [Track(1, 1, card, status="locked"), Track(2, 2, art, status="unknown")]
+    state = client.post("/api/settings", json={"min_card": "bed"}).get_json()
+    assert state["view"]["min_card"] == round(0.3 * config.MIN_CARD_FROM_BED, 4)
+    assert scanner.tracks == []                                # looked at afresh
+    assert json.loads((tmp_path / "settings.json").read_text())["min_card"] == state["view"]["min_card"]
+
+    seen = []
+    monkeypatch.setattr(app, "find_cards", lambda frame, min_area=None: seen.append(min_area) or [])
+    scanner._find(np.zeros((200, 100, 3), np.uint8))
+    assert seen == [state["view"]["min_card"]]
+
+    fresh = Scanner(db, None, source=FakeCamera(0))            # kept for next time
+    fresh.restore(json.loads((tmp_path / "settings.json").read_text()))
+    assert fresh.min_card == state["view"]["min_card"]
+
+    assert client.post("/api/settings", json={"min_card": 0.3}).get_json()["view"]["min_card"] == 0.3
+    assert client.post("/api/settings", json={"min_card": 2}).status_code == 400
+    assert client.post("/api/settings", json={"min_card": None}).get_json()["view"]["min_card"] is None

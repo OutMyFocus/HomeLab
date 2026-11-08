@@ -162,6 +162,10 @@ class Scanner:
         self.straight = None  # then the camera's tilt and keystone undone (view.straighten_from)
         self._last_view = None  # the last picture after rotate and crop, before straightening
         self.auto_straight = config.AUTO_STRAIGHTEN  # straighten by itself from sure cards
+        # Smallest outline that counts as a card, as a share of the picture (None:
+        # config.MIN_CARD_AREA). Set from the card on the scan bed, it stops the scanner
+        # reading an art or text box as a card of its own (Nic, 2026-11-08).
+        self.min_card = None
         self._auto_straight = AutoStraighten()
         self._pending_straight = None  # a new straightening, put in between cards
         self.outline = (
@@ -226,6 +230,25 @@ class Scanner:
         self.crop = view.clean_box(saved["crop"]) if saved.get("crop") else None
         self.straight = view.clean_straighten(saved.get("straight")) if saved.get("straight") else None
         self.auto_straight = bool(saved.get("auto_straight", config.AUTO_STRAIGHTEN))
+        self.min_card = clean_min_card(saved.get("min_card"))
+
+    def set_min_card_from_bed(self) -> float:
+        """Look only for whole cards: the smallest card becomes MIN_CARD_FROM_BED of the
+        biggest card seen now (the one on the bed). Raises ValueError with no card in
+        view. Call with the lock held."""
+        w, h = self.frame_size or (0, 0)
+        tracks = [t for t in self.tracks if t.missing == 0] or list(self.tracks)
+        if not tracks or not w or not h:
+            raise ValueError("No card in view: lay one card on the bed, against the stop pins, and try again")
+        locked = [t for t in tracks if t.status == "locked"] or tracks
+        biggest = max(float(cv2.contourArea(np.asarray(t.corners, np.float32))) for t in locked)
+        share = biggest / float(w * h)
+        value = clean_min_card(round(share * config.MIN_CARD_FROM_BED, 4))
+        if value is None:
+            raise ValueError("That card's outline doesn't look right: lay it flat on the bed and try again")
+        self.min_card = value
+        self.forget_tracks()
+        return value
 
     def set_straight(self, on, corners=None):
         """Straighten the picture from the card on the bed now (True) or stop (False).
@@ -280,7 +303,7 @@ class Scanner:
     def _find(self, frame):
         """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
         if self.mode != "slots" or not self.slots:
-            cards = find_cards(frame)
+            cards = find_cards(frame, self.min_card)
             return cards, [None] * len(cards)
         found = [
             (find_card_in_slot(frame, slot), n) for n, slot in enumerate(self.slots, 1)
@@ -662,6 +685,7 @@ class Scanner:
                 "slots": self.slots,
                 "view": {"rotate": self.rotate, "crop": self.crop, "straight": bool(self.straight),
                          "auto_straight": self.auto_straight,
+                         "min_card": self.min_card,
                          "straight_samples": len(self._auto_straight.samples),
                          "straight_refused": self._auto_straight.last_refused},
                 "camera": camera_info(self._next_source or self.source),
@@ -944,6 +968,24 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 sc.auto_straight = bool(body["auto_straight"])
                 if remember:
                     save_settings(auto_straight=sc.auto_straight)
+            if "min_card" in body:
+                raw = body["min_card"]
+                if raw == "bed":
+                    try:
+                        sc.set_min_card_from_bed()
+                    except ValueError as e:
+                        return jsonify({"error": str(e)}), 400
+                elif raw is None:
+                    sc.min_card = None
+                    sc.forget_tracks()
+                else:
+                    value = clean_min_card(raw)
+                    if value is None:
+                        return jsonify({"error": "min_card must be a share of the picture from 0.005 to 0.9, \"bed\" or null"}), 400
+                    sc.min_card = value
+                    sc.forget_tracks()
+                if remember:
+                    save_settings(min_card=sc.min_card)
             if "straighten" in body:
                 try:
                     raw = body["straighten"]
@@ -1292,6 +1334,14 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         )
 
     return app
+
+
+def clean_min_card(value) -> float | None:
+    """A smallest-card share of the picture (0.005 to 0.9), or None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return round(value, 4) if 0.005 <= value <= 0.9 else None
 
 
 def load_settings() -> dict:
