@@ -158,7 +158,8 @@ class SortRun:
                     reason = f"error: {e}"
                     return
                 card.update({"result": out["result"], "dropped": out.get("dropped"),
-                             "drop_tries": out.get("drop_tries", 0), "seconds": round(time.monotonic() - t0, 1)})
+                             "drop_tries": out.get("drop_tries", 0), "left_share": out.get("left_share"),
+                             "seconds": round(time.monotonic() - t0, 1)})
                 if out["result"] in ("none", "stuck"):
                     card["status"], card["bin"] = out["result"], None
                 with self.lock:

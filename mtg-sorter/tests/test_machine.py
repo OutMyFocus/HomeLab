@@ -853,3 +853,18 @@ def test_dimmed_bars_come_back_when_a_double_feed_stops_the_look(monkeypatch):
     with pytest.raises(DoubleFeed):
         run._look({"fed_at": 0.0})
     assert scanner.lights.settings["brightness"] == 60
+
+
+def test_a_card_left_half_out_of_the_slot_does_not_count_as_still_on_the_bed():
+    """After an empty feed a card stuck about a fifth out of the slot, over the top of the
+    bed. The drop check then saw the top of the view changed and stopped 3 runs with
+    "still on the bed" on an empty bed (2026-11-08): it starts below the slot now."""
+    from mtgscanner.feed_watch import changed_share
+    empty = np.full((200, 120), 90, np.uint8)
+    now = empty.copy()
+    now[10:40, 20:100] = 230                      # the card sticking out of the slot
+    zone = config.SORT_CHECK_ZONE
+    assert changed_share(empty, now, zone) < config.SORT_GONE_SHARE
+    on_bed = empty.copy()
+    on_bed[50:150, 20:100] = 230                  # a card really left at the bar
+    assert changed_share(empty, on_bed, zone) > config.SORT_GONE_SHARE
