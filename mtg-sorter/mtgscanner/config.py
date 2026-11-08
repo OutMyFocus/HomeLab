@@ -231,10 +231,13 @@ SORT_SHAKE_SECONDS = 0.4
 SORT_SHAKE_EXTRA = 6.0       # each shake tilts this many degrees further than the saved tilt      # each half-way-back and each tilt again lasts this long
 SORT_RETRIES = 1              # drop again this many times if the camera still sees the card
 # After a drop, the card counts as gone when less than this share of the picture
-# (SORT_CHECK_ZONE, shares like FEED_ZONE: nearly the whole view, slot to tray) still looks
+# (SORT_CHECK_ZONE, shares like FEED_ZONE: the view below the slot, bed to tray) still looks
 # different from the empty bed before the feed. A card is about a tenth of the view, so a
 # card the pins pushed up or turned stays well above this, which the landing band missed.
-SORT_CHECK_ZONE = (0.05, 0.05, 0.95, 0.95)
+# It starts below the feeder slot: a card left half out of the slot by an empty feed
+# (about a fifth of its length over the bed) changed the top of the view and stopped 3
+# runs with "still on the bed" on an empty bed (2026-11-08). A card at the bar fills y 0.20-0.79.
+SORT_CHECK_ZONE = (0.05, 0.22, 0.95, 0.95)
 SORT_GONE_SHARE = 0.08     # 0.05 called an empty bed "still there" (0.055-0.058) under the rail light, 2026-11-06
 
 # --- The light bars (lights.py) --------------------------------------------
