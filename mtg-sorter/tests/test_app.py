@@ -530,3 +530,20 @@ def test_whole_cards_only_measures_the_card_on_the_bed(db, tmp_path, monkeypatch
     assert client.post("/api/settings", json={"bed_box": "x"}).status_code == 400
     off = client.post("/api/settings", json={"min_card": None}).get_json()["view"]
     assert off["min_card"] is None and off["bed_box"] is None
+
+
+def test_forgetting_the_tracks_mid_recognition_does_not_break_the_scanner(db, monkeypatch):  # noqa: F811
+    """Tower's camera thread died with "list.remove(x): x not in list" (2026-11-08): a sort
+    run forgot the tracks while a picture was being recognized, then the picture's answers
+    tried to remove a track that was no longer there. The picture now leaves the new table
+    alone, and an error in one picture no longer ends the thread."""
+    import app
+    from mtgscanner.tracking import Track
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    old = Track(1, 1, np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32), status="locked")
+    old.missing = 99                                     # gone on this picture
+    scanner.tracks = [old]
+    monkeypatch.setattr(app, "find_cards", lambda frame, min_area=None: [])
+    monkeypatch.setattr(app, "pair_up", lambda tracks, cards: (scanner.forget_tracks() or ([], [], [old])))
+    scanner.process(np.zeros((200, 100, 3), np.uint8))   # no ValueError
+    assert scanner.tracks == []
