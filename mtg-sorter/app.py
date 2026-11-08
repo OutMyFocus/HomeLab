@@ -441,9 +441,13 @@ class Scanner:
         card = result.card
         t.corners, t.distance, t.margin = result.corners, result.distance, result.margin
         if (self.auto_straight and card is not None and result.confidence == "sure"
-                and result.corners is not None and not isinstance(self.source, BrowserSource)):
-            # a sure match: its outline lined up with the stock picture, a good sample
+                and result.corners is not None and not t.straight_sampled
+                and not isinstance(self.source, BrowserSource)):
+            # a sure match: its outline lined up with the stock picture, a good sample.
+            # One per card: a card sitting on the bed is seen many times over, and
+            # counting every look let one card (and its own skew) set the picture.
             size = (frame.shape[1], frame.shape[0])
+            t.straight_sampled = True
             if self._auto_straight.add(result.corners, self.straight, size):
                 new = self._auto_straight.proposal(self.straight)
                 if new is not None:

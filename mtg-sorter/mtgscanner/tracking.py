@@ -47,6 +47,7 @@ class Track:
     capture: dict | None = None     # its collected scan (see captures.py)
     capture_key: str | None = None
     fix: tuple | None = None        # (what it guessed, the Card you said it really is)
+    straight_sampled: bool = False  # already gave auto-straighten its one sample
 
     @property
     def center(self) -> np.ndarray:
