@@ -6,7 +6,7 @@ wall_z0 = 111;
 what = "plate3";
 slice = false;      // true: only a 4 mm slab at x = 18 (side section pictures)
 module feeder_at() translate([0, 150, 111]) children();
-module card3() on_bed() rotate([bp3_extra, 0, 0]) translate([-card_w / 2, 3, bp3_rib_h + 0.05]) cube([card_w, card_l, 0.4]);
+module card3() on_bed() rotate([bp3_extra, 0, 0]) translate([-card_w / 2, 3, bp3_lift + bp3_rib_h + 0.05]) cube([card_w, card_l, 0.4]);
 module piece() {
     if (what == "plate3") on_bed() bed_plate3();
     if (what == "plate2") on_bed() bed_plate();
