@@ -649,9 +649,9 @@
     }
     const last = cards[cards.length - 1];
     const tally = (d.tally || []).map(t => `bin ${t.bin}: ${t.cards}`).join(", ");
-    const now = running ? (last?.name ? `Last: <b>${last.name}</b> ${cash(last.price)} → bin ${last.bin}.` : "Working…")
+    const now = running ? (last?.name ? `Last: <b>${last.name}</b> ${cash(last.price)} → bin ${last.bin}${last.wanted ? " (wanted)" : ""}.` : "Working…")
       : `Done: ${d.done || ""}.`;
-    $("sortInfo").innerHTML = `${now} <b>${c.saved || 0}</b> saved (${cash(d.value)}), ${c.unsure || 0} unsure, ${c.unknown || 0} unread${tally ? ` · ${tally}` : ""}${d.warning ? ` · <b>${d.warning}</b>` : ""}`;
+    $("sortInfo").innerHTML = `${now} <b>${c.saved || 0}</b> saved (${cash(d.value)}), ${c.unsure || 0} unsure, ${c.unknown || 0} unread${tally ? ` · ${tally}` : ""}${d.wanted ? ` · wanted: <b>${d.wanted.found}</b> of ${d.wanted.cards} in bin ${d.wanted.bin}` : ""}${d.warning ? ` · <b>${d.warning}</b>` : ""}`;
     const w = running && d.waiting;
     $("sortWait").hidden = !w;
     if (w) $("sortWaitText").textContent = `Card ${w.n}${w.name ? ` (best guess ${w.name})` : ""}: ${w.message}`;

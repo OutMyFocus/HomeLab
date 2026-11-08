@@ -4,6 +4,13 @@ Rules are checked top to bottom and the first one that fits the card wins. A rul
 look at the price, the card's color, its rarity, its set and whether it's foil. A card
 no rule fits goes to the "anything else" bin.
 
+Wanted cards come before all of that (Nic, 2026-11-08: "input those to go into a specific
+bin"): a list of card names, pasted or taken from a deck, and the bin they go to. A card
+on the list goes to that bin whatever it's worth. "Only wanted cards" keeps that bin for
+them: a card the rules would put there goes to another bin you pick instead. During a
+sort run the listed number of copies is pulled (4 Lightning Bolt pulls four), and later
+copies are sorted as usual.
+
 Saved in data/sort_rules.json. Without that file the bins are the price bins in
 config.py, exactly as before.
 """
@@ -17,6 +24,9 @@ BINS = [0, 1, 2, 3]                       # the sorter's bins
 COLORS = ["W", "U", "B", "R", "G", "M", "C"]
 RARITIES = ["common", "uncommon", "rare", "mythic", "special", "bonus"]
 MAX_RULES = 30
+MAX_WANTED = 500
+BASICS = {"plains", "island", "swamp", "mountain", "forest", "wastes"} | {
+    f"snow-covered {b}" for b in ("plains", "island", "swamp", "mountain", "forest", "wastes")}
 FILE_NAME = "sort_rules.json"
 
 _cache: dict = {"path": None, "mtime": None, "rules": None}
@@ -35,7 +45,19 @@ def default_rules() -> dict:
         rules.append(_rule(number, min_price=minimum))
     for b in BINS:
         names.setdefault(str(b), f"Bin {b}")
-    return {"rules": rules, "fallback": config.NO_PRICE_BIN[0], "names": names}
+    return {"rules": rules, "fallback": config.NO_PRICE_BIN[0], "names": names, "wanted": default_wanted()}
+
+
+def default_wanted() -> dict:
+    """Off. When turned on: bin 2 (under the trapdoors, the surest drop), kept for wanted
+    cards only, with the $1-$10 cards that would have gone there sent to bin 3."""
+    return {"on": False, "bin": 2, "only": True, "others": 3, "limit": True, "skip_basics": True,
+            "source": "", "cards": []}
+
+
+def name_key(name) -> str:
+    """Front face, lowercase (as decks.name_key): "Fire // Ice" matches "fire"."""
+    return str(name or "").split(" // ")[0].split("/")[0].strip().lower()
 
 
 def _rule(bin_no, min_price=None, max_price=None, colors=(), rarities=(), sets=(), foil="any"):
@@ -64,10 +86,13 @@ PRESETS = {
 }
 
 
-def preset(name: str) -> dict:
+def preset(name: str, wanted: dict | None = None) -> dict:
+    """A preset's rules. The wanted list isn't part of a preset: pass the one to keep."""
     if name not in PRESETS:
         raise ValueError(f"Unknown preset: {name}")
-    return PRESETS[name][2] or default_rules()
+    rules = dict(PRESETS[name][2] or default_rules())
+    rules["wanted"] = clean_wanted(wanted) if wanted else default_wanted()
+    return rules
 
 
 def _price(v, what):
@@ -120,7 +145,66 @@ def clean(data) -> dict:
     for b in BINS:
         name = str((data.get("names") or {}).get(str(b), "")).strip()[:40]
         names[str(b)] = name or f"Bin {b}"
-    return {"rules": rules, "fallback": _bin(data.get("fallback", 0)), "names": names}
+    return {"rules": rules, "fallback": _bin(data.get("fallback", 0)), "names": names,
+            "wanted": clean_wanted(data.get("wanted"))}
+
+
+def parse_wanted(text) -> list[dict]:
+    """[{name, qty}] from a pasted list or decklist ("4 Lightning Bolt", "1x Sol Ring (C21) 263",
+    section lines...). The maybeboard is left out; the same card twice is added together."""
+    from .decks import parse        # decks imports library, which imports this file
+    found: dict[str, dict] = {}
+    for row in parse(text):
+        if row["section"] == "Maybeboard":
+            continue
+        key = name_key(row["name"])
+        if key in found:
+            found[key]["qty"] += row["qty"]
+        else:
+            found[key] = {"name": row["name"], "qty": row["qty"]}
+    return list(found.values())
+
+
+def clean_wanted(data) -> dict:
+    """The wanted list from the page: {on, bin, only, others, limit, skip_basics, source,
+    cards: [{name, qty}]} or, instead of cards, text (a pasted list)."""
+    w = default_wanted()
+    if not isinstance(data, dict):
+        return w
+    w["on"] = bool(data.get("on", False))
+    w["bin"] = _bin(data.get("bin", w["bin"]))
+    w["others"] = _bin(data.get("others", w["others"]))
+    if 0 in (w["bin"], w["others"]):
+        raise ValueError("Wanted cards go to bin 1, 2 or 3 (bin 0 isn't a real bin)")
+    for k in ("only", "limit", "skip_basics"):
+        if k in data:
+            w[k] = bool(data[k])
+    w["source"] = str(data.get("source") or "").strip()[:80]
+    if data.get("text") is not None:
+        cards = parse_wanted(data["text"])
+    else:
+        cards = []
+        for c in data.get("cards") or []:
+            if not isinstance(c, dict) or not str(c.get("name") or "").strip():
+                continue
+            try:
+                qty = max(1, min(999, int(c.get("qty") or 1)))
+            except (TypeError, ValueError):
+                qty = 1
+            cards.append({"name": str(c["name"]).strip()[:150], "qty": qty})
+    merged: dict[str, dict] = {}
+    for c in cards:
+        key = name_key(c["name"])
+        if key in merged:
+            merged[key]["qty"] = min(999, merged[key]["qty"] + c["qty"])
+        else:
+            merged[key] = dict(c)
+    if len(merged) > MAX_WANTED:
+        raise ValueError(f"The wanted list can have at most {MAX_WANTED} different cards")
+    w["cards"] = list(merged.values())
+    if w["on"] and w["only"] and w["others"] == w["bin"]:
+        raise ValueError(f"Wanted cards: the other cards can't also go to bin {w['bin']}")
+    return w
 
 
 def load() -> dict:
@@ -185,13 +269,64 @@ def fits(rule: dict, card, foil: bool, price) -> bool:
     return True
 
 
-def pick(card, foil: bool, price, rules: dict | None = None) -> tuple[int, str]:
-    """(bin number, bin name) for this card, by the first rule that fits."""
+def wanted_counts(rules: dict) -> dict[str, int]:
+    """{name key: copies wanted} for the wanted list in use (empty when it's off)."""
+    w = rules.get("wanted") or {}
+    if not w.get("on"):
+        return {}
+    out = {}
+    for c in w.get("cards") or []:
+        key = name_key(c["name"])
+        if w.get("skip_basics") and key in BASICS:
+            continue
+        out[key] = out.get(key, 0) + int(c.get("qty") or 1)
+    return out
+
+
+def wanted_for(card, rules: dict, taken: dict | None = None) -> str | None:
+    """The wanted list's key for this card if it should be pulled, else None. With `taken`
+    ({key: copies pulled so far}, a sort run's count) and "limit" on, a card stops being
+    pulled once its listed number of copies has been."""
+    if card is None:
+        return None
+    want = wanted_counts(rules)
+    key = name_key(getattr(card, "name", ""))
+    if key not in want:
+        return None
+    if taken is not None and (rules.get("wanted") or {}).get("limit", True) and taken.get(key, 0) >= want[key]:
+        return None
+    return key
+
+
+def unread_bin(rules: dict) -> int:
+    """Where a card nobody could read goes: the "anything else" bin, unless that's the bin
+    kept for wanted cards (then the bin the other cards go to)."""
+    w = rules.get("wanted") or {}
+    if w.get("on") and w.get("only") and rules["fallback"] == w["bin"] and wanted_counts(rules):
+        return w["others"]
+    return rules["fallback"]
+
+
+def wanted_label(rules: dict) -> str:
+    """The bin label a wanted card is saved with (what the collection and the run show)."""
+    return "Wanted cards"
+
+
+def pick(card, foil: bool, price, rules: dict | None = None, taken: dict | None = None) -> tuple[int, str]:
+    """(bin number, bin name) for this card: a wanted card goes to the wanted bin, any other
+    card by the first rule that fits. `taken`: see wanted_for."""
     rules = rules or load()
+    w = rules.get("wanted") or {}
+    if w.get("on") and wanted_for(card, rules, taken):
+        return w["bin"], wanted_label(rules)
+    bin_no = rules["fallback"]
     for rule in rules["rules"]:
         if fits(rule, card, foil, price):
-            return rule["bin"], rules["names"][str(rule["bin"])]
-    return rules["fallback"], rules["names"][str(rules["fallback"])]
+            bin_no = rule["bin"]
+            break
+    if w.get("on") and w.get("only") and bin_no == w["bin"] and wanted_counts(rules):
+        bin_no = w["others"]        # that bin is kept for the wanted cards
+    return bin_no, rules["names"][str(bin_no)]
 
 
 def names() -> dict:

@@ -19,11 +19,19 @@
     return js;
   }
   const clone = o => JSON.parse(JSON.stringify(o));
-  const dirty = () => JSON.stringify(draft) !== JSON.stringify(saved);
+  // key order can change while editing (the wanted list's text becomes cards), so compare sorted
+  const stable = o => JSON.stringify(o, (k, v) => v && typeof v === "object" && !Array.isArray(v)
+    ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
+  const dirty = () => stable(draft) !== stable(saved);
 
   function take(js, { keepDraft = false, isSaved = false } = {}) {
     info = js;
     if (!keepDraft) draft = clone(js.rules);
+    else if (draft.wanted && draft.wanted.text !== undefined && $("wText").value === draft.wanted.text) {
+      // the server read the pasted list: keep its cards, so Save and Undo compare like with like
+      draft.wanted.cards = clone(js.rules.wanted.cards);
+      delete draft.wanted.text;
+    }
     if (isSaved || !saved) saved = clone(js.rules);
     render();
   }
@@ -34,7 +42,11 @@
   }
   $("presets").onclick = async e => {
     const b = e.target.closest(".preset"); if (!b) return;
-    try { take(await api("/api/bins/preview", { preset: b.dataset.id })); toast("Loaded. Press Save to use it"); }
+    try {
+      const wanted = draft.wanted;      // a preset is only the rules: keep the wanted list
+      take(await api("/api/bins/preview", { preset: b.dataset.id, wanted }));
+      toast("Loaded. Press Save to use it");
+    }
     catch (err) { toast(err.message); }
   };
 
@@ -117,6 +129,61 @@
   };
   $("fallback").onchange = () => { draft.fallback = +$("fallback").value; changed(false); };
 
+  // ---------- wanted cards (checked before the rules) ----------
+  const realBins = () => info.bins.filter(b => b !== 0);
+  const listText = w => (w.cards || []).map(c => `${c.qty} ${c.name}`).join("\n");
+  function renderWanted(full) {
+    const w = draft.wanted, sum = info.wanted || {};
+    $("wantedPanel").classList.toggle("off", !w.on);
+    $("wOn").checked = w.on; $("wOnly").checked = w.only; $("wLimit").checked = w.limit; $("wBasics").checked = w.skip_basics;
+    const opts = sel => realBins().map(b => `<option value="${b}"${b === sel ? " selected" : ""}>Bin ${b} · ${esc(draft.names[b])}</option>`).join("");
+    if (document.activeElement !== $("wBin")) $("wBin").innerHTML = opts(w.bin);
+    if (document.activeElement !== $("wOthers")) $("wOthers").innerHTML = opts(w.others);
+    $("wOthersRow").hidden = !w.only;
+    if (full || (document.activeElement !== $("wText") && w.text === undefined)) $("wText").value = w.text ?? listText(w);
+    $("wSource").textContent = w.source ? `From ${w.source}` : "";
+    const decks = info.decks || [];
+    if ($("wDeck").options.length !== decks.length + 1)
+      $("wDeck").innerHTML = '<option value="">Fill from a deck…</option>' + decks.map(d => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
+    $("wDeck").hidden = !decks.length;
+    $("wWish").hidden = !info.wishlist;
+    const f = $("wFound");
+    if (!sum.cards) { f.innerHTML = w.on ? "The list is empty: add some cards." : ""; return; }
+    const miss = (sum.missing || []).slice(0, 12).map(m => esc(m.qty > 1 ? `${m.qty} ${m.name}` : m.name));
+    f.innerHTML = `<b>${sum.cards.toLocaleString()}</b> card${sum.cards === 1 ? "" : "s"} on the list (${sum.different} different).
+      Your collection already has <b>${sum.found.toLocaleString()}</b> of them.` +
+      (miss.length ? ` Not scanned yet: ${miss.join(", ")}${sum.missing.length > miss.length ? ` and ${sum.missing.length - miss.length} more` : ""}.` : "") +
+      (w.on ? "" : " <b>Turn on Pull wanted cards to use the list.</b>");
+  }
+  const setWanted = (k, v) => { draft.wanted[k] = v; renderWanted(); changed(false); };
+  $("wOn").onchange = () => setWanted("on", $("wOn").checked);
+  $("wOnly").onchange = () => setWanted("only", $("wOnly").checked);
+  $("wLimit").onchange = () => setWanted("limit", $("wLimit").checked);
+  $("wBasics").onchange = () => setWanted("skip_basics", $("wBasics").checked);
+  $("wBin").onchange = () => {
+    const b = +$("wBin").value;
+    if (draft.wanted.others === b) draft.wanted.others = realBins().find(x => x !== b);   // can't be the same bin
+    $("wOthers").innerHTML = ""; setWanted("bin", b);
+  };
+  $("wOthers").onchange = () => setWanted("others", +$("wOthers").value);
+  $("wText").oninput = () => { draft.wanted.text = $("wText").value; changed(false); };
+  function fill(text, source) {
+    Object.assign(draft.wanted, { text, source, on: true });
+    renderWanted(true); changed(false);
+    toast(`Filled from ${source}. Press Save to use it`);
+  }
+  $("wDeck").onchange = async () => {
+    const id = $("wDeck").value; if (!id) return;
+    try { const js = await api("/api/bins/wanted/list", { deck: id }); fill(js.text, js.source); }
+    catch (e) { toast(e.message); }
+    $("wDeck").value = "";
+  };
+  $("wWish").onclick = async () => {
+    try { const js = await api("/api/bins/wanted/list", { wishlist: true }); fill(js.text, js.source); }
+    catch (e) { toast(e.message); }
+  };
+  $("wClear").onclick = () => { Object.assign(draft.wanted, { text: "", source: "" }); renderWanted(true); changed(false); };
+
   // ---------- preview and save ----------
   function changed(rerender) {
     if (rerender) renderRules();
@@ -135,7 +202,7 @@
     $("saveNote").textContent = d ? "Not saved yet. The counts above show what would happen." : info.custom ? "These are your saved rules." : "Using the original price bins from config.py.";
   }
   function render() {
-    renderPresets(); renderBins();
+    renderPresets(); renderBins(); renderWanted();
     // Don't rebuild the rule rows while someone is typing in them (it would lose the cursor).
     if (!$("rules").contains(document.activeElement)) renderRules();
     else $("fallback").innerHTML = binOptions(draft.fallback);
@@ -145,7 +212,7 @@
     try { take(await api("/api/bins", draft), { isSaved: true }); toast("Saved. New scans use these bins"); }
     catch (e) { toast(e.message); }
   };
-  $("undoBtn").onclick = () => { draft = clone(saved); renderRules(); changed(false); };
+  $("undoBtn").onclick = () => { draft = clone(saved); renderRules(); renderWanted(true); changed(false); };
   $("resetBtn").onclick = async () => {
     if (!confirm("Go back to the original price bins? Your rules here are deleted.")) return;
     try { take(await api("/api/bins/reset", {}), { isSaved: true }); toast("Back to the price bins"); }
