@@ -868,3 +868,29 @@ def test_a_card_left_half_out_of_the_slot_does_not_count_as_still_on_the_bed():
     on_bed = empty.copy()
     on_bed[50:150, 20:100] = 230                  # a card really left at the bar
     assert changed_share(empty, on_bed, zone) > config.SORT_GONE_SHARE
+
+
+def test_the_camera_gets_a_moment_after_the_bars_come_back(monkeypatch):
+    """The drop check compares the bed with the bright picture from before the feed; a
+    picture taken while the camera was still exposed for the dimmed bars stopped a run with
+    "still on the bed" on an empty bed (left_share 0.134, 2026-11-08)."""
+    import threading
+    from types import SimpleNamespace
+    from mtgscanner import sort_run
+    from mtgscanner.sort_run import SortRun
+    monkeypatch.setattr(config, "SORT_FOIL_AFTER", 0.0)
+    monkeypatch.setattr(config, "SORT_RECOGNIZE_SECONDS", 0.05)
+    monkeypatch.setattr(config, "SORT_LIGHTS_SETTLE", 0.7)
+
+    class Lights:
+        settings = {"brightness": 100}
+        def update(self, raw):
+            self.settings = {**self.settings, **raw}
+    scanner = SimpleNamespace(lock=threading.Lock(), lights=Lights())
+    run = SortRun(None, scanner, None)
+    monkeypatch.setattr(run, "_read", lambda card, fed_at: None)
+    slept = []
+    real_sleep = time.sleep
+    monkeypatch.setattr(sort_run.time, "sleep", lambda s: slept.append(s) or real_sleep(min(s, 0.01)))
+    run._look({"fed_at": 0.0})
+    assert scanner.lights.settings["brightness"] == 100 and slept[-1] == 0.7
