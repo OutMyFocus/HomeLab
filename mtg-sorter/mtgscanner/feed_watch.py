@@ -268,6 +268,15 @@ class FeedWatcher:
             # it out of the slot. Measured 2026-11-06: the old order dropped the pins 1.4 s
             # after landing, and the card behind caught the landed one meanwhile.
             fed = self.feed_one(speed=speed, backoff=0, settle=0, push=push)
+            retry = getattr(config, "FEED_RETRY_SPEED", None)
+            if fed["result"] in ("none", "stuck") and retry:
+                # The gate held the card part way out (set a hair low, or a sticky new
+                # card): one more push at full power usually gets it through, where the
+                # run used to stop on "nothing came out" (2026-11-08).
+                again = self.feed_one(speed=float(retry), backoff=0, settle=0, push=push)
+                # Still nothing: keep the first answer ("stuck" says more than "none", since
+                # the retry's picture already had the held card in it).
+                fed = (again if again["result"] not in ("none", "stuck") else fed) | {"retried": fed["result"]}
             out = fed | {"bin": bin_no, "dropped": None, "drop_tries": 0}
             if fed["result"] in ("none", "stuck"):
                 return out
