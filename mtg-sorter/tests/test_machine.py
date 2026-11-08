@@ -579,6 +579,25 @@ def test_sort_run_recognizes_saves_and_bins_each_card(watched, quick_sort, db):
     assert len(scanner.session) == 2 and scanner.session[0]["bin"] == 2     # in the collection
 
 
+def test_sort_run_pulls_wanted_cards_into_their_bin(watched, quick_sort, db):
+    """Nic (2026-11-08): put the cards a deck needs into a bin of their own. The rules come
+    with the start (as the server sends them); one copy is wanted, so the second Card 1
+    goes by its price again."""
+    from mtgscanner import sort_rules
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    cams.append(FakeRecognizer(scanner, db.get_card("id1")))     # Card 1, $4.50 -> bin 2 by price
+    rules = {**sort_rules.default_rules(), "wanted": {"on": True, "bin": 3, "only": False, "text": "1 Card 1"}}
+    r = client.post("/api/machine/sort", json={"max_cards": 2, "speed": 0.8, "rules": rules})
+    assert r.status_code == 200, r.get_json()
+    d = wait_sort(client)
+    assert [c["bin"] for c in d["cards"]] == [3, 2], d
+    assert d["cards"][0]["wanted"] and d["cards"][0]["bin_label"] == "Wanted cards"
+    assert "wanted" not in d["cards"][1]
+    assert d["wanted"] == {"bin": 3, "cards": 1, "found": 1, "pulled": ["Card 1"]}
+    assert not sort_rules.is_custom()              # the rules sent weren't saved on the Pi
+
+
 def test_sort_run_puts_a_card_it_cannot_read_in_the_fallback_bin(watched, quick_sort, monkeypatch, db):
     monkeypatch.setattr(config, "SORT_DROP_UNREAD", True)      # the old way: no waiting
     monkeypatch.setattr(config, "SORT_RECOGNIZE_SECONDS", 0.4)

@@ -40,6 +40,32 @@
 
     <section class="bin-cards" id="binCards"></section>
 
+    <section class="panel wanted-panel" id="wantedPanel">
+      <div class="panel-head"><h3>Wanted cards</h3><span class="sub">Checked before the rules</span></div>
+      <p class="sub">Pull specific cards out of your bulk, like the ones a deck needs. A card on this list goes into the
+        bin you pick, whatever it's worth. Paste a list (one card per line, like 4 Lightning Bolt) or fill it from a deck.</p>
+      <label class="switch"><input type="checkbox" id="wOn"><span></span><b>Pull wanted cards</b></label>
+      <div class="wanted-grid">
+        <div class="wanted-list">
+          <div class="wanted-fill">
+            <select class="field" id="wDeck" aria-label="Fill from a deck"><option value="">Fill from a deck…</option></select>
+            <button class="btn ghost" id="wWish" type="button">Fill from my wishlist</button>
+            <button class="btn ghost" id="wClear" type="button">Clear the list</button>
+          </div>
+          <textarea class="field" id="wText" spellcheck="false" placeholder="1 Sol Ring&#10;4 Lightning Bolt&#10;1 Fire // Ice"></textarea>
+          <span class="sub" id="wSource"></span>
+        </div>
+        <div class="wanted-opts">
+          <label>Wanted cards go to <select class="field" id="wBin"></select></label>
+          <label class="switch"><input type="checkbox" id="wOnly"><span></span>Only wanted cards in that bin</label>
+          <label class="w-others" id="wOthersRow">Cards the rules would put there go to <select class="field" id="wOthers"></select></label>
+          <label class="switch"><input type="checkbox" id="wLimit"><span></span>Stop at the number of copies listed</label>
+          <label class="switch"><input type="checkbox" id="wBasics"><span></span>Skip basic lands</label>
+          <div class="wanted-found" id="wFound"></div>
+        </div>
+      </div>
+    </section>
+
     <section class="panel rules">
       <div class="panel-head"><h3>Rules</h3><span class="sub">First match wins</span></div>
       <div id="rules"></div>
