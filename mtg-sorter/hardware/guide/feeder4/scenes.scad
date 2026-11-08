@@ -1,6 +1,7 @@
 // Pieces for the feeder box v4 pictures (render.py exports each `what` as an STL).
 include <../../bed_chute.scad>
 use <../../feeder4.scad>
+use <../../enclosure.scad>
 use <../../feeder.scad>
 part = "none";
 what = "stand";
@@ -30,6 +31,8 @@ module piece() {
     if (what == "p_shoe") rotate([-90, 0, 0]) shoe4();
     if (what == "p_roller") translate([0, 0, 20.5]) rotate([0, 90, 0]) roller4_body();
     if (what == "flatbed") bed_plate3();
+    if (what == "tower") tower();
+    if (what == "deck") intersection() { union() for (xi = [0, 1], yi = [0, 1]) deck_tile(xi, yi); translate([-70, 120, 0]) cube([140, 150, 400]); }
 }
 yslice = false;     // true: only a 3 mm slab across the box at y 40 (the foot and ridge section)
 if (slice) intersection() { piece(); translate([14.75, -200, -10]) cube([4, 600, 600]); }

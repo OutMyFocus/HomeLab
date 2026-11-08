@@ -67,6 +67,7 @@ a card leaving along the bed's slope. The bed plate is cut short here by the whe
 | 3 | `feeder4_shoe4` and `feeder4_roller4` | black (any) | **100 % infill** (already set): the shoe's weight is what presses the pads |
 | 4 | `bed_chute_bed_plate3`, the scan bed v3.1 | **white** | the same v3.1 plate with **two wheel slots** at its back edge |
 | 5 | `bed_chute_stop_gate3`, the v3.2 stop bar | black | only if you haven't printed it yet |
+| 6 | `enc_tower`, the hopper tower, open at the front | black | brim; only if you fit the tower (see below) |
 
 ![parts as printed](img/feeder4/feeder4_parts.png)
 
@@ -77,6 +78,18 @@ If you've already printed the v3.1 plate, you can cut the two slots yourself: 7.
 16.75 mm either side of the middle, 16 mm long from the back edge, right through.
 
 ![the wheel slots in the bed plate](img/feeder4/bed3_wheel_slots.png)
+
+### The hopper tower is open at the front now
+
+The enclosure's hopper tower (the shroud that stands on the deck round the hopper) had its front wall
+exactly where the box's front is. With the tower on, that wall sat on the old box's gate and pressed
+it onto the wheels, so the motor hummed and stopped. On v4 it would sit on the shoe and do the same.
+The tower is now cut away in front of the hopper, corners included, so nothing on the deck touches
+the box or the shoe. The lid still sits on top, 4 mm over the shoe, so the shoe can rise freely.
+If you've printed the old tower, saw its front wall off flush with the side walls' straight part,
+or reprint plate 6.
+
+![the hopper tower (see-through) on the deck, open at the front](img/feeder4/feeder4_tower_open.png)
 
 ## What else you need
 
@@ -127,14 +140,13 @@ stand; the stand against the bed plate, both bed side walls, the tilt bracket, t
 the stop bar; the hopper against the bed and its walls; the shoe against the bed (also when it drops
 to the bottom of its slots with no roller in) and the hopper; the motor against the bed (0.8 mm
 clear) and the stand; a card on its way out against the bed, hopper and shoe; and the stand (with its
-foot over the fence) against the bridge's fence and plate. As a sanity check, the stand moved 1 mm
+foot over the fence) against the bridge's fence and plate; and the hopper tower and its lid against the
+stand, hopper and shoe (also with the shoe lifted 1.5 mm). As a sanity check, the stand moved 1 mm
 forward does hit the fence (`check.py stand_slid`).
 
 ## Limits
 
 - Unsleeved cards only, like the v3 bed (the hopper is 67 mm inside, the bed channel 65).
-- The enclosure's hopper **tower** has a front wall where the hopper's front is (the old box had the
-  same clash). If you fit the tower, its front wall has to be cut away in front of the hopper.
 - Not printed or tested yet: the cork, the coin count and the landing zone may need a first run to
   settle.
 
@@ -143,6 +155,8 @@ forward does hit the fence (`check.py stand_slid`).
     for p in stand4 hopper4 shoe4 roller4; do openscad -o stl/feeder4_$p.stl -D "part=\"$p\"" feeder4.scad; done
     openscad -o stl/bed_chute_bed_plate3.stl -D 'part="bed_plate3"' bed_chute.scad
     python3 guide/feeder4/stl2bin.py stl/feeder4_*.stl stl/bed_chute_bed_plate3.stl   # OpenSCAD 2021 writes text STLs
+    openscad --export-format binstl -o stl/enc_tower.stl -D 'epart="tower"' enclosure.scad   # the open-front tower
     python3 bambu/make_small_projects.py MTG_Sorter_Feeder_Box_v4.3mf MTG_Sorter_Scan_Bed_v3.3mf
+    python3 bambu/make_project.py                                               # the enclosure (tower on plate 10)
     python3 guide/feeder4/check.py
     python3 guide/feeder4/render.py
