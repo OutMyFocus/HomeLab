@@ -418,7 +418,7 @@ def test_side_bin_tray_rocks_half_way_back_and_tilts_again(client, logged, quick
     monkeypatch.setattr(logged, "set_angle", lambda ch, a: (angles.append((ch, a)), real(ch, a)))
     client.post("/api/machine/drop", json={"bin": 1})
     tilts = [x for x in moves(logged) if x == ("chute", "left")]
-    assert len(tilts) >= 3                              # the tilt, then two more
+    assert len(tilts) >= 2                              # the tilt, then settling back on it after the shakes
     half = round(positions["centre"] + (positions["left"] - positions["centre"]) / 2, 1)
     assert [a for ch, a in angles if ch == channel].count(half) == 2
     # each shake tilts further than the saved tilt (Nic: a bigger angle when it shakes)
