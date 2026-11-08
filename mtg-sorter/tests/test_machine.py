@@ -894,3 +894,16 @@ def test_the_camera_gets_a_moment_after_the_bars_come_back(monkeypatch):
     monkeypatch.setattr(sort_run.time, "sleep", lambda s: slept.append(s) or real_sleep(min(s, 0.01)))
     run._look({"fed_at": 0.0})
     assert scanner.lights.settings["brightness"] == 100 and slept[-1] == 0.7
+
+
+def test_sort_one_pushes_again_at_full_power_when_nothing_came(watched, quick_sort, monkeypatch):
+    """Nic, 2026-11-08: "the motor can't put the card out all the time" (the gate a hair
+    low held it part way). A feed that brings nothing gets one more push at
+    FEED_RETRY_SPEED before it counts as empty."""
+    monkeypatch.setattr(config, "FEED_MAX_SECONDS", 0.3)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=20, card_stays=False))   # needs more than one push
+    out = client.post("/api/machine/sort_one", json={"bin": 1}).get_json()
+    assert out["result"] == "landed" and out["retried"] == "none", out
+    speeds = [c for c in machine._motor.calls if c[0] == "forward"]
+    assert speeds and speeds[-1][1] == pytest.approx(config.FEED_RETRY_SPEED)

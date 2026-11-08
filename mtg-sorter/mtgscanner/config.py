@@ -174,6 +174,9 @@ FEED_SETTLE_SECONDS = 0.8    # then wait this long to see where it came to rest
 # passes them), goes back into the hopper instead of hanging over the landed card and
 # pinning it on the bed. Seen in the 2026-11-05 camera tests. 0 turns it off.
 FEED_BACKOFF_SECONDS = 0.25
+# A feed that brings nothing to the bed (or leaves a card held in the slot) gets one more
+# push at this speed before the sort run counts it as empty. None turns it off.
+FEED_RETRY_SPEED = 1.0
 # Before that back-off, the wheels keep pushing forwards this long after the camera saw
 # the card land, so the card's tail clears the gate and the card is free on the bed: a
 # card stopped with its tail still under the gate stays short of the stop pins, and a
