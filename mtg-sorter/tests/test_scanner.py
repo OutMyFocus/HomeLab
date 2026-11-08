@@ -338,3 +338,28 @@ def test_auto_straighten_waits_for_the_bed_to_be_clear(db, monkeypatch, tmp_path
     scanner.tracks = []
     scanner.turn()
     assert scanner.straight == new and app_module.load_settings()["straight"] == new
+
+
+def test_auto_straighten_takes_one_sample_per_card(db, monkeypatch, tmp_path):
+    """A card sitting on the bed is recognized over and over; it must count once, or one
+    card (with its own skew) sets the whole picture (seen on the Pi, 2026-11-08)."""
+    import app as app_module
+    from types import SimpleNamespace
+    from app import Scanner
+    from mtgscanner.tracking import Track
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    scanner = Scanner(db, None, source=None)
+    scanner.auto_straight = True
+    monkeypatch.setattr(scanner, "_keep_scan", lambda *a, **k: None)
+    frame = np.zeros((1600, 1080, 3), np.uint8)
+    corners = _camera_quad((540, 900), 0)
+    card = SimpleNamespace(id="x")
+    result = SimpleNamespace(card=card, corners=corners, distance=5, margin=20,
+                             confidence="sure", candidates=[])
+    t = Track(id=1, number=1, corners=corners)
+    for _ in range(6):
+        try:
+            scanner._update(t, [corners], result, frame)
+        except Exception:
+            pass                       # only the sampling matters here
+    assert len(scanner._auto_straight.samples) == 1
