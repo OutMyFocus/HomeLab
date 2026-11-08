@@ -67,6 +67,19 @@
 .rule .tools button { width: 30px; height: 30px; }
 .rule .tools svg { width: 15px; height: 15px; }
 .rules-foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.wanted-panel { padding: var(--pad); display: grid; gap: 12px; }
+.wanted-panel > p { margin: 0; max-width: 75ch; }
+.wanted-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
+.wanted-list { display: grid; gap: 8px; align-content: start; }
+.wanted-fill { display: flex; flex-wrap: wrap; gap: 8px; }
+.wanted-fill .field { padding: 7px 10px; max-width: 100%; }
+.wanted-panel textarea { min-height: 180px; resize: vertical; padding: 10px 12px; font-family: var(--mono); font-size: .86rem; line-height: 1.5; width: 100%; box-sizing: border-box; }
+.wanted-opts { display: grid; gap: 10px; align-content: start; font-size: .92rem; }
+.wanted-opts .field { padding: 6px 8px; }
+.wanted-opts .w-others { color: var(--muted); padding-left: 48px; }
+.wanted-found { font-size: .88rem; color: var(--muted); line-height: 1.45; }
+.wanted-found b { color: var(--text); }
+.wanted-panel.off .wanted-grid { opacity: .55; }
 .save-bar { position: sticky; bottom: 12px; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; padding: 12px var(--pad); }
 .save-bar .sub { margin-right: auto; }
 .save-bar .err { color: var(--bad); margin-right: auto; font-size: .9rem; }
@@ -76,6 +89,8 @@
   .bin-cards { grid-template-columns: 1fr 1fr; }
   .rule { grid-template-columns: minmax(0, 1fr); }
   .rule .no { display: none; }
+  .wanted-grid { grid-template-columns: minmax(0, 1fr); }
+  .wanted-opts .w-others { padding-left: 0; }
 }
 @media (max-width: 600px) {
   .deck-acts .btn { flex: 1 1 auto; }

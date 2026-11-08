@@ -166,6 +166,19 @@ def test_the_servers_machine_page_moves_the_pi(db, pi):  # noqa: F811
     assert server.post("/api/machine/move", json={"part": "nope", "position": "x"}).status_code == 400
 
 
+def test_the_server_sends_its_bins_rules_when_it_starts_a_sort(db, pi, monkeypatch):  # noqa: F811
+    """The wanted list is made on the server's Bins page; the Pi sorts by it."""
+    from mtgscanner import sort_rules
+    _, pi_client = pi
+    remote, server = server_with(db, pi_client)
+    sent = []
+    monkeypatch.setattr(remote, "sort_start", lambda body: sent.append(body) or {"running": True})
+    sort_rules.save({**sort_rules.default_rules(), "wanted": {"on": True, "text": "4 Lightning Bolt"}})
+    assert server.post("/api/machine/sort", json={"max_cards": 5}).status_code == 200
+    assert sent[0]["max_cards"] == 5 and sent[0]["rules"]["wanted"]["cards"] == [{"name": "Lightning Bolt", "qty": 4}]
+    sort_rules.reset()
+
+
 def test_an_unreachable_pi_is_explained(db, data):  # noqa: F811
     remote = RemoteMachine("http://10.0.0.247:5000")
 
