@@ -40,6 +40,17 @@ The camera tests showed three things:
 
 ![the stand in the bridge's outline (orange), from above](img/feeder4/feeder4_fence_fit.png)
 
+6. **It's locked down, so the motor can't drag it.** In testing, the whole old box, cards and all,
+   slid forward when the motor ran. The outline on the bridge is only a 2 mm ridge, and a box that
+   sits on it or tips over it can slide. The v4 stand's foot closes over the ridge: a skirt runs
+   outside it and a roof over its top, joined to the stand's walls, so the stand can't slide or tip
+   off it any way. It only lifts straight up. The hopper doesn't sit on four small pegs any more.
+   A ridge runs all along the top of the stand's side and back walls and fits a groove under the
+   hopper's floor, so the hopper can't slide on the stand either.
+
+![the stand's foot over the bridge's outline ridge (orange), cut across](img/feeder4/feeder4_foot_lock.png)
+![the stand's ridge in the groove under the hopper, cut across](img/feeder4/feeder4_ridge_lock.png)
+
 ![side section through a wheel](img/feeder4/feeder4_side_section.png)
 
 *Section through the right wheel: the stack (right), the shoe with its cork pad on the wheel, and
@@ -89,8 +100,10 @@ If you've already printed the v3.1 plate, you can cut the two slots yourself: 7.
    channel until it holds the gearbox snug.
 4. Slide the new bed plate in (the slots at its back edge go under the wheels). Turn the roller by
    hand: the wheels should spin freely in the slots.
-5. Drop the stand into the bridge's outline, with the wires out through the back.
-6. Put the hopper on the stand's four pegs.
+5. Lower the stand straight down over the bridge's outline, with the wires out through the back.
+   Its foot drops over the ridge: it should sit flat and not slide when you push it.
+6. Lower the hopper onto the stand so the ridge on the stand's walls goes into the groove under
+   the hopper's floor.
 7. Lower the shoe down the two slots at the front of the hopper, pads first, until it rests on the
    wheels. It should slide freely. Lift it with the finger hole.
 8. Load the cards against the shoe and put the weight on top.
@@ -113,8 +126,9 @@ the wheels (with 0.3 mm to spare) against the bed plate, stand, hopper and shoe;
 stand; the stand against the bed plate, both bed side walls, the tilt bracket, the gate bearing and
 the stop bar; the hopper against the bed and its walls; the shoe against the bed (also when it drops
 to the bottom of its slots with no roller in) and the hopper; the motor against the bed (0.8 mm
-clear) and the stand; a card on its way out against the bed, hopper and shoe; and the stand against
-the bridge's fence.
+clear) and the stand; a card on its way out against the bed, hopper and shoe; and the stand (with its
+foot over the fence) against the bridge's fence and plate. As a sanity check, the stand moved 1 mm
+forward does hit the fence (`check.py stand_slid`).
 
 ## Limits
 

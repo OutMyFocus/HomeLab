@@ -23,6 +23,9 @@
 //      comes out at the bed's own 20°, 0.8 mm above the PTFE tape lands: no drop, no bend, nothing
 //      to catch on. The cheeks guide it straight into the bed's centring funnel.
 //   4. The last cards feed too: the shoe presses them onto the wheels even when the stack is gone.
+//   5. It can't move: the stand's foot closes over the bridge's 2 mm outline ridge (skirt + roof), and
+//      the hopper sits on a ridge along the stand's walls in a groove under its floor. (The motor
+//      dragged the whole old box forward.)
 //
 // Parts (set `part`, F6, F7). All print without supports, as exported (stl/feeder4_*.stl):
 //   stand4    box on the bridge, holds the roller and motor (replaces the v2 stand and arm)
@@ -65,6 +68,14 @@ stand_y0 = fence_yc - stand_l / 2;        // -32.5
 stand_y1 = stand_y0 + stand_l;            // 94.5
 stand_wall = 2.75;                        // inside stays x +-33.25
 foot_ch = 0.8;
+// The fence itself is a 2 mm wall, 2 mm tall. The motor's pull could tip the old box over it and slide
+// it forward, so the v4 foot closes over it: a skirt outside the fence and a roof over its top join the
+// stand's walls, so the box can only come out straight up.
+fence_t = 2;  fence_h = 2;
+skirt_gap = 0.4;  skirt_t = 1.6;  roof_z = [fence_h + 0.4, fence_h + 2];
+// The hopper sits on a ridge that runs along the top of the stand's side and back walls, in a groove
+// under its floor (the hopper locks onto it; replaces v2's four 2 mm pegs), so it can't slide on the stand either.
+ridge_w = 1.4;  ridge_h = 2.4;  groove_c = 0.3;
 
 // --- Roller (same O-rings as v2: 3 mm cord over a 23 mm groove) --------------------------------
 oring = 3;  groove_root = 23;
@@ -169,7 +180,10 @@ module stand4() {
                 }
                 rbox([-sw + stand_wall, stand_y0 + stand_wall, -1], [stand_w - 2 * stand_wall, stand_l - 2 * stand_wall, stand_h + 2]);
             }
-            for (x = [-1, 1], y = [6, 86]) translate([x * (sw - stand_wall / 2), y, stand_h]) cylinder(d = 2, h = 2.5);
+            // the foot that closes over the bridge's fence: skirt outside it, roof over it
+            foot_cap();
+            // the ridge the hopper sits on (sides and back; the right side starts behind the motor slot)
+            ridge();
             // left bearing block for the roller's stub, 45° underneath so it prints without support
             bw = sw - stand_wall + 0.01 - 21;
             hull() {
@@ -203,6 +217,28 @@ module stand4() {
     }
 }
 
+module foot_cap() {
+    fo = [fence[0] + 2 * fence_t, fence[1] + 2 * fence_t];      // the fence's outside, 77.6 x 132.6
+    si = [fo[0] + 2 * skirt_gap, fo[1] + 2 * skirt_gap];
+    so = [si[0] + 2 * skirt_t, si[1] + 2 * skirt_t];             // 81.6 x 136.6
+    translate([0, fence_yc, 0]) difference() {
+        hull() {
+            translate([0, 0, 0.5]) linear_extrude(roof_z[1] - 0.5) square(so, center = true);
+            linear_extrude(0.01) square([so[0] - 1, so[1] - 1], center = true);
+        }
+        translate([0, 0, -1]) linear_extrude(roof_z[0] + 1) square(si, center = true);
+        translate([0, 0, -1]) linear_extrude(roof_z[1] + 2) square([stand_w - 2 * stand_wall, stand_l - 2 * stand_wall], center = true);
+    }
+}
+ridge_x = stand_w / 2 - stand_wall / 2;          // 34.6, the middle of the side walls
+ridge_yb = stand_y1 - stand_wall / 2;            // 93.1, the middle of the back wall
+ridge_y0 = [2, wc[0] + n20_w / 2 + 2];           // left / right side start (in front: the stand is cut under the bed)
+module ridge(c = 0, h = ridge_h) {
+    for (i = [0, 1]) let (x = i == 0 ? -ridge_x : ridge_x)
+        rbox([x - ridge_w / 2 - c, ridge_y0[i] - c, stand_h - 0.01], [ridge_w + 2 * c, ridge_yb - ridge_y0[i] + ridge_w / 2 + 2 * c, h]);
+    rbox([-ridge_x - ridge_w / 2 - c, ridge_yb - ridge_w / 2 - c, stand_h - 0.01], [2 * ridge_x + ridge_w + 2 * c, ridge_w + 2 * c, h]);
+}
+
 // ============================ HOPPER ==========================================
 // Floor, side walls and back. Its front wall is the shoe, which drops into the two slots at the
 // front of the side walls.
@@ -225,8 +261,8 @@ module hopper4() {
         translate([0, 0, z0 + floor_t]) rotate([45, 0, 0]) cube([2 * out_w, 1.6, 1.6], center = true);
         // the shoe slots, open at the top
         for (m = [0, 1]) mirror([m, 0, 0]) rbox([in_w / 2 - 1, slot_y[0], slot_bot], [slot_x1 - in_w / 2 + 1, slot_y[1] - slot_y[0], 100]);
-        // pegs from the stand
-        for (x = [-1, 1], y = [6, 86]) translate([x * (stand_w / 2 - stand_wall / 2), y, z0 - 1]) cylinder(d = 2.4, h = 4);
+        // the groove for the stand's ridge
+        ridge(groove_c, ridge_h + 0.4);
         // thumb notch in the back wall, to lift the weight out
         translate([0, in_l - 1, floor_top + hopper_h]) rotate([-90, 0, 0]) cylinder(r = 15, h = wall + 2);
     }
