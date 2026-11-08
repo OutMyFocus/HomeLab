@@ -15,6 +15,7 @@ W = os.path.join(HERE, "w")
 PIECES = ["bed", "walls", "gate", "stand", "hopper", "shoe", "pads", "roller", "motor", "stack", "card", "weight",
           "fence", "bridge", "p_stand", "p_hopper", "p_shoe", "p_roller", "flatbed"]
 SLICED = ["bed", "stand", "hopper", "shoe", "pads", "roller", "stack", "card"]
+YSLICED = ["stand", "hopper", "fence", "bridge"]
 C = dict(bed="#f4f4f4", flatbed="#f4f4f4", walls="#2b2b2b", gate="#e8772e", stand="#3a3f47", hopper="#5a6068",
          shoe="#2b2b2b", pads="#b07a43", roller="#f08c1a", motor="#b8bcc2", stack="#d8c9a3", card="#c9a46a",
          weight="#2b2b2b", fence="#e8772e", bridge="#2c3036", p_stand="#3a3f47", p_hopper="#5a6068",
@@ -23,17 +24,18 @@ C = dict(bed="#f4f4f4", flatbed="#f4f4f4", walls="#2b2b2b", gate="#e8772e", stan
 
 def export():
     os.makedirs(W, exist_ok=True)
-    jobs = [(p, False) for p in PIECES] + [(p, True) for p in SLICED]
+    jobs = [(p, "") for p in PIECES] + [(p, "_s") for p in SLICED] + [(p, "_y") for p in YSLICED]
     def run(j):
         p, s = j
-        subprocess.run(["openscad", "-q", "-o", os.path.join(W, p + ("_s" if s else "") + ".stl"), "-D", f'what="{p}"',
-                        "-D", f"slice={'true' if s else 'false'}", os.path.join(HERE, "scenes.scad")], check=True)
+        subprocess.run(["openscad", "-q", "-o", os.path.join(W, p + s + ".stl"), "-D", f'what="{p}"',
+                        "-D", f"slice={'true' if s == '_s' else 'false'}", "-D", f"yslice={'true' if s == '_y' else 'false'}",
+                        os.path.join(HERE, "scenes.scad")], check=True)
     with ThreadPoolExecutor(6) as ex:
         list(ex.map(run, jobs))
 
 
 def m(name, **kw):
-    d = {"file": f"w/{name}.stl", "color": C[name[:-2] if name.endswith("_s") else name]}
+    d = {"file": f"w/{name}.stl", "color": C[name[:-2] if name[-2:] in ("_s", "_y") else name]}
     d.update(kw)
     return d
 
@@ -49,6 +51,12 @@ jobs = [
     ({"meshes": [m("bed_s"), m("stand_s", opacity=0.5), m("hopper_s"), m("shoe_s"), m("pads_s"), m("roller_s"),
                  m("stack_s"), m("card_s")],
       "eye": [560, 140, 205], "ctr": [16, 140, 205], "fov": 14}, "feeder4_side_section.png"),
+    # the foot and the ridge, cut across the box: the stand's foot closes over the bridge's fence,
+    # the hopper's groove sits on the stand's ridge
+    ({"meshes": [m("bridge_y"), m("fence_y"), m("stand_y"), m("hopper_y")],
+      "eye": [-37, -400, 113], "ctr": [-37, 190, 113], "fov": 1.6, "w": 1200, "h": 900}, "feeder4_foot_lock.png"),
+    ({"meshes": [m("stand_y"), m("hopper_y")],
+      "eye": [-35, -400, 204], "ctr": [-35, 190, 204], "fov": 1.6, "w": 1200, "h": 900}, "feeder4_ridge_lock.png"),
     # the mouth from the front and below: shoe, pads, wheels in the bed's slots
     ({"meshes": [m("bed"), m("stand"), m("roller"), m("motor"), m("hopper", opacity=0.35), m("shoe"), m("pads")],
       "eye": [90, 30, 250], "ctr": [0, 150, 205], "fov": 26}, "feeder4_mouth.png"),

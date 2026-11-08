@@ -31,5 +31,7 @@ module piece() {
     if (what == "p_roller") translate([0, 0, 20.5]) rotate([0, 90, 0]) roller4_body();
     if (what == "flatbed") bed_plate3();
 }
+yslice = false;     // true: only a 3 mm slab across the box at y 40 (the foot and ridge section)
 if (slice) intersection() { piece(); translate([14.75, -200, -10]) cube([4, 600, 600]); }
+else if (yslice) intersection() { piece(); translate([-100, 188.5, -10]) cube([200, 3, 600]); }
 else piece();
