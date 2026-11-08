@@ -11,6 +11,8 @@ writes, next to this script:
   MTG_Sorter_Scan_Bed_v3.3mf         scan bed v3 plate (steeper, centring channel, ribs), the
                                      all-plastic hopper weight and the one-bar stop gate
   MTG_Sorter_DC_Jack_Holder.3mf      holder + bezel for the servo-power barrel jack (dc_jack_holder.scad)
+  MTG_Sorter_Feeder_Box_v4.3mf       feeder box v4 (feeder4.scad): stand, hopper, separator shoe, roller,
+                                     and the scan bed v3.1 plate with the wheel slots
 
   python3 make_small_projects.py MTG_Sorter_DC_Jack_Holder.3mf   builds just that one
 
@@ -49,6 +51,10 @@ mp.PER_PART.update({
                              "ironing_type": "top", "ironing_flow": "15%", "ironing_spacing": "0.1", "ironing_speed": "20"},
     "feeder_weight_solid": SOLID,
     "bed_chute_stop_gate3": STRUCTURAL,
+    "feeder4_stand4": TALL,
+    "feeder4_hopper4": TALL,
+    "feeder4_shoe4": SOLID,       # its weight is what presses the pads on the wheels
+    "feeder4_roller4": SOLID,
 })
 
 PROJECTS = {
@@ -71,6 +77,13 @@ PROJECTS = {
         ("1 Scan bed v3 plate (WHITE)", ["bed_chute_bed_plate3"]),
         ("2 Solid hopper weight (any colour, 100% infill)", ["feeder_weight_solid"]),
         ("3 Stop bar, replaces the four-tooth stop gate (black)", ["bed_chute_stop_gate3"]),
+    ],
+    "MTG_Sorter_Feeder_Box_v4.3mf": [
+        ("1 Feeder stand v4 (black, brim)", ["feeder4_stand4"]),
+        ("2 Feeder hopper v4 (black, brim)", ["feeder4_hopper4"]),
+        ("3 Separator shoe and roller (100% infill)", ["feeder4_shoe4", "feeder4_roller4"]),
+        ("4 Scan bed v3.1 plate with wheel slots (WHITE)", ["bed_chute_bed_plate3"]),
+        ("5 Stop bar v3.2 (black), if not printed yet", ["bed_chute_stop_gate3"]),
     ],
     "MTG_Sorter_DC_Jack_Holder.3mf": [
         ("1 DC jack holder and bezel (black)", ["dc_jack_holder", "dc_jack_bezel"]),

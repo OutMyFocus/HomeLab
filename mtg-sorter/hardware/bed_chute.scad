@@ -192,6 +192,11 @@ bp3_wedge_half = bp3_top_half + bp3_wall_t + 0.5;
 // x is seen from the camera with the bed's front edge (the stop) at the bottom, right = +x (the
 // camera tower side). A 75.5 x 40 mm rectangle, 0.8 mm under the card's face (the lands).
 bp3_mk_x = 37.75;  bp3_mk_u = [10, 50];  bp3_mk_w = 5;  bp3_mk_d = 0.4;
+// Feeder box v4 (feeder4.scad): its wheels sit right at the hopper's mouth and reach down past the
+// back edge of this plate, so the plate has a slot for each, between the lands (x 13 .. 20.5, from
+// s 84 to the back edge). The card rides on the lands and never touches them.
+bp3_wheel_slots = true;
+bp3_ws_x = [12.95, 20.55];  bp3_ws_s = 84;
 
 function bp3_n(s) = s <= bp3_crest ? bp3_lift + s * tan(bp3_extra) : max(0, bp3_rise - (s - bp3_crest));
 function bp3_wx(s) = s <= bp3_pocket ? bp3_half
@@ -226,6 +231,8 @@ module bed_plate3() {
                 for (x = [for (r = bp3_rib_x) if (r > 0) r], r = rib_s) hull() { bp3_rib_slab(x, r[0], r[2]); bp3_rib_slab(x, r[1], r[3]); }
             }
         }
+        if (bp3_wheel_slots) for (m = [0, 1]) mirror([m, 0, 0])
+            translate([bp3_ws_x[0], bp3_ws_s, -bed_t - 1]) cube([bp3_ws_x[1] - bp3_ws_x[0], bed_len, 20]);
         // camera marker pockets (for 5 mm printed ArUco stickers), in the wedge's own surface so they
         // lie in the card's plane, beside the channel walls
         for (x = [-bp3_mk_x, bp3_mk_x], u = bp3_mk_u) rotate([bp3_extra, 0, 0])
