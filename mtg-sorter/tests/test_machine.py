@@ -400,6 +400,9 @@ def test_drop_to_a_side_bin_drops_the_pins_before_tilting(client, logged, quick_
     m = moves(logged)
     assert m[:2] == [("chute", "centre"), ("pins", "down")]
     assert ("chute", "right") in m and m.index(("chute", "right")) > m.index(("pins", "down"))
+    # the pins go back up before the tray tilts, so the card can't catch on the bar (Nic)
+    tilt = m.index(("chute", "right"))
+    assert ("pins", "up") in m[m.index(("pins", "down")):tilt]
     assert not any(part.startswith("door") for part, _ in m)
     assert m[-2:] == [("chute", "centre"), ("pins", "up")]
     assert client.post("/api/machine/drop", json={"bin": 7}).status_code == 400
@@ -415,10 +418,22 @@ def test_side_bin_tray_rocks_half_way_back_and_tilts_again(client, logged, quick
     monkeypatch.setattr(logged, "set_angle", lambda ch, a: (angles.append((ch, a)), real(ch, a)))
     client.post("/api/machine/drop", json={"bin": 1})
     tilts = [x for x in moves(logged) if x == ("chute", "left")]
-    assert len(tilts) >= 3                              # the tilt, then two more
+    assert len(tilts) >= 2                              # the tilt, then settling back on it after the shakes
     half = round(positions["centre"] + (positions["left"] - positions["centre"]) / 2, 1)
     assert [a for ch, a in angles if ch == channel].count(half) == 2
+    # each shake tilts further than the saved tilt (Nic: a bigger angle when it shakes)
+    side = 1 if positions["left"] >= positions["centre"] else -1
+    deeper = round(positions["left"] + side * config.SORT_SHAKE_EXTRA, 1)
+    assert [a for ch, a in angles if ch == channel].count(deeper) == 2
     assert moves(logged)[-2:] == [("chute", "centre"), ("pins", "up")]
+
+
+def test_door_bin_keeps_the_pins_down_while_the_doors_open(client, logged, quick_sort):
+    """Only a side tilt raises the pins first; through the trapdoors the card just falls."""
+    client.post("/api/machine/drop", json={"bin": 2})
+    m = moves(logged)
+    opened = m.index(("door_r", "open"))
+    assert ("pins", "up") not in m[m.index(("pins", "down")):opened]
 
 
 def test_sort_one_feeds_then_drops_and_sees_the_bed_clear(watched, quick_sort):
