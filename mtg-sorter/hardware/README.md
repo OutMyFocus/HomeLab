@@ -24,6 +24,11 @@ and a thumb screw, and a weight sits on the stack. See [MECHANISM_V2.md](MECHANI
 everything prints from `bambu/MTG_Sorter_Feeder_And_Bed_v2.3mf`. The STLs below are the v2
 parts. `feeder_test.scad` is the first test rig, kept for reference.
 
+**v4 (feeder4.scad), the one to build now:** wheels right at the mouth on fixed bearings, a
+self-setting separator shoe with cork pads over the wheels instead of the gap gate, and the card
+leaves along the bed's 20°. See [FEEDER_V4.md](FEEDER_V4.md); everything prints from
+`bambu/MTG_Sorter_Feeder_Box_v4.3mf`.
+
 | File | Print | Notes |
 |---|---|---|
 | `stl/feeder_stand_mid.stl` | as it opens, brim | The box underneath. The arm hinges inside it on two M3 screws, and the motor sticks out through the right wall. 96 mm, with its front cut away under the sloped bed |
