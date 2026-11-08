@@ -53,6 +53,10 @@ print (24°) still stopped cards: at the entrance, and anywhere on the slope.
 ![card on the plate, seen from the camera](img/bed3/bed3_top_with_card.png)
 ![side section at x = 18: old bed grey, new white, hopper floor at the top](img/bed3/bed3_side_section.png)
 
+**Wheel slots (2026-11-08):** with the feeder box v4 ([FEEDER_V4.md](FEEDER_V4.md)) the plate has a
+7.6 mm slot for each feeder wheel at its back edge, between the tape lands (x 12.95 to 20.55 either
+side, the last 16 mm). The v2 feeder doesn't need them and doesn't mind them.
+
 ## Fitting
 
 1. Pins down (Machine page), then slide the old plate forward out of the wall grooves.
