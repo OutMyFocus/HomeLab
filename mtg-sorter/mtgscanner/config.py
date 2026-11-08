@@ -86,6 +86,11 @@ STREAM_PREVIEW_QUALITY = 70
 # suits a camera close to the card, like the scan station. A camera high above a
 # table sees each card at about 1-2% of the picture, so it needs a lower number.
 MIN_CARD_AREA = 0.01
+# "Whole cards only" (the scan bed's camera, app.py): the smallest card becomes this
+# share of the card on the bed. Measured on the Pi (2026-11-08): a whole card at the bar
+# is 0.36-0.39 of the picture, its art box or half of it 0.18-0.26, the text box 0.04-0.12.
+# 0.8 of the card (about 0.30) skips every piece and keeps every whole card.
+MIN_CARD_FROM_BED = 0.8
 
 # --- Slots mode (app.py) ---------------------------------------------------
 # Instead of looking for cards anywhere, the app can look only in boxes you draw on
