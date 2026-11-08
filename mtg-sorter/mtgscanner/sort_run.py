@@ -338,6 +338,10 @@ class SortRun:
             # left at 8 % the camera crawled at 4 fps and looked frozen (2026-11-08).
             if dimmed is not None:
                 self._restore_lights(dimmed)
+                # Let the camera's exposure catch up with the bars before the drop: the
+                # drop check compares the bed with the bright picture from before the feed,
+                # and a still-dark picture read as "card still on the bed" (2026-11-08).
+                time.sleep(float(getattr(config, "SORT_LIGHTS_SETTLE", 1.0)))
         card["seconds_reading"] = round(card.get("seconds_reading", 0) + time.monotonic() - started, 1)
         return track
 
