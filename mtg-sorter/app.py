@@ -151,6 +151,7 @@ class Scanner:
         self.started = False  # True once the first picture arrived
         self.tracks: list[Track] = []  # the cards in view (see tracking.py)
         self._ids = itertools.count(1)
+        self._table = 0   # goes up each time the tracks are forgotten (see process)
         self.foil = False
         self.auto = False
         self.mode = "auto"  # "auto": cards anywhere in the picture; "slots": only in the boxes you drew
@@ -343,7 +344,13 @@ class Scanner:
 
     def run(self):
         while not self.stopped:
-            self.turn()
+            try:
+                self.turn()
+            except Exception as e:
+                # One bad picture must not end the camera thread: the page's picture froze
+                # for good when it did (tower, 2026-11-08, "list.remove(x): x not in list").
+                print(f"Scanner: skipped a picture after an error: {e!r}")
+                time.sleep(0.2)
         if self.on_stop:
             self.on_stop(self)
 
@@ -424,6 +431,7 @@ class Scanner:
         t1 = time.perf_counter()
         now = time.monotonic()
         with self.lock:
+            table = self._table
             matched, new, gone = pair_up(self.tracks, cards)
             todo = [(t, outlines, t.needs_check(now)) for t, outlines in matched]
         # Recognizing is the slow part, so it happens without holding the lock, and
@@ -443,6 +451,11 @@ class Scanner:
         with self.lock:
             self.started = True
             self.frame_size = (frame.shape[1], frame.shape[0])
+            if table != self._table:
+                # The tracks were forgotten while this picture was being recognized (a sort
+                # run starting a card, a settings change): these answers are for a table
+                # that's gone, so leave the new one alone.
+                todo, new, gone = [], [], []
             for t, outlines, check in todo:
                 self._update(t, outlines, next(results) if check else None, frame)
             for outlines in new:
@@ -458,7 +471,7 @@ class Scanner:
                 if not t.missing:
                     t.missing_since = now
                 t.missing += 1
-                if t.gone(now):  # card taken away
+                if t.gone(now) and t in self.tracks:  # card taken away
                     self.finish_capture(t)
                     self.tracks.remove(t)
             self._note_speed(t0, t1, t2)
@@ -622,6 +635,7 @@ class Scanner:
         for t in self.tracks:
             self.finish_capture(t)
         self.tracks = []
+        self._table += 1
 
     def track(self, track_id) -> Track | None:
         return next((t for t in self.tracks if t.id == track_id), None)
