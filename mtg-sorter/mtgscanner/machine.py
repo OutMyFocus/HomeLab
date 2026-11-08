@@ -377,6 +377,11 @@ class Machine:
                 self.move("door_l", "closed")
                 hold("centre", 0.4)
             else:
+                # Pins back up before the tilt: a card sliding sideways off the tray caught
+                # on the lowered stop bar (Nic, 2026-11-08).
+                if getattr(config, "SORT_PINS_UP_BEFORE_TILT", True):
+                    self.move("pins", "up")
+                    hold("centre", float(getattr(config, "SORT_PINS_UP_SETTLE", 0.3)))
                 self.move("chute", position)
                 hold(position, tilt_seconds)        # and off the side of the tilted tray
                 self._shake(servos["chute"], position)
@@ -395,11 +400,21 @@ class Machine:
             return
         tilted, level = float(positions[position]), float(positions["centre"])
         half = round(level + (tilted - level) / 2, 1)
+        # Each shake tilts further than the saved tilt (Nic, 2026-11-08: "a bigger angle when
+        # it shakes"), by config.SORT_SHAKE_EXTRA degrees away from level.
+        extra = float(getattr(config, "SORT_SHAKE_EXTRA", 0.0))
+        side = 1.0 if tilted >= level else -1.0
+        deeper = round(max(0.0, min(180.0, tilted + side * extra)), 1)
         for _ in range(shakes):
             self.set_angle(channel, half)
             time.sleep(seconds)
-            self.move("chute", position)
+            if extra > 0:
+                self.set_angle(channel, deeper)
+            else:
+                self.move("chute", position)
             time.sleep(seconds)
+        if extra > 0:
+            self.move("chute", position)
 
     def self_test(self, pause: float = 0.6) -> list[dict]:
         """Moves every servo through its positions and back, then nudges the feeder.
