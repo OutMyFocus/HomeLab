@@ -319,20 +319,24 @@ class SortRun:
         track = None
         dimmed = None
         fed_at = card.get("fed_at", 0.0)
-        while time.monotonic() < deadline and not self.stop_asked:
-            if dimmed is None and time.monotonic() - started >= foil_after:
-                dimmed = self._dim_lights()     # a second look with less glare (foils)
-                card["dimmed"] = dimmed is not None
-            with self.scanner.lock:
-                track = self._read(card, fed_at)
-                if track is not None and track.status in ("locked", "unsure"):
-                    break
-                # "unknown" so far: the first looks at a card are often while it is still
-                # sliding or blurred, so keep waiting for a match until the deadline
-                track = None
-            time.sleep(0.1)
-        if dimmed is not None:
-            self._restore_lights(dimmed)
+        try:
+            while time.monotonic() < deadline and not self.stop_asked:
+                if dimmed is None and time.monotonic() - started >= foil_after:
+                    dimmed = self._dim_lights()     # a second look with less glare (foils)
+                    card["dimmed"] = dimmed is not None
+                with self.scanner.lock:
+                    track = self._read(card, fed_at)
+                    if track is not None and track.status in ("locked", "unsure"):
+                        break
+                    # "unknown" so far: the first looks at a card are often while it is still
+                    # sliding or blurred, so keep waiting for a match until the deadline
+                    track = None
+                time.sleep(0.1)
+        finally:
+            # Always put the bars back, also when a double feed stops the run mid-look:
+            # left at 8 % the camera crawled at 4 fps and looked frozen (2026-11-08).
+            if dimmed is not None:
+                self._restore_lights(dimmed)
         card["seconds_reading"] = round(card.get("seconds_reading", 0) + time.monotonic() - started, 1)
         return track
 
