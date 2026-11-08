@@ -562,7 +562,21 @@
     $("autoStraightBtn").textContent = v.auto_straight
       ? (v.straight ? "Auto straighten: on" : `Auto straighten: learning (${v.straight_samples || 0} cards)`)
       : "Auto straighten: off";
+    $("wholeCardsBtn").hidden = !machineCam || cropping;
+    $("wholeCardsBtn").setAttribute("aria-pressed", v.min_card != null);
+    $("wholeCardsBtn").textContent = v.min_card != null ? "Whole cards only: on" : "Whole cards only: off";
   }
+  $("wholeCardsBtn").onclick = async () => {
+    const on = state?.view?.min_card == null;
+    // api() throws on a 400, but "no card in view" is worth showing as it is
+    const r = await fetch("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json", ...scannerHeaders() },
+      body: JSON.stringify({ min_card: on ? "bed" : null }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || "Couldn't measure the card on the bed");
+    render(d);
+    toast(on ? "Only whole cards are read now: parts of a card are ignored" : "Looking for cards of any size again");
+  };
   $("autoStraightBtn").onclick = async () => {
     const on = !(state?.view?.auto_straight);
     render(await api("/api/settings", { auto_straight: on }));
