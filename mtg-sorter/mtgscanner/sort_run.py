@@ -182,10 +182,16 @@ class SortRun:
 
     @staticmethod
     def _apart(tracks) -> bool:
-        """Two tracks whose middles are a fifth of a card apart or more (a card the scanner
-        sees twice at nearly the same spot doesn't count)."""
+        """Two card-sized tracks whose middles are a fifth of a card apart or more. A card
+        the scanner sees twice at nearly the same spot doesn't count, and neither does a
+        much smaller outline: a borderless card's art or text box found as a "card" of its
+        own stopped a run with one card on the bed (Precise Redaction, 2026-11-08)."""
         import itertools
+        least = float(getattr(config, "SORT_DOUBLE_MIN_SIZE", 0.8))
         for a, b in itertools.combinations(tracks, 2):
+            small, big = sorted((a.size, b.size))
+            if big <= 0 or small / big < least:
+                continue
             gap = float(abs(a.center - b.center).max())
             if gap > 0.2 * max(a.size, b.size, 1.0):
                 return True

@@ -206,6 +206,7 @@ SORT_FOIL_BRIGHTNESS = 8
 SORT_DROP_UNREAD = False
 # The run warns when this many cards have gone to one bin since it started (the centre
 # bin held about 20 before cards piled up on the doors, 2026-11-06).
+SORT_DOUBLE_MIN_SIZE = 0.8   # a double feed needs two outlines at least this close in size
 SORT_BIN_WARN = 15
 SORT_DOOR_BIN = 2             # the bin under the trapdoors
 SORT_PINS_SECONDS = 3.0       # pins down at most this long before the doors open / the tilt goes on
