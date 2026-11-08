@@ -797,3 +797,44 @@ def test_feed_waits_until_the_pins_are_all_the_way_up(machine, monkeypatch):
     assert machine.pins_up() == 0.0 and slept == []
     machine.move("pins", "up")                      # sent up again while up: no new wait
     assert machine.pins_up() == 0.0
+
+
+def test_a_small_outline_inside_a_card_is_not_a_double_feed():
+    """A borderless card's art box found as a second "card" must not stop the run; two
+    card-sized outlines apart still do."""
+    from mtgscanner.sort_run import SortRun
+    from mtgscanner.tracking import Track
+
+    def quad(cx, cy, s):
+        w, h = s * 63 / 88, s
+        return np.float32([[cx - w / 2, cy - h / 2], [cx + w / 2, cy - h / 2],
+                           [cx + w / 2, cy + h / 2], [cx - w / 2, cy + h / 2]])
+    card = Track(id=1, number=1, corners=quad(500, 1000, 600))
+    art = Track(id=2, number=2, corners=quad(500, 880, 300))
+    assert not SortRun._apart([card, art])
+    other = Track(id=3, number=3, corners=quad(500, 1250, 590))
+    assert SortRun._apart([card, other])
+
+
+def test_dimmed_bars_come_back_when_a_double_feed_stops_the_look(monkeypatch):
+    """A double feed found during the foil second look must not leave the bars dimmed
+    (the camera crawled at 4 fps and looked frozen, 2026-11-08)."""
+    import threading
+    from types import SimpleNamespace
+    from mtgscanner.sort_run import SortRun, DoubleFeed
+    monkeypatch.setattr(config, "SORT_FOIL_AFTER", 0.0)
+    monkeypatch.setattr(config, "SORT_FOIL_BRIGHTNESS", 8)
+
+    class Lights:
+        settings = {"brightness": 60}
+        def update(self, raw):
+            self.settings = {**self.settings, **raw}
+    scanner = SimpleNamespace(lock=threading.Lock(), lights=Lights())
+    run = SortRun(None, scanner, None)
+    def read(card, fed_at):
+        assert scanner.lights.settings["brightness"] == 8     # dimmed for the second look
+        raise DoubleFeed("two cards")
+    monkeypatch.setattr(run, "_read", read)
+    with pytest.raises(DoubleFeed):
+        run._look({"fed_at": 0.0})
+    assert scanner.lights.settings["brightness"] == 60

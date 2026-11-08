@@ -182,10 +182,16 @@ class SortRun:
 
     @staticmethod
     def _apart(tracks) -> bool:
-        """Two tracks whose middles are a fifth of a card apart or more (a card the scanner
-        sees twice at nearly the same spot doesn't count)."""
+        """Two card-sized tracks whose middles are a fifth of a card apart or more. A card
+        the scanner sees twice at nearly the same spot doesn't count, and neither does a
+        much smaller outline: a borderless card's art or text box found as a "card" of its
+        own stopped a run with one card on the bed (Precise Redaction, 2026-11-08)."""
         import itertools
+        least = float(getattr(config, "SORT_DOUBLE_MIN_SIZE", 0.8))
         for a, b in itertools.combinations(tracks, 2):
+            small, big = sorted((a.size, b.size))
+            if big <= 0 or small / big < least:
+                continue
             gap = float(abs(a.center - b.center).max())
             if gap > 0.2 * max(a.size, b.size, 1.0):
                 return True
@@ -313,20 +319,24 @@ class SortRun:
         track = None
         dimmed = None
         fed_at = card.get("fed_at", 0.0)
-        while time.monotonic() < deadline and not self.stop_asked:
-            if dimmed is None and time.monotonic() - started >= foil_after:
-                dimmed = self._dim_lights()     # a second look with less glare (foils)
-                card["dimmed"] = dimmed is not None
-            with self.scanner.lock:
-                track = self._read(card, fed_at)
-                if track is not None and track.status in ("locked", "unsure"):
-                    break
-                # "unknown" so far: the first looks at a card are often while it is still
-                # sliding or blurred, so keep waiting for a match until the deadline
-                track = None
-            time.sleep(0.1)
-        if dimmed is not None:
-            self._restore_lights(dimmed)
+        try:
+            while time.monotonic() < deadline and not self.stop_asked:
+                if dimmed is None and time.monotonic() - started >= foil_after:
+                    dimmed = self._dim_lights()     # a second look with less glare (foils)
+                    card["dimmed"] = dimmed is not None
+                with self.scanner.lock:
+                    track = self._read(card, fed_at)
+                    if track is not None and track.status in ("locked", "unsure"):
+                        break
+                    # "unknown" so far: the first looks at a card are often while it is still
+                    # sliding or blurred, so keep waiting for a match until the deadline
+                    track = None
+                time.sleep(0.1)
+        finally:
+            # Always put the bars back, also when a double feed stops the run mid-look:
+            # left at 8 % the camera crawled at 4 fps and looked frozen (2026-11-08).
+            if dimmed is not None:
+                self._restore_lights(dimmed)
         card["seconds_reading"] = round(card.get("seconds_reading", 0) + time.monotonic() - started, 1)
         return track
 
