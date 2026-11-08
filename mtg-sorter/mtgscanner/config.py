@@ -207,6 +207,7 @@ SORT_FALLBACK_BIN = 1
 SORT_RECOGNIZE_SECONDS = 8.0
 SORT_FOIL_AFTER = 3.0
 SORT_FOIL_BRIGHTNESS = 8
+SORT_LIGHTS_SETTLE = 1.0   # seconds after the bars come back up, before the drop
 # A card still not read after that waits on the bed with the pins up for you to choose
 # (Nic, 2026-11-07: "I only want the pins to fall when the card is recognized"). True
 # drops it into the fallback bin at once instead, as before.
