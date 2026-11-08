@@ -166,6 +166,10 @@ class Scanner:
         # config.MIN_CARD_AREA). Set from the card on the scan bed, it stops the scanner
         # reading an art or text box as a card of its own (Nic, 2026-11-08).
         self.min_card = None
+        # Where a card lies on the bed, [x0, y0, x1, y1] as shares of the picture. With
+        # min_card set, a card whose edge can't be found (a foil's black border lost in
+        # glare) but whose art or text box shows there is read from this box instead.
+        self.bed_box = None
         self._auto_straight = AutoStraighten()
         self._pending_straight = None  # a new straightening, put in between cards
         self.outline = (
@@ -231,6 +235,7 @@ class Scanner:
         self.straight = view.clean_straighten(saved.get("straight")) if saved.get("straight") else None
         self.auto_straight = bool(saved.get("auto_straight", config.AUTO_STRAIGHTEN))
         self.min_card = clean_min_card(saved.get("min_card"))
+        self.bed_box = view.clean_box(saved["bed_box"]) if saved.get("bed_box") else None
 
     def set_min_card_from_bed(self) -> float:
         """Look only for whole cards: the smallest card becomes MIN_CARD_FROM_BED of the
@@ -241,12 +246,15 @@ class Scanner:
         if not tracks or not w or not h:
             raise ValueError("No card in view: lay one card on the bed, against the stop pins, and try again")
         locked = [t for t in tracks if t.status == "locked"] or tracks
-        biggest = max(float(cv2.contourArea(np.asarray(t.corners, np.float32))) for t in locked)
-        share = biggest / float(w * h)
+        card = max(locked, key=lambda t: float(cv2.contourArea(np.asarray(t.corners, np.float32))))
+        corners = np.asarray(card.corners, np.float32)
+        share = float(cv2.contourArea(corners)) / float(w * h)
         value = clean_min_card(round(share * config.MIN_CARD_FROM_BED, 4))
         if value is None:
             raise ValueError("That card's outline doesn't look right: lay it flat on the bed and try again")
         self.min_card = value
+        (x0, y0), (x1, y1) = corners.min(axis=0), corners.max(axis=0)
+        self.bed_box = view.clean_box([x0 / w, y0 / h, x1 / w, y1 / h])
         self.forget_tracks()
         return value
 
@@ -300,10 +308,27 @@ class Scanner:
             self._pending_straight = None
         self.forget_tracks()  # outlines and numbers belong to the old picture
 
+    def _whole_cards(self, frame):
+        """find_cards for "Whole cards only": outlines smaller than min_card (a card's art
+        or text box) aren't cards. When only such a piece shows inside the bed box, the
+        card's edge was lost (glare on a foil's black border), so the bed box is its outline."""
+        h, w = frame.shape[:2]
+        found = find_cards(frame)
+        least = self.min_card * w * h
+        cards = [g for g in found if cv2.contourArea(np.asarray(g[0], np.float32)) >= least]
+        if cards or not self.bed_box:
+            return cards
+        x0, y0, x1, y1 = self.bed_box[0] * w, self.bed_box[1] * h, self.bed_box[2] * w, self.bed_box[3] * h
+        for g in found:
+            cx, cy = np.asarray(g[0], np.float32).mean(axis=0)
+            if x0 <= cx <= x1 and y0 <= cy <= y1:
+                return [[np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.float32)]]
+        return []
+
     def _find(self, frame):
         """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
         if self.mode != "slots" or not self.slots:
-            cards = find_cards(frame, self.min_card)
+            cards = find_cards(frame) if self.min_card is None else self._whole_cards(frame)
             return cards, [None] * len(cards)
         found = [
             (find_card_in_slot(frame, slot), n) for n, slot in enumerate(self.slots, 1)
@@ -685,7 +710,7 @@ class Scanner:
                 "slots": self.slots,
                 "view": {"rotate": self.rotate, "crop": self.crop, "straight": bool(self.straight),
                          "auto_straight": self.auto_straight,
-                         "min_card": self.min_card,
+                         "min_card": self.min_card, "bed_box": self.bed_box,
                          "straight_samples": len(self._auto_straight.samples),
                          "straight_refused": self._auto_straight.last_refused},
                 "camera": camera_info(self._next_source or self.source),
@@ -984,8 +1009,18 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                         return jsonify({"error": "min_card must be a share of the picture from 0.005 to 0.9, \"bed\" or null"}), 400
                     sc.min_card = value
                     sc.forget_tracks()
+                if raw is None:
+                    sc.bed_box = None
                 if remember:
-                    save_settings(min_card=sc.min_card)
+                    save_settings(min_card=sc.min_card, bed_box=sc.bed_box)
+            if "bed_box" in body:
+                box = view.clean_box(body["bed_box"]) if body["bed_box"] is not None else None
+                if body["bed_box"] is not None and box is None:
+                    return jsonify({"error": "bed_box must be [x0, y0, x1, y1] as shares of the picture, or null"}), 400
+                sc.bed_box = box
+                sc.forget_tracks()
+                if remember:
+                    save_settings(bed_box=sc.bed_box)
             if "straighten" in body:
                 try:
                     raw = body["straighten"]
