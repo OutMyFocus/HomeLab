@@ -534,6 +534,7 @@ module splice() {
 tower_w = 2 * well_x - 2;  tower_l = well_y1 - well_y0 - 1 + 4;
 tower_yc = (well_y0 + well_y1) / 2 + 1;
 tower_h = feeder_floor_z + hopper_h + 6 - deck_z;
+tower_open_y = feeder_front_y + 1.5;   // the tower is open in front of this (the hopper's front wall and the shoe)
 
 module tower() {
     difference() {
@@ -541,6 +542,10 @@ module tower() {
         translate([0, tower_yc, deck_z - 1]) linear_extrude(tower_h + 2) rrect(tower_w, tower_l, 6);
         // card-level window on the right side
         translate([tower_w / 2, well_y0 + 30, deck_z + 12]) cube([10, tower_l - 50, tower_h - 20]);
+        // open at the front (2026-11-08): the front wall stood right where the hopper's front is, so the
+        // tower sat on the old gate (or the v4 shoe) and pressed it onto the wheels, stalling the motor.
+        // Everything in front of tower_open_y is cut away, corners included; the lid still sits on top.
+        translate([-tower_w / 2 - 5, tower_yc - tower_l / 2 - 5, deck_z - 1]) cube([tower_w + 10, tower_open_y - (tower_yc - tower_l / 2 - 5), tower_h + 5]);
         // lid rebate
         translate([0, tower_yc, deck_z + tower_h - 2]) linear_extrude(3) rrect(tower_w + 2, tower_l + 2, 6.5);
     }

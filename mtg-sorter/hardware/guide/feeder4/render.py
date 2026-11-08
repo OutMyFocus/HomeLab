@@ -13,13 +13,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "..", "img", "feeder4")
 W = os.path.join(HERE, "w")
 PIECES = ["bed", "walls", "gate", "stand", "hopper", "shoe", "pads", "roller", "motor", "stack", "card", "weight",
-          "fence", "bridge", "p_stand", "p_hopper", "p_shoe", "p_roller", "flatbed"]
+          "fence", "bridge", "p_stand", "p_hopper", "p_shoe", "p_roller", "flatbed", "tower", "deck"]
 SLICED = ["bed", "stand", "hopper", "shoe", "pads", "roller", "stack", "card"]
 YSLICED = ["stand", "hopper", "fence", "bridge"]
 C = dict(bed="#f4f4f4", flatbed="#f4f4f4", walls="#2b2b2b", gate="#e8772e", stand="#3a3f47", hopper="#5a6068",
          shoe="#2b2b2b", pads="#b07a43", roller="#f08c1a", motor="#b8bcc2", stack="#d8c9a3", card="#c9a46a",
          weight="#2b2b2b", fence="#e8772e", bridge="#2c3036", p_stand="#3a3f47", p_hopper="#5a6068",
-         p_shoe="#2b2b2b", p_roller="#f08c1a")
+         p_shoe="#2b2b2b", p_roller="#f08c1a", tower="#2b2b2b", deck="#3a3f47")
 
 
 def export():
@@ -64,6 +64,10 @@ jobs = [
     ({"meshes": [m("p_stand", pos=[-100, 0, 0]), m("p_hopper", pos=[0, 0, 0]), m("p_shoe", pos=[100, -165, 0]),
                  m("p_roller", pos=[100, 50, 0])],
       "eye": [170, -380, 330], "ctr": [10, -30, 30]}, "feeder4_parts.png"),
+    # the hopper tower on the deck, open at the front so it can't press the shoe onto the wheels
+    ({"meshes": [m("bed"), m("deck", opacity=0.9), m("stand"), m("roller"), m("motor"), m("hopper"), m("shoe"), m("pads"),
+                 m("stack"), m("tower", opacity=0.55)],
+      "eye": [-200, -120, 420], "ctr": [0, 180, 235]}, "feeder4_tower_open.png"),
     # the scan bed v3.1 plate with the two wheel slots at its back edge
     ({"meshes": [m("flatbed")], "eye": [120, 230, 150], "ctr": [0, 70, 0], "light": [0.3, 1, 1.6]}, "bed3_wheel_slots.png"),
 ]

@@ -2,6 +2,7 @@
 // `what`; an empty result means no clash).
 include <../../bed_chute.scad>
 use <../../feeder4.scad>
+use <../../enclosure.scad>
 part = "none";
 what = "wheel_bed";
 module F() translate([0, 150, 111]) children();
@@ -35,3 +36,10 @@ if (what == "stand_bracket") intersection() { F() stand4(); union() { tilt_brack
 if (what == "stand_hopper") intersection() { F() stand4(); F() translate([0, 0, 0.01]) hopper4(); }
 if (what == "shoe_low_bed") intersection() { F() translate([0, 0, -1.6]) shoe4(); bed3(); }
 if (what == "pads_wheel") intersection() { F() pads(); F() wheel_sweep(0.2); }
+// the hopper tower and its lid on the deck: they must not touch the box (the tower's old front wall sat
+// on the shoe and pressed it onto the wheels)
+if (what == "tower_hopper") intersection() { tower(); F() union() { hopper4(); stand4(); } }
+if (what == "tower_shoe") intersection() { tower(); F() shoe4(); }
+if (what == "lid_box") intersection() { tower_lid(); F() union() { hopper4(); shoe4(); } }
+// and the shoe has room to rise: 1.5 mm up (three cards' worth plus), it still clears the lid
+if (what == "lid_shoe_up") intersection() { tower_lid(); F() translate([0, 0, 1.5]) shoe4(); }

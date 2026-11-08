@@ -5,7 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHECKS = ["wheel_bed", "wheel_stand", "wheel_hopper", "wheel_shoe", "roller_stand", "stand_bed", "hopper_bed",
           "shoe_bed", "shoe_hopper", "motor_bed", "motor_stand", "card_bed", "card_hopper", "card_shoe",
-          "stand_fence", "stand_bridge", "stand_bracket", "stand_hopper"]
+          "stand_fence", "stand_bridge", "stand_bracket", "stand_hopper",
+          "tower_hopper", "tower_shoe", "lid_box", "lid_shoe_up"]
 def run(w):
     out = os.path.join(tempfile.gettempdir(), "chk_%s.stl" % w)
     r = subprocess.run(["openscad", "-o", out, "-D", 'what="%s"' % w, os.path.join(HERE, "check.scad")], capture_output=True, text=True)
