@@ -79,8 +79,10 @@ SCAN_STILL_LEVEL = 2.0
 # The live picture the pages show (/stream.mjpg): its long side in pixels and JPEG
 # quality. The full-size picture (about 400 KB a frame at 1080p) is only sent with
 # ?full=1, which the server's RemoteCameraSource uses to recognize cards from it.
-STREAM_PREVIEW_PX = 960
-STREAM_PREVIEW_QUALITY = 70
+# 960 at quality 70 showed card text and foils soft and blocky on the Scanner page (Nic,
+# 2026-11-08): the server re-encodes the Pi's full picture, so this is the viewer's size.
+STREAM_PREVIEW_PX = 1440
+STREAM_PREVIEW_QUALITY = 85
 
 # The smallest card the camera looks for, as a share of the whole picture. 0.05 (5%)
 # suits a camera close to the card, like the scan station. A camera high above a
