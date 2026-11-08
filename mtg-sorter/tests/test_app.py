@@ -137,12 +137,12 @@ def test_rotate_and_crop_the_picture(db, tmp_path, monkeypatch):  # noqa: F811
     client.post("/api/settings", json={"slots": [[0.5, 0.5, 1, 1]]})
 
     state = client.post("/api/settings", json={"crop": [0.5, 0.5, 1, 1]}).get_json()
-    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False, "auto_straight": True, "min_card": None, "straight_samples": 0, "straight_refused": None}
+    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False, "auto_straight": True, "min_card": None, "bed_box": None, "straight_samples": 0, "straight_refused": None}
     assert state["slots"] == [[0, 0, 1, 1]]                      # same spot, now the whole picture
     state = client.post("/api/settings", json={"crop": [0, 0, 0.5, 0.5]}).get_json()
     assert state["view"]["crop"] == [0.5, 0.5, 0.75, 0.75]       # a crop of the crop
     state = client.post("/api/settings", json={"rotate": 90}).get_json()
-    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False, "auto_straight": True, "min_card": None, "straight_samples": 0, "straight_refused": None}
+    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False, "auto_straight": True, "min_card": None, "bed_box": None, "straight_samples": 0, "straight_refused": None}
     saved = json.loads((tmp_path / "settings.json").read_text())
     assert saved["rotate"] == 90 and saved["crop"] == [0.25, 0.5, 0.5, 0.75]
 
@@ -505,15 +505,28 @@ def test_whole_cards_only_measures_the_card_on_the_bed(db, tmp_path, monkeypatch
     assert scanner.tracks == []                                # looked at afresh
     assert json.loads((tmp_path / "settings.json").read_text())["min_card"] == state["view"]["min_card"]
 
-    seen = []
-    monkeypatch.setattr(app, "find_cards", lambda frame, min_area=None: seen.append(min_area) or [])
-    scanner._find(np.zeros((200, 100, 3), np.uint8))
-    assert seen == [state["view"]["min_card"]]
+    assert state["view"]["bed_box"] == [0.1, 0.05, 0.7, 0.55]   # where the card lay
+
+    # the art box alone isn't a card; the whole card is
+    frame = np.zeros((200, 100, 3), np.uint8)
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[art]])
+    (outline,), _ = scanner._find(frame)
+    assert np.allclose(outline[0], card)                       # the bed box stands in for the lost edge
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[card, art]])
+    (outline,), _ = scanner._find(frame)
+    assert outline[0] is card
+    # a piece outside the bed (the next card in the slot) isn't read
+    up_top = np.array([[10, 150], [40, 150], [40, 190], [10, 190]], np.float32)
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[up_top]])
+    assert scanner._find(frame) == ([], [])
 
     fresh = Scanner(db, None, source=FakeCamera(0))            # kept for next time
     fresh.restore(json.loads((tmp_path / "settings.json").read_text()))
-    assert fresh.min_card == state["view"]["min_card"]
+    assert fresh.min_card == state["view"]["min_card"] and fresh.bed_box == [0.1, 0.05, 0.7, 0.55]
 
     assert client.post("/api/settings", json={"min_card": 0.3}).get_json()["view"]["min_card"] == 0.3
     assert client.post("/api/settings", json={"min_card": 2}).status_code == 400
-    assert client.post("/api/settings", json={"min_card": None}).get_json()["view"]["min_card"] is None
+    assert client.post("/api/settings", json={"bed_box": [0.2, 0.3, 0.8, 0.9]}).get_json()["view"]["bed_box"] == [0.2, 0.3, 0.8, 0.9]
+    assert client.post("/api/settings", json={"bed_box": "x"}).status_code == 400
+    off = client.post("/api/settings", json={"min_card": None}).get_json()["view"]
+    assert off["min_card"] is None and off["bed_box"] is None
