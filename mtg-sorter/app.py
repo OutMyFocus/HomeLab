@@ -180,6 +180,8 @@ class Scanner:
         self.bed_box = None
         self.empty_bed = None   # fingerprint of the bare bed in the bed box (remember_empty_bed)
         self._seen = None       # the last picture as the scanner sees it (rotated, cropped, straightened)
+        self._bed_small = None  # the bed box, small and grey, on the last picture (_bed_still)
+        self._bed_moved_at = 0.0
         self._auto_straight = AutoStraighten()
         self._pending_straight = None  # a new straightening, put in between cards
         self.outline = (
@@ -292,6 +294,16 @@ class Scanner:
             save_settings(empty_bed=self.empty_bed.hex())
         return True
 
+    def _bed_still(self, frame, bed) -> bool:
+        """Whether the bed box has looked the same for config.BED_STILL_SECONDS."""
+        small = cv2.resize(cv2.cvtColor(warp_card(frame, bed), cv2.COLOR_BGR2GRAY), (32, 45),
+                           interpolation=cv2.INTER_AREA)
+        now = time.monotonic()
+        last, self._bed_small = self._bed_small, small
+        if last is None or float(np.mean(cv2.absdiff(small, last))) >= config.BED_STILL_LEVEL:
+            self._bed_moved_at = now
+        return now - self._bed_moved_at >= config.BED_STILL_SECONDS
+
     def bed_is_empty(self, frame) -> bool:
         """Whether the bed box shows the bare bed remembered by remember_empty_bed."""
         if not self.bed_box or self.empty_bed is None:
@@ -376,6 +388,11 @@ class Scanner:
         if self.bed_is_empty(frame):
             # The bed box is the bare bed: anything outlined there is its ribs, not a card.
             return [g for g in cards if not on_bed(g)]
+        if not self._bed_still(frame, bed):
+            # Something is moving on the bed (a card sliding off, the tray tilting): half a
+            # card and the ribs read as Precise Redaction there, ~2 s after each real card
+            # (tower, 2026-11-09). The bed box only stands in for a card at rest.
+            return cards
         if cards:
             # A whole outline on a foil is often a little off (a corner pulled in by glare),
             # and the bed box is exactly where a card lies: try it as well, best match wins.
