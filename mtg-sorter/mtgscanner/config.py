@@ -65,6 +65,7 @@ OUTLINE_FACTORS = (1.0, 1.04, 1.08)
 STABLE_FRAMES = 3
 # A recognized card that hasn't moved is looked at again this often (seconds).
 RECHECK_SECONDS = 2.0
+BED_BOX_RECHECK_SECONDS = 0.5   # a card only the bed box outlines is looked at this often
 # A card out of sight for this long (a hand over it is shorter) counts as taken away.
 GONE_SECONDS = 0.8
 # Cards are recognized in parallel; 0 means one thread per CPU core (at most 8).
