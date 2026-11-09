@@ -373,6 +373,10 @@ class Machine:
                 self.move("door_r", "open")
                 self.move("door_l", "open")
                 hold("centre", doors_seconds)
+                # The card has fallen through: pins up now, while the doors close, so they
+                # are all the way up before the next card is fed (Nic, 2026-11-09: after a
+                # trapdoor drop the next card came while the pins were still rising).
+                self.move("pins", "up")
                 self.move("door_r", "closed")
                 self.move("door_l", "closed")
                 hold("centre", 0.4)

@@ -434,6 +434,9 @@ def test_door_bin_keeps_the_pins_down_while_the_doors_open(client, logged, quick
     m = moves(logged)
     opened = m.index(("door_r", "open"))
     assert ("pins", "up") not in m[m.index(("pins", "down")):opened]
+    # once the card has fallen through, the pins rise before the doors close, so they are
+    # all the way up by the next feed (Nic, 2026-11-09)
+    assert m.index(("pins", "up")) < m.index(("door_r", "closed"))
 
 
 def test_sort_one_feeds_then_drops_and_sees_the_bed_clear(watched, quick_sort):
@@ -907,3 +910,9 @@ def test_sort_one_pushes_again_at_full_power_when_nothing_came(watched, quick_so
     assert out["result"] == "landed" and out["retried"] == "none", out
     speeds = [c for c in machine._motor.calls if c[0] == "forward"]
     assert speeds and speeds[-1][1] == pytest.approx(config.FEED_RETRY_SPEED)
+
+
+def test_feed_gives_the_pins_a_full_second_to_rise():
+    """Nic (2026-11-09): "sometimes the feeder feeds the cards before the pins are fully
+    up". The stop pins share the 5 V supply with the motor, so they get a full second."""
+    assert config.FEED_PINS_UP_SECONDS >= 1.0
