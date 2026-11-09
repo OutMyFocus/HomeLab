@@ -130,6 +130,11 @@ def _distances(table: tuple, fp: bytes) -> np.ndarray:
     return d
 
 
+def fingerprint_distance(a: bytes, b: bytes) -> int:
+    """How far apart two fingerprints are, on the same scale as a match's distance."""
+    return int(_distances(_split([a]), b)[0])
+
+
 def _name_key(name: str) -> str:
     """Printings of the same card count as one answer, whatever the set."""
     return name.split(" // ")[0].strip().lower()

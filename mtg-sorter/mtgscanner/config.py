@@ -65,6 +65,10 @@ OUTLINE_FACTORS = (1.0, 1.04, 1.08)
 STABLE_FRAMES = 3
 # A recognized card that hasn't moved is looked at again this often (seconds).
 RECHECK_SECONDS = 2.0
+# The bed box this close to the remembered bare bed (Scanner.remember_empty_bed) is the
+# bed, not a card. Same scale as a match's distance (0-256): the bare bed against itself
+# is well under this, a card on it far over.
+EMPTY_BED_DISTANCE = 45
 BED_BOX_RECHECK_SECONDS = 0.5   # a card only the bed box outlines is looked at this often
 # A card out of sight for this long (a hand over it is shorter) counts as taken away.
 GONE_SECONDS = 0.8

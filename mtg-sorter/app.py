@@ -32,7 +32,8 @@ from mtgscanner import camera as cameras_mod, config, view
 from mtgscanner.camera import BrowserSource, CameraSource, list_cameras  # noqa: F401  (tests patch these here)
 from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
-from mtgscanner.database import Card, Matcher, connect
+from mtgscanner.database import Card, Matcher, connect, fingerprint_distance
+from mtgscanner.vision import fingerprint, warp_card
 from mtgscanner.exchange import load_rate
 from mtgscanner import accounts, assets, logins, security, sort_rules, wishlist
 from mtgscanner.decks import name_key
@@ -177,6 +178,8 @@ class Scanner:
         # min_card set, a card whose edge can't be found (a foil's black border lost in
         # glare) but whose art or text box shows there is read from this box instead.
         self.bed_box = None
+        self.empty_bed = None   # fingerprint of the bare bed in the bed box (remember_empty_bed)
+        self._seen = None       # the last picture as the scanner sees it (rotated, cropped, straightened)
         self._auto_straight = AutoStraighten()
         self._pending_straight = None  # a new straightening, put in between cards
         self.outline = (
@@ -243,6 +246,11 @@ class Scanner:
         self.auto_straight = bool(saved.get("auto_straight", config.AUTO_STRAIGHTEN))
         self.min_card = clean_min_card(saved.get("min_card"))
         self.bed_box = view.clean_box(saved["bed_box"]) if saved.get("bed_box") else None
+        try:
+            empty = bytes.fromhex(saved["empty_bed"]) if saved.get("empty_bed") else None
+        except (TypeError, ValueError):
+            empty = None
+        self.empty_bed = empty if empty and len(empty) == 64 else None
 
     def set_min_card_from_bed(self) -> float:
         """Look only for whole cards: the smallest card becomes MIN_CARD_FROM_BED of the
@@ -264,6 +272,32 @@ class Scanner:
         self.bed_box = view.clean_box([x0 / w, y0 / h, x1 / w, y1 / h])
         self.forget_tracks()
         return value
+
+    def _bed_rect(self, frame):
+        h, w = frame.shape[:2]
+        x0, y0, x1, y1 = self.bed_box[0] * w, self.bed_box[1] * h, self.bed_box[2] * w, self.bed_box[3] * h
+        return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.float32)
+
+    def remember_empty_bed(self, frame=None, save: bool = True) -> bool:
+        """Remember what the bare bed looks like inside the bed box, so the bed's own
+        texture is never read as a card (Nic, 2026-11-09: the empty bed was read as
+        Precise Redaction and saved again and again). `frame`: a picture as the scanner
+        sees it, with nothing on the bed (default: the last one). False with no bed box
+        or no picture."""
+        frame = self._seen if frame is None else frame
+        if not self.bed_box or frame is None:
+            return False
+        self.empty_bed = fingerprint(warp_card(frame, self._bed_rect(frame)))
+        if save:
+            save_settings(empty_bed=self.empty_bed.hex())
+        return True
+
+    def bed_is_empty(self, frame) -> bool:
+        """Whether the bed box shows the bare bed remembered by remember_empty_bed."""
+        if not self.bed_box or self.empty_bed is None:
+            return False
+        fp = fingerprint(warp_card(frame, self._bed_rect(frame)))
+        return fingerprint_distance(self.empty_bed, fp) <= config.EMPTY_BED_DISTANCE
 
     def set_straight(self, on, corners=None):
         """Straighten the picture from the card on the bed now (True) or stop (False).
@@ -338,7 +372,9 @@ class Scanner:
             # and the bed box is exactly where a card lies: try it as well, best match wins.
             # On the Pi's unread cards (2026-11-09) the bed box read 3 of 6 the outline missed.
             return [[g[0], bed, *g[1:]] if on_bed(g) else g for g in cards]
-        return [BedBox([bed])] if any(on_bed(g) for g in found) else []
+        if not any(on_bed(g) for g in found) or self.bed_is_empty(frame):
+            return []           # nothing there, or only the bed's own ribs
+        return [BedBox([bed])]
 
     def _find(self, frame):
         """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
@@ -403,6 +439,7 @@ class Scanner:
                     save_settings(straight=self.straight)
         if self.straight:
             frame = view.straighten(frame, self.straight)
+        self._seen = frame
         if self.tap is not None and self.tap.watching:
             # A feed is watching for its card to land (feed_watch.py): hand it every
             # picture straight away and skip finding and recognizing cards until it's done,
@@ -755,6 +792,7 @@ class Scanner:
                 "view": {"rotate": self.rotate, "crop": self.crop, "straight": bool(self.straight),
                          "auto_straight": self.auto_straight,
                          "min_card": self.min_card, "bed_box": self.bed_box,
+                         "empty_bed": self.empty_bed is not None,
                          "straight_samples": len(self._auto_straight.samples),
                          "straight_refused": self._auto_straight.last_refused},
                 "camera": camera_info(self._next_source or self.source),
@@ -1057,6 +1095,17 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                     sc.bed_box = None
                 if remember:
                     save_settings(min_card=sc.min_card, bed_box=sc.bed_box)
+            if "empty_bed" in body:
+                # "now": the bed is bare, remember it; null: forget it
+                if body["empty_bed"] is None:
+                    sc.empty_bed = None
+                    save_settings(empty_bed=None)
+                elif body["empty_bed"] == "now":
+                    if not sc.remember_empty_bed(save=remember):
+                        return jsonify({"error": "Turn on Whole cards only first (it marks where the bed is)"}), 400
+                    sc.forget_tracks()
+                else:
+                    return jsonify({"error": "empty_bed must be \"now\" or null"}), 400
             if "bed_box" in body:
                 box = view.clean_box(body["bed_box"]) if body["bed_box"] is not None else None
                 if body["bed_box"] is not None and box is None:
