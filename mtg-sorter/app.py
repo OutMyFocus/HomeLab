@@ -353,7 +353,8 @@ class Scanner:
         """find_cards for "Whole cards only": outlines smaller than min_card (a card's art
         or text box) aren't cards. When only such a piece shows inside the bed box, the
         card's edge was lost (glare on a foil's black border), so the bed box is its outline.
-        A whole card on the bed also gets the bed box as a second outline to try."""
+        A whole card on the bed also gets the bed box as a second outline to try. Both only
+        once the bare bed is known (remember_empty_bed), and never while the bed is bare."""
         h, w = frame.shape[:2]
         found = find_cards(frame)
         least = self.min_card * w * h
@@ -367,13 +368,21 @@ class Scanner:
             cx, cy = np.asarray(group[0], np.float32).mean(axis=0)
             return x0 <= cx <= x1 and y0 <= cy <= y1
 
+        if self.empty_bed is None:
+            # Without knowing what the bare bed looks like, the bed box can't be told apart
+            # from the bed's own ribs, which read as a card (Nic, 2026-11-09: Precise
+            # Redaction saved again and again). Only real outlines count until it's known.
+            return cards
+        if self.bed_is_empty(frame):
+            # The bed box is the bare bed: anything outlined there is its ribs, not a card.
+            return [g for g in cards if not on_bed(g)]
         if cards:
             # A whole outline on a foil is often a little off (a corner pulled in by glare),
             # and the bed box is exactly where a card lies: try it as well, best match wins.
             # On the Pi's unread cards (2026-11-09) the bed box read 3 of 6 the outline missed.
             return [[g[0], bed, *g[1:]] if on_bed(g) else g for g in cards]
-        if not any(on_bed(g) for g in found) or self.bed_is_empty(frame):
-            return []           # nothing there, or only the bed's own ribs
+        if not any(on_bed(g) for g in found):
+            return []
         return [BedBox([bed])]
 
     def _find(self, frame):
