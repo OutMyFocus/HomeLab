@@ -565,6 +565,8 @@
     $("wholeCardsBtn").hidden = !machineCam || cropping;
     $("wholeCardsBtn").setAttribute("aria-pressed", v.min_card != null);
     $("wholeCardsBtn").textContent = v.min_card != null ? "Whole cards only: on" : "Whole cards only: off";
+    $("emptyBedBtn").hidden = !machineCam || cropping || v.min_card == null;
+    $("emptyBedBtn").textContent = v.empty_bed ? "Bed is empty ✓" : "Bed is empty";
   }
   $("wholeCardsBtn").onclick = async () => {
     const on = state?.view?.min_card == null;
@@ -576,6 +578,15 @@
     if (!r.ok) return toast(d.error || "Couldn't measure the card on the bed");
     render(d);
     toast(on ? "Only whole cards are read now: parts of a card are ignored" : "Looking for cards of any size again");
+  };
+  $("emptyBedBtn").onclick = async () => {
+    const r = await fetch("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json", ...scannerHeaders() },
+      body: JSON.stringify({ empty_bed: "now" }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || "Couldn't look at the bed");
+    render(d);
+    toast("Got it: the bare bed won't be read as a card");
   };
   $("autoStraightBtn").onclick = async () => {
     const on = !(state?.view?.auto_straight);

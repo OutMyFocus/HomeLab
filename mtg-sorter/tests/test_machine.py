@@ -448,6 +448,23 @@ def test_sort_one_feeds_then_drops_and_sees_the_bed_clear(watched, quick_sort):
     assert "bin 1" in out["message"]
 
 
+def test_sort_one_remembers_the_bare_bed_after_a_card_has_left(watched, quick_sort, monkeypatch):
+    """The card was seen leaving, so the next feed's "before" picture is the bare bed: the
+    scanner keeps it, so the bed's ribs are never read as a card (Nic, 2026-11-09). The
+    first feed of all doesn't: a card might have been left on the bed."""
+    client, scanner, machine, cams = watched
+    scanner.bed_box = [0.1, 0.1, 0.9, 0.6]
+    seen = []
+    monkeypatch.setattr(scanner, "remember_empty_bed", lambda frame=None, save=True: seen.append(frame) or True)
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    assert client.post("/api/machine/sort_one", json={"bin": 1}).get_json()["dropped"] is True
+    assert seen == []
+    cams[0].running = False
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    assert client.post("/api/machine/sort_one", json={"bin": 1}).get_json()["dropped"] is True
+    assert len(seen) == 1 and seen[0] is not None
+
+
 def test_sort_one_moves_on_as_soon_as_the_card_has_left_the_teeth(watched, monkeypatch):
     """Pins down at most 2 s, but the fake card slides off the moment they drop, so the
     drop goes on after the least time (0.5 s + a moment), not the full 2 s."""
