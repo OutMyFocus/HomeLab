@@ -138,12 +138,12 @@ def test_rotate_and_crop_the_picture(db, tmp_path, monkeypatch):  # noqa: F811
     client.post("/api/settings", json={"slots": [[0.5, 0.5, 1, 1]]})
 
     state = client.post("/api/settings", json={"crop": [0.5, 0.5, 1, 1]}).get_json()
-    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False, "auto_straight": True, "min_card": None, "bed_box": None, "straight_samples": 0, "straight_refused": None}
+    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False, "auto_straight": True, "min_card": None, "bed_box": None, "empty_bed": False, "straight_samples": 0, "straight_refused": None}
     assert state["slots"] == [[0, 0, 1, 1]]                      # same spot, now the whole picture
     state = client.post("/api/settings", json={"crop": [0, 0, 0.5, 0.5]}).get_json()
     assert state["view"]["crop"] == [0.5, 0.5, 0.75, 0.75]       # a crop of the crop
     state = client.post("/api/settings", json={"rotate": 90}).get_json()
-    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False, "auto_straight": True, "min_card": None, "bed_box": None, "straight_samples": 0, "straight_refused": None}
+    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False, "auto_straight": True, "min_card": None, "bed_box": None, "empty_bed": False, "straight_samples": 0, "straight_refused": None}
     saved = json.loads((tmp_path / "settings.json").read_text())
     assert saved["rotate"] == 90 and saved["crop"] == [0.25, 0.5, 0.5, 0.75]
 
@@ -573,3 +573,34 @@ def test_an_empty_bed_does_not_keep_a_card_on_the_table(db, monkeypatch):  # noq
     scanner.tracks = [old]
     scanner.process(frame)
     assert scanner.tracks == []                                  # the card that left is gone
+
+
+def test_the_bare_bed_is_remembered_and_never_read_as_a_card(db, tmp_path, monkeypatch):  # noqa: F811
+    """Nic (2026-11-09): the empty bed was read as Precise Redaction, a good match, and
+    saved again and again. The scanner remembers the bare bed inside the bed box ("Bed is
+    empty", and every sort run that sees its card leave), and the bed box isn't a card
+    while it looks like that."""
+    import app
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    client = create_app(scanner).test_client()
+    rng = np.random.default_rng(5)
+    bare = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)          # the bed's ribs
+    scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
+    rib = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[rib]])
+    assert len(scanner._whole_cards(bare)) == 1            # not known yet: the bed box stands in
+    scanner._seen = bare
+    view = client.post("/api/settings", json={"empty_bed": "now"}).get_json()["view"]
+    assert view["empty_bed"] is True
+    assert scanner._whole_cards(bare) == []                # the bare bed: nothing to read
+    noisy = np.clip(bare.astype(np.int16) + rng.integers(-6, 7, bare.shape), 0, 255).astype(np.uint8)
+    assert scanner._whole_cards(noisy) == []               # a little camera noise is still the bed
+    card = bare.copy()
+    card[10:110, 10:70] = rng.integers(0, 255, (100, 60, 3), dtype=np.uint8)   # a card on it
+    assert len(scanner._whole_cards(card)) == 1
+    fresh = Scanner(db, None, source=FakeCamera(0))        # kept for next time
+    fresh.restore(json.loads((tmp_path / "settings.json").read_text()))
+    assert fresh.empty_bed == scanner.empty_bed
+    assert client.post("/api/settings", json={"empty_bed": None}).get_json()["view"]["empty_bed"] is False
+    assert client.post("/api/settings", json={"empty_bed": "x"}).status_code == 400

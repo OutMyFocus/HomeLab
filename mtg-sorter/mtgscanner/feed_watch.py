@@ -73,13 +73,14 @@ class FrameTap:
         self.watching = 0
         self.seq = 0
         self.small = None
+        self.full = None     # the same picture at full size, as the scanner sees it
 
     def put(self, frame):
         if not self.watching:
             return
         small = small_gray(frame)
         with self.cond:
-            self.small, self.seq = small, self.seq + 1
+            self.small, self.full, self.seq = small, frame, self.seq + 1
             self.cond.notify_all()
 
     def next(self, after: int, timeout: float):
@@ -112,6 +113,7 @@ class FeedWatcher:
     def __init__(self, scanner, machine):
         self.scanner, self.machine = scanner, machine
         self.tap = FrameTap()
+        self._bed_clear = False   # the last sort_one saw its card leave the bed
         scanner.tap = self.tap
         self.busy = threading.Lock()
 
@@ -262,6 +264,16 @@ class FeedWatcher:
         self._hold_lights(True)
         try:
             seq, empty = self.tap.next(self.tap.seq, timeout=2.0)   # the bed before the card
+            remember = getattr(self.scanner, "remember_empty_bed", None)
+            if self._bed_clear and remember is not None and empty is not None:
+                # The last card was seen leaving, so the bed is bare: keep the scanner's
+                # idea of the empty bed up to date (the light and the bed change), so its
+                # ribs are never read as a card (2026-11-09).
+                try:
+                    remember(self.tap.full, save=True)
+                except Exception:
+                    pass
+            self._bed_clear = False
             # Feed without the settle wait or the back-off: the pins drop the moment the
             # card lands, with the back-off turning at the same time (the machine's own
             # timer stops it), so the card is on its way before the next one can follow
@@ -324,6 +336,7 @@ class FeedWatcher:
                 out["dropped"] = share < getattr(config, "SORT_GONE_SHARE", 0.05)
                 out["left_share"] = round(share, 3)
                 if out["dropped"]:
+                    self._bed_clear = True
                     break
         finally:
             self._hold_lights(False)
