@@ -489,6 +489,7 @@ def test_whole_cards_only_measures_the_card_on_the_bed(db, tmp_path, monkeypatch
     """Nic: the scanner shouldn't look at small sections of the card. "Whole cards
     only" sets the smallest card from the card on the bed, so its art box or text box
     is no longer read as a card of its own."""
+    monkeypatch.setattr(config, "BED_STILL_SECONDS", 0.0)   # (a bed at rest: see the moving-bed test)
     import app
     from mtgscanner.tracking import Track
     monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
@@ -560,6 +561,7 @@ def test_an_empty_bed_does_not_keep_a_card_on_the_table(db, monkeypatch):  # noq
     The bed's texture gave a piece inside the bed box, the bed box stood in for the card's
     outline, and the card's old track lived on. A bed box that doesn't match a card is the
     bare bed: no card is kept for it, and an old card there goes."""
+    monkeypatch.setattr(config, "BED_STILL_SECONDS", 0.0)   # (a bed at rest: see the moving-bed test)
     import app
     from mtgscanner.tracking import Track
     scanner = Scanner(db, None, source=FakeCamera(0))
@@ -585,6 +587,7 @@ def test_the_bare_bed_is_remembered_and_never_read_as_a_card(db, tmp_path, monke
     saved again and again. The scanner remembers the bare bed inside the bed box ("Bed is
     empty", and every sort run that sees its card leave), and the bed box isn't a card
     while it looks like that."""
+    monkeypatch.setattr(config, "BED_STILL_SECONDS", 0.0)   # (a bed at rest: see the moving-bed test)
     import app
     monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
     scanner = Scanner(db, None, source=FakeCamera(0))
@@ -613,3 +616,30 @@ def test_the_bare_bed_is_remembered_and_never_read_as_a_card(db, tmp_path, monke
     assert fresh.empty_bed == scanner.empty_bed
     assert client.post("/api/settings", json={"empty_bed": None}).get_json()["view"]["empty_bed"] is False
     assert client.post("/api/settings", json={"empty_bed": "x"}).status_code == 400
+
+
+def test_the_bed_box_only_stands_in_for_a_card_at_rest(db, monkeypatch):  # noqa: F811
+    """Tower (2026-11-09): ~2 s after each real card, while it slid off the bed, half the
+    card and the ribs in the bed box read as Precise Redaction and were saved. The bed box
+    only stands in for a card once the bed has looked the same for BED_STILL_SECONDS."""
+    import app
+    from mtgscanner.vision import fingerprint
+    monkeypatch.setattr(config, "BED_STILL_SECONDS", 1.0)
+    clock = [100.0]
+    monkeypatch.setattr(app.time, "monotonic", lambda: clock[0])
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    rng = np.random.default_rng(7)
+    scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
+    scanner.empty_bed = fingerprint(rng.integers(0, 255, (200, 100, 3), dtype=np.uint8))
+    piece = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[piece]])
+    a = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)
+    b = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)
+    assert scanner._whole_cards(a) == []            # just seen: wait
+    clock[0] += 0.5
+    assert scanner._whole_cards(b) == []            # moving
+    clock[0] += 0.5
+    assert scanner._whole_cards(b) == []            # still for 0.5 s only
+    clock[0] += 0.6
+    (outline,) = scanner._whole_cards(b)             # at rest for over a second
+    assert isinstance(outline, app.BedBox)
