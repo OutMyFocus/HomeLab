@@ -134,6 +134,27 @@ class WaitingForCamera:
 SESSION_SHOWN = 100  # cards of this session listed on the scanner page
 
 
+LOOK_SIZE = (24, 34)   # width, height of _bed_look
+
+
+def _bed_look(crop):
+    """The middle of the bed box (where a card covers the ribs), small, grey and blurred."""
+    h, w = crop.shape[:2]
+    middle = crop[int(h * 0.15):int(h * 0.85), int(w * 0.15):int(w * 0.85)]
+    grey = cv2.cvtColor(middle, cv2.COLOR_BGR2GRAY) if middle.ndim == 3 else middle
+    return cv2.resize(cv2.GaussianBlur(grey, (5, 5), 0), LOOK_SIZE, interpolation=cv2.INTER_AREA)
+
+
+def look_likeness(a, b) -> float:
+    """How alike two _bed_look pictures are, -1 to 1, whatever their brightness and contrast."""
+    a = a.astype(np.float32).ravel()
+    b = b.astype(np.float32).ravel()
+    a -= a.mean()
+    b -= b.mean()
+    n = float(np.linalg.norm(a) * np.linalg.norm(b))
+    return float(a @ b) / n if n > 1e-6 else 0.0
+
+
 class BedBox(list):
     """The outlines of a card that only the bed box stands for (no edge of its own was
     found, see Scanner._whole_cards). The bed's own texture can give such a piece with
@@ -179,6 +200,7 @@ class Scanner:
         # glare) but whose art or text box shows there is read from this box instead.
         self.bed_box = None
         self.empty_bed = None   # fingerprint of the bare bed in the bed box (remember_empty_bed)
+        self.empty_look = None  # the bare bed's middle, small and grey (_bed_look)
         self._seen = None       # the last picture as the scanner sees it (rotated, cropped, straightened)
         self._bed_small = None  # the bed box, small and grey, on the last picture (_bed_still)
         self._bed_moved_at = 0.0
@@ -253,6 +275,11 @@ class Scanner:
         except (TypeError, ValueError):
             empty = None
         self.empty_bed = empty if empty and len(empty) == 64 else None
+        try:
+            look = np.frombuffer(bytes.fromhex(saved["empty_look"]), np.uint8) if saved.get("empty_look") else None
+        except (TypeError, ValueError):
+            look = None
+        self.empty_look = look.reshape(LOOK_SIZE[1], LOOK_SIZE[0]) if look is not None and look.size == LOOK_SIZE[0] * LOOK_SIZE[1] else None
 
     def set_min_card_from_bed(self) -> float:
         """Look only for whole cards: the smallest card becomes MIN_CARD_FROM_BED of the
@@ -289,9 +316,11 @@ class Scanner:
         frame = self._seen if frame is None else frame
         if not self.bed_box or frame is None:
             return False
-        self.empty_bed = fingerprint(warp_card(frame, self._bed_rect(frame)))
+        crop = warp_card(frame, self._bed_rect(frame))
+        self.empty_bed = fingerprint(crop)
+        self.empty_look = _bed_look(crop)
         if save:
-            save_settings(empty_bed=self.empty_bed.hex())
+            save_settings(empty_bed=self.empty_bed.hex(), empty_look=self.empty_look.tobytes().hex())
         return True
 
     def bed_lookalikes(self) -> set[str]:
@@ -339,8 +368,14 @@ class Scanner:
         """Whether the bed box shows the bare bed remembered by remember_empty_bed."""
         if not self.bed_box or self.empty_bed is None:
             return False
-        fp = fingerprint(warp_card(frame, self._bed_rect(frame)))
-        return fingerprint_distance(self.empty_bed, fp) <= config.EMPTY_BED_DISTANCE
+        crop = warp_card(frame, self._bed_rect(frame))
+        if fingerprint_distance(self.empty_bed, fingerprint(crop)) <= config.EMPTY_BED_DISTANCE:
+            return True
+        # The fingerprint misses the bare bed when the light bars dip (tower, 2026-11-09:
+        # the bed read as Precise Redaction, "sure", in a dimmer picture). Its pattern of
+        # ribs stays the same whatever the brightness; a card covers it.
+        return (self.empty_look is not None
+                and look_likeness(self.empty_look, _bed_look(crop)) >= config.EMPTY_BED_LIKENESS)
 
     def set_straight(self, on, corners=None):
         """Straighten the picture from the card on the bed now (True) or stop (False).
@@ -1155,8 +1190,8 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             if "empty_bed" in body:
                 # "now": the bed is bare, remember it; null: forget it
                 if body["empty_bed"] is None:
-                    sc.empty_bed = None
-                    save_settings(empty_bed=None)
+                    sc.empty_bed = sc.empty_look = None
+                    save_settings(empty_bed=None, empty_look=None)
                 elif body["empty_bed"] == "now":
                     if not sc.remember_empty_bed(save=remember):
                         return jsonify({"error": "Turn on Whole cards only first (it marks where the bed is)"}), 400
