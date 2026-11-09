@@ -643,3 +643,27 @@ def test_the_bed_box_only_stands_in_for_a_card_at_rest(db, monkeypatch):  # noqa
     clock[0] += 0.6
     (outline,) = scanner._whole_cards(b)             # at rest for over a second
     assert isinstance(outline, app.BedBox)
+
+
+def test_a_card_the_bare_bed_reads_as_only_counts_when_sure(db):  # noqa: F811
+    """Nic (2026-11-09, evening): Precise Redaction still read from the bed. The cards the
+    bare bed itself comes closest to are its lookalikes; on the bed one of them only counts
+    as a sure match, so the ribs (a "good match" at best) are never saved as it."""
+    from mtgscanner.recognize import Match
+    from mtgscanner.vision import fingerprint
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    scanner.frame_size = (100, 200)
+    scanner.bed_box = [0.1, 0.05, 0.7, 0.55]
+    scanner.empty_bed = fingerprint(fake_card(0))          # this bed reads as "Card 0"
+    assert "Card 0" in scanner.bed_lookalikes()
+    on_bed = [np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32)]
+    off_bed = [np.array([[10, 130], [70, 130], [70, 190], [10, 190]], np.float32)]
+    card0 = db.get_card("id0")
+    likely = Match(on_bed[0], card0, 70, 8, "likely", [])
+    assert scanner._screen(on_bed, likely).card is None    # the bed's lookalike, not sure: no card
+    sure = Match(on_bed[0], card0, 30, 40, "sure", [])
+    assert scanner._screen(on_bed, sure).card is card0     # a real one reads sure
+    assert scanner._screen(off_bed, likely).card is card0  # off the bed: as before
+    other = Match(on_bed[0], db.get_card("id2"), 70, 8, "likely", [])
+    if "Card 2" not in scanner.bed_lookalikes():
+        assert scanner._screen(on_bed, other).card is not None

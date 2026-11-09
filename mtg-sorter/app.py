@@ -294,6 +294,37 @@ class Scanner:
             save_settings(empty_bed=self.empty_bed.hex())
         return True
 
+    def bed_lookalikes(self) -> set[str]:
+        """The cards the bare bed itself reads closest to (its ribs read as Precise
+        Redaction on Nic's bed, 2026-11-09). On the bed, a card with one of these names
+        only counts when it's a sure match. Empty until the bare bed is known."""
+        if self.empty_bed is None or self.matcher is None:
+            return set()
+        if getattr(self, "_lookalikes", (None,))[0] != self.empty_bed:
+            names = set()
+            hit = self.matcher.rank(self.empty_bed, candidates=config.BED_LOOKALIKES)
+            for cid, d in [(hit.id, hit.distance), *hit.candidates]:
+                card = self.matcher.get_card(cid) if cid else None
+                if card is not None and d <= config.CANDIDATE_DISTANCE:
+                    names.add(card.name)
+            self._lookalikes = (self.empty_bed, names)
+        return self._lookalikes[1]
+
+    def _screen(self, outlines, result):
+        """A match the bare bed could have given (a bed lookalike, not sure, on the bed)
+        is no card at all."""
+        if (result is None or result.card is None or result.confidence == "sure"
+                or not self.bed_box or self.frame_size is None):
+            return result
+        w, h = self.frame_size
+        cx, cy = np.asarray(outlines[0], np.float32).mean(axis=0)
+        x0, y0, x1, y1 = self.bed_box
+        if not (x0 * w <= cx <= x1 * w and y0 * h <= cy <= y1 * h):
+            return result
+        if result.card.name not in self.bed_lookalikes():
+            return result
+        return Match(result.corners, None, result.distance, result.margin, None, result.candidates)
+
     def _bed_still(self, frame, bed) -> bool:
         """Whether the bed box has looked the same for config.BED_STILL_SECONDS."""
         small = cv2.resize(cv2.cvtColor(warp_card(frame, bed), cv2.COLOR_BGR2GRAY), (32, 45),
@@ -539,7 +570,7 @@ class Scanner:
                 # that's gone, so leave the new one alone.
                 todo, new, gone = [], [], []
             for t, outlines, check in todo:
-                result = next(results) if check else None
+                result = self._screen(outlines, next(results)) if check else None
                 if isinstance(outlines, BedBox) and result is not None and result.card is None:
                     # Only the bed box, and it isn't a card: the card has left and the
                     # bed's texture is all that's there (Nic, 2026-11-09: a card that had
@@ -549,7 +580,7 @@ class Scanner:
                     continue
                 self._update(t, outlines, result, frame)
             for outlines in new:
-                result = next(results)
+                result = self._screen(outlines, next(results))
                 if isinstance(outlines, BedBox) and result.card is None:
                     continue        # the bare bed, not a card
                 number = next(
