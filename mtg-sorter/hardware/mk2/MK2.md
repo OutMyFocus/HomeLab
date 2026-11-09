@@ -23,7 +23,12 @@ The drop simulation (`sim/drops.py`, `sim/push.py`) had every card landing flat.
 ## Print
 
 1. **Plate 01 first: the fit coupon** (about 40 minutes). It tests every joint at a few sizes, so pick what feels right using the notes in `coupon.scad`. If any size differs from `fit.scad`, send the numbers and the 3MF gets rebuilt. Every part takes its sizes from `fit.scad`.
-2. **Then plates 02 to 31, in order.** The frame comes first, so each later module can be test-fitted as it comes off the printer.
+2. **Then plates 02 to 31, in order.** The frame comes first, so each later module can be test-fitted as it comes off the printer. To catch a problem before it costs a lot of filament, stop and check at these points:
+   - **After plates 02, 03 and 04:** join the base, then slide the first wall tile onto the base's edge dovetail. It should slide with a firm push and not lift off.
+   - **After plate 17 (level 2):** check a hall sensor lies flat in a shelf pocket, and a bin (plate 16) slides onto the shelf's runners and clicks onto its magnet.
+   - **After plate 19 (pushers):** build level 2's pusher on the bench: carriage on the guide, lever pin in the fork, servo clicked into its box. Move the horn by hand from end to end. The paddles should run the whole width without catching, and the servo shouldn't pull back out. Slide a TCRT5000 into a sensor holder, and the holder into its groove.
+   - **After plate 21 (scan carrier):** click the stop bar servo into its box and check the bar swings freely.
+   If anything binds, stop and send a photo before printing the rest.
 3. **Settings are per part and already set in the file:**
    - Every part: 4 walls, 20% gyroid infill.
    - Walls, base and everything that carries load: 5 walls, 30% infill.
@@ -46,17 +51,20 @@ Nothing is screwed or glued. Steel pins press into their holes, magnets press in
    - Press the magnets in: the drawer's, and each bin's two.
 2. **Walls:**
    - Each wall is 2 x 3 tiles, joined the same way (9 keys per wall, plus pins).
-   - Slide each wall onto the base's outer rebate from the front.
+   - Slide each wall onto the base from the front. The dovetail along the base's edge runs in the groove under the wall, so the walls and base stay locked together even if you lift the machine by its walls.
    - Press the rail magnets in near the closed end of each rail, and the lid magnets in the top ledge.
-3. **Level 2:**
-   - Fit its servo under the back beam, with the lever on the horn.
-   - Slide the carriage onto its dovetail and drop the lever pin into the crossbar's slot.
+3. **Level 2** (do this on the bench, before it goes in):
+   - Press the lever's horn into its pocket and a 3 x 16 mm pin through the lever's end, so 5 mm stands out of its flat face.
+   - Lay the carriage on the frame's guide, slide it to the middle, and lower the lever in from above so its pin drops into the fork at the top of the crossbar.
+   - Slide the pusher servo in from the back of its box, shaft first into the lever's horn, until the latch clicks over the back of its body. To take it out, lift the latch finger with a fingernail and pull.
+   - Lay a hall sensor flat in each shelf's pocket, legs back along the groove (it reads the bin's magnet through the bin's floor).
    - Slide the frame in from the front on the lowest rail until its magnet clicks.
 4. **Level 1:**
    - Same as level 2.
-   - Then fit the two door servos on the left, with each servo's horn in its door's pocket.
+   - Then slide the two door servos in from the left until their latches click, each horn in its door's pocket.
    - Push a 3 x 10 mm pin through each door's right knuckle.
    - Fit the column front and the back liner. They line the shaft the cards fall down.
+   - **Bin-full sensors:** slide a TCRT5000 module into each of the four holders (sensor end first, sensor facing out of the open side), then slide each holder's tongue back into the groove in the frame's stiffener behind its bin. The left holders are the same part turned upside down. The sensor looks through the slot in the bin's back wall, and the bin in front keeps the holder in its groove.
 5. **Scan module:**
    - Fit the stop bar: a 3 x 10 mm pin through the left arm, and the servo's horn in the right arm.
    - Stick the LED strip pieces into the light box and the light bars, and drop the bars into their slots with the polarizer strips in front.
@@ -79,7 +87,12 @@ Nothing is screwed or glued. Steel pins press into their holes, magnets press in
    - Lay the two lid halves on the ledge, where the magnets hold them.
    - Slide the drawer and the four bins in.
 
-**Cables** run in the walls' trunks (the right wall's trunk at y 76, plus a branch to the feeder) under click-in lids. Every module's harness ends in a labelled JST-XH plug at the tray's patch bar, so you can take any module out without cutting or soldering anything.
+**Cables** run in the walls' trunks (one in each wall at y 76, plus a branch to the feeder) under click-in lids. Every lid has a wire notch every 30 mm on its back edge: put the lids in notches to the back, and a wire drops into the trunk wherever it meets it. Every module's harness ends in a labelled JST-XH plug at the tray's patch bar, so you can take any module out without cutting or soldering anything. Nothing moves behind the bins or under the back beams, so that's where wires cross to the trunk:
+- **Front door servo:** up into the channel along the top of level 1's left side, back along it, then into the left trunk.
+- **Back door servo and the bin 1 and 2 full sensors:** down behind the bin, under level 1's back beam, into the trunk.
+- **Bin 1 and 2 seated sensors:** along the groove from the pocket to behind the bin, then up and back into the trunk above level 2's pusher (keep them above the top of level 2's fork).
+- **Bin 3 and 4 full sensors:** down behind the bin, under level 2's back beam, into the trunk. Their seated sensors' wires run under the base to the tray, as before.
+- **Pusher servos:** straight from the back of each servo box to the trunk, behind the levers.
 
 **PTFE tape (1/2 inch):**
 - **Scan bed lands:** cut the tape in half lengthwise for the four 6.5 mm lands.
@@ -102,6 +115,10 @@ Nothing is screwed or glued. Steel pins press into their holes, magnets press in
 - **Relay.** It's driven by **GPIO22**, with the module's trigger jumper on HIGH. The app closes it once it has started and opens it when the Pi shuts down. Until then the servos, motor and lights have no power, so nothing twitches at boot.
 - **The Pi 5 on a non-PD supply.** Run `sudo rpi-eeprom-config --edit` and add `PSU_MAX_CURRENT=5000`. That stops the "power supply not capable of 5A" warning, and the brick does supply it.
 - **Never use 12 V.** Mk2 has no regulator.
+
+## Heat
+
+The heat comes from the Pi 5 (with its Active Cooler) and the relay in the electronics tray at the bottom back, plus the servos and motor when they move. Cool air comes in low through the slots in the tray's back plate, rises through the back of the machine (behind the levels, where nothing else is), and leaves through the louvred vents in both back panels and round the magazine's opening in the lid. The louvres slope down to the outside, so warm air gets out but light from the room, which comes from above, can't reach the scan bed.
 
 ## Pin map
 
@@ -130,9 +147,9 @@ The app still drives Mk1 (a tilt tray and stop pins). These changes come once th
 - **Sort sequence:**
   1. Stop bar down.
   2. The card lands on level 1 (about 0.3 s).
-  3. For bin 1 or 2: push1 goes to that side and back to centre.
-  4. For bin 3 or 4: both doors open, the card drops (about 0.4 s), the doors close, then push2 goes to that side and back.
-  5. Stop bar up.
+  3. **Stop bar up again before anything else moves.** When it's down it hangs over level 1's pusher, so the pusher must stay at the centre until it's back up.
+  4. For bin 1 or 2: push1 goes to that side and back to centre.
+  5. For bin 3 or 4: both doors open, the card drops (about 0.4 s), the doors close, then push2 goes to that side and back.
 - **Pusher speed:** about 120 mm/s, so about 0.6 s per stroke. The scotch-yoke lever already slows the paddle at both ends of its travel. Move the servo at a steady rate through ±80°.
 - **Relay:** GPIO22 high at start, low at shutdown. Home moves the doors shut, the pushers to centre and the stop bar up.
 - **Feeder:** the 60 RPM motor feeds the card at about 90 mm/s, so start with `FEEDER_SECONDS` around 1.0 and let the camera's landing check stop it, as now.
@@ -140,7 +157,8 @@ The app still drives Mk1 (a tilt tray and stop pins). These changes come once th
 
 ## Checking the design
 
-- **`python3 check.py`:** 30 clash checks between every part, at every position of every moving part. Each must come out "clear". It covers the pusher strokes, open doors, the stop bar's swing, the feeder wheels' sweep, and a card's path through both levels.
+- **`python3 check.py`:** clash checks between every part, at every position of every moving part. Each must come out "clear". It covers both pushers at every eighth of their stroke, open doors, the stop bar's swing, the feeder wheels' sweep, the bin-full sensor holders, and a card's path through both levels. It also checks that each lever's pin stays inside its carriage's fork at every position, that every servo sits free in its pocket, and (the `_latch` checks, which must come out "CLASH") that each servo pulled back 2 mm runs into its latch.
 - **`python3 export.py`:** writes every printed part to `stl/mk2_<part>.stl`, turned the way it prints.
+- **`python3 meshcheck.py`:** checks every exported part before it goes in the 3MF: one solid piece (no loose bits, no sealed hollows), watertight, fits the A1's bed, sits flat on the plate, and how much overhang needs support.
 - **`python3 ../bambu/make_mk2.py`:** builds the 3MF from those STLs, and writes the print config (`presets/mk2/` and the zip) from the same settings. `--config` writes only the print config.
 - **`sim/`:** the 2D drop and push simulations behind the bed angle, the drop heights and the pusher speed.

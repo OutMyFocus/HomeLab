@@ -25,6 +25,7 @@
 // to the surface (+ = up, towards the camera).
 include <joints.scad>
 include <layout.scad>
+use <levels.scad>            // the servo pocket with its snap latch
 part = "scan";
 stop_down = 0;     // 0 = up (holding the card), 1 = down
 
@@ -120,13 +121,15 @@ module carrier_plate() {
         for (m = [0, 1]) mirror([m, 0, 0]) translate([lb_x - 4.25, lb_s[0] - 0.01, 0]) cube([8.5, lb_s[1] - lb_s[0] + 0.02, lb_n]);
     }
 }
-module stop_servo_box() {   // shaft on the stop axis, pointing -x; body behind (+x), long side along -n
-    translate([0, -sv_w / 2 - 2.5, -(sv_len - sv_shaft_off) - 2.5 - (sv_tab_len - sv_len) / 2]) cube([sv_body + 2.5, sv_w + 5, sv_tab_len + 5]);
-}
+// shaft on the stop axis, pointing -x; body behind (+x), long side along -n. The same pocket as the
+// level servos' (levels.scad): it slides in from +x and a spring finger in the box's side snaps
+// over the back of its body, so it can't walk off the arm.
+module stop_servo_box() translate([0.5, 0, 0]) mirror([0, 0, 1]) servo_x_box([0, 0, 1], sv_body + 2.0);
 module stop_servo_cut() {
     translate([-sv_top - 1, -sv_w / 2 - 0.25, -(sv_len - sv_shaft_off) - 0.25]) cube([sv_top + 1.01, sv_w + 0.5, sv_len + 0.5]);
-    translate([0, -sv_w / 2 - 0.25, -(sv_len - sv_shaft_off) - (sv_tab_len - sv_len) / 2 - 0.25]) cube([sv_body + 10, sv_w + 0.5, sv_tab_len + 0.5]);
+    mirror([0, 0, 1]) servo_x_cut([0, 0, 1], 1);
 }
+module stop_servo_placed(d = 0) on_bed() translate([stop_sv_x + d, stop_axis[0], stop_axis[1]]) mirror([0, 0, 1]) servo_x([0, 0, 1]);   // for the checks
 module stop_servo_body() {
     translate([0, -sv_w / 2, -(sv_len - sv_shaft_off)]) cube([sv_body, sv_w, sv_len]);
     translate([0, -sv_w / 2, -(sv_len - sv_shaft_off) - (sv_tab_len - sv_len) / 2]) cube([2.5, sv_w, sv_tab_len]);

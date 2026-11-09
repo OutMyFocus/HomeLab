@@ -53,8 +53,18 @@ module back_panel(z0, z1, tongue) {
         if (!tongue) translate([-cov_half + 12 - fit_slide, bk_y[0] + 2 - fit_slide, z0 - 0.01]) cube([2 * cov_half - 24 + 2 * fit_slide, 2 + 2 * fit_slide, 4.4]);
         // finger notch at the top
         translate([0, bk_y[1] + 1, z1]) rotate([90, 0, 0]) scale([1, 0.6, 1]) cylinder(d = 40, h = 3.01, $fn = 64);
+        // vents: louvres through the skin between the ribs, slanted 45 degrees so the outside opening
+        // is lower than the inside. Warm air leaves, and light from the room (which comes down) can't
+        // get in to the scan bed. They print fine skin-down: each slot's roof is a 45 degree slope.
+        zs = [z0 + (z1 - z0) / 3, z0 + 2 * (z1 - z0) / 3];
+        for (f = vent_fields) for (z = [z0 + 14 : 8 : z1 - 16]) if (abs(z - zs[0]) > 5 && abs(z - zs[1]) > 5)
+            hull() {
+                translate([f[0], bk_y[1] - 2 - 0.01, z]) cube([f[1] - f[0], 0.01, 2]);
+                translate([f[0], bk_y[1] - 0.01, z - 2]) cube([f[1] - f[0], 0.02, 2]);
+            }
     }
 }
+vent_fields = [[-cov_half + 12, -64], [-56, -4], [4, 56], [64, cov_half - 12]];   // x spans clear of the rim and ribs
 module back_low() back_panel(back_up_z + reveal / 2, back_split, true);
 module back_high() back_panel(back_split, top_z - 0.01, false);
 

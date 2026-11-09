@@ -22,11 +22,13 @@ def parts():
             for iz in (0, 1, 2):
                 out.append("wall_%s%d%d" % (side, iy, iz))
     out += ["base_" + n for n in ("fl", "fr", "bl", "br")]
+    out += ["coupon_plate", "coupon_pieces"]         # from coupon.scad
     return sorted(set(out))
 
 def run(p):
     out = os.path.join(STL, "mk2_%s.stl" % p)
-    r = subprocess.run(["openscad", "-o", out, "-D", 'part="%s"' % p, SRC], capture_output=True, text=True)
+    src, q = (os.path.join(HERE, "coupon.scad"), p[7:]) if p.startswith("coupon_") else (SRC, p)
+    r = subprocess.run(["openscad", "-o", out, "-D", 'part="%s"' % q, src], capture_output=True, text=True)
     txt = r.stdout + r.stderr
     if r.returncode or "WARNING" in txt and "empty" in txt.lower() or not os.path.exists(out):
         return p, False, txt[-600:]
