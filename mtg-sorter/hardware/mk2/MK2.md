@@ -3,6 +3,7 @@
 A full redesign of the sorter. It's one solid box, 244 mm wide, 308 mm deep and 580 mm tall. Every module slides into place on a dovetail rail and clicks home on a magnet, so there are no screws and no glue anywhere. It has four identical bins with handles, a 450-card magazine you load from the top, and one plug with one power button.
 
 - **Print file:** [`../bambu/MTG_Sorter_Mk2.3mf`](../bambu/MTG_Sorter_Mk2.3mf). It has 31 plates in print order, with the settings already applied. Answer **No** to "load as a single object".
+- **Print config:** [`../bambu/presets/mk2/`](../bambu/presets/mk2/README.md). It has the same settings as eight Bambu Studio process presets, plus a table of which preset and colour each part takes. [`../bambu/MTG_Sorter_Mk2_Print_Config.zip`](../bambu/MTG_Sorter_Mk2_Print_Config.zip) is the same folder as one download.
 - **Parts to buy:** the Amazon.ca list in the [parts doc](https://claude.ai/artifact/5m2BNyQTrVAmBZscmgdgWu). It has 17 items, and you reuse your Pi 5, camera, PCA9685, DRV8833, light strip and MG90S servos.
 - **Design notes:** [Redesign the sorter with no screws](https://claude.ai/artifact/Ug65EkUTzifY95Legm4BDj).
 
@@ -24,7 +25,8 @@ The drop simulation (`sim/drops.py`, `sim/push.py`) had every card landing flat.
 1. **Plate 01 first: the fit coupon** (about 40 minutes). It tests every joint at a few sizes, so pick what feels right using the notes in `coupon.scad`. If any size differs from `fit.scad`, send the numbers and the 3MF gets rebuilt. Every part takes its sizes from `fit.scad`.
 2. **Then plates 02 to 31, in order.** The frame comes first, so each later module can be test-fitted as it comes off the printer.
 3. **Settings are per part and already set in the file:**
-   - Walls and base: 4 walls, 25% infill.
+   - Every part: 4 walls, 20% gyroid infill.
+   - Walls, base and everything that carries load: 5 walls, 30% infill.
    - Tall parts: a 5 mm brim.
    - The level frames, scan carrier, camera arch, feeder stand and electronics tray: tree supports, set to auto.
    - The shoe, roller, levers and keys: solid.
@@ -140,5 +142,5 @@ The app still drives Mk1 (a tilt tray and stop pins). These changes come once th
 
 - **`python3 check.py`:** 30 clash checks between every part, at every position of every moving part. Each must come out "clear". It covers the pusher strokes, open doors, the stop bar's swing, the feeder wheels' sweep, and a card's path through both levels.
 - **`python3 export.py`:** writes every printed part to `stl/mk2_<part>.stl`, turned the way it prints.
-- **`python3 ../bambu/make_mk2.py`:** builds the 3MF from those STLs.
+- **`python3 ../bambu/make_mk2.py`:** builds the 3MF from those STLs, and writes the print config (`presets/mk2/` and the zip) from the same settings. `--config` writes only the print config.
 - **`sim/`:** the 2D drop and push simulations behind the bed angle, the drop heights and the pusher speed.
