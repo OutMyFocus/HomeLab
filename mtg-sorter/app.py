@@ -312,19 +312,27 @@ class Scanner:
     def _whole_cards(self, frame):
         """find_cards for "Whole cards only": outlines smaller than min_card (a card's art
         or text box) aren't cards. When only such a piece shows inside the bed box, the
-        card's edge was lost (glare on a foil's black border), so the bed box is its outline."""
+        card's edge was lost (glare on a foil's black border), so the bed box is its outline.
+        A whole card on the bed also gets the bed box as a second outline to try."""
         h, w = frame.shape[:2]
         found = find_cards(frame)
         least = self.min_card * w * h
         cards = [g for g in found if cv2.contourArea(np.asarray(g[0], np.float32)) >= least]
-        if cards or not self.bed_box:
+        if not self.bed_box:
             return cards
         x0, y0, x1, y1 = self.bed_box[0] * w, self.bed_box[1] * h, self.bed_box[2] * w, self.bed_box[3] * h
-        for g in found:
-            cx, cy = np.asarray(g[0], np.float32).mean(axis=0)
-            if x0 <= cx <= x1 and y0 <= cy <= y1:
-                return [[np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.float32)]]
-        return []
+        bed = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.float32)
+
+        def on_bed(group):
+            cx, cy = np.asarray(group[0], np.float32).mean(axis=0)
+            return x0 <= cx <= x1 and y0 <= cy <= y1
+
+        if cards:
+            # A whole outline on a foil is often a little off (a corner pulled in by glare),
+            # and the bed box is exactly where a card lies: try it as well, best match wins.
+            # On the Pi's unread cards (2026-11-09) the bed box read 3 of 6 the outline missed.
+            return [[g[0], bed, *g[1:]] if on_bed(g) else g for g in cards]
+        return [[bed]] if any(on_bed(g) for g in found) else []
 
     def _find(self, frame):
         """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
