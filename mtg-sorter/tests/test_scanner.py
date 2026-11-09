@@ -363,3 +363,20 @@ def test_auto_straighten_takes_one_sample_per_card(db, monkeypatch, tmp_path):
         except Exception:
             pass                       # only the sampling matters here
     assert len(scanner._auto_straight.samples) == 1
+
+
+def test_a_dim_card_is_looked_up_again_with_more_contrast(db):
+    """Nic: make the recognition better (2026-11-09). A foil on the dark bed comes out
+    flat and dim; when the first look isn't sure, the card is looked up again with its
+    contrast evened out (vision.boost_contrast), and the closer answer wins."""
+    from mtgscanner.recognize import _rank, _rank_both_ways
+    from mtgscanner.vision import boost_contrast
+    found = 0
+    for seed in range(4):
+        dim = (fake_card(seed).astype(np.float32) * 0.35 + 20).astype(np.uint8)
+        assert boost_contrast(dim).shape == dim.shape
+        plain = _rank_both_ways(db, dim)
+        hit = _rank(db, dim)
+        assert hit.distance <= plain.distance                 # never worse than without it
+        found += db.get_card(hit.id).id == f"id{seed}"
+    assert found >= 3

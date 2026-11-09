@@ -60,6 +60,21 @@ def tame_glare(card_bgr: np.ndarray) -> np.ndarray | None:
     return cv2.inpaint(card_bgr, mask, GLARE_GROW, cv2.INPAINT_TELEA)
 
 
+# Contrast: the bed is dark and a foil's colours come out flat and dim next to the stock
+# picture. Evening out the contrast (CLAHE on the lightness only) brings the art back;
+# on the Pi's unread cards (2026-11-09) it moved each one 1-4 bits closer to its card.
+CONTRAST_CLIP = 2.0
+CONTRAST_TILES = 8
+
+
+def boost_contrast(card_bgr: np.ndarray) -> np.ndarray:
+    """The card with its contrast evened out, colours kept."""
+    lab = cv2.cvtColor(card_bgr, cv2.COLOR_BGR2LAB)
+    clahe = cv2.createCLAHE(clipLimit=CONTRAST_CLIP, tileGridSize=(CONTRAST_TILES, CONTRAST_TILES))
+    lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+
 def fingerprint(card_bgr: np.ndarray) -> bytes:
     """Same as fingerprint_pil(), for an upright, cropped card from the camera (OpenCV's BGR)."""
     return fingerprint_pil(Image.fromarray(cv2.cvtColor(card_bgr, cv2.COLOR_BGR2RGB)))
