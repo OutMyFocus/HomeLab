@@ -18,6 +18,7 @@ part = "frame";
 
 // ================================ SIDE WALLS ================================================
 // Drawn for the right wall (x from wall_in to wall_out); the left wall is its mirror image.
+wall_lock_x = wall_in + wall_t / 2;   // the wall-to-base dovetail, along the middle of the wall's bottom edge
 rim = 8;                       // full-thickness rim round each tile
 rib = 14;                      // full-thickness strips behind each rail
 chan_z = [etray_z1 - 20, top_z - 40];
@@ -56,6 +57,8 @@ module key_across_y() multmatrix([[0, 0, -1, 0], [1, 0, 0, 0], [0, -1, 0, 0], [0
 module key_across_z() multmatrix([[0, 0, -1, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 1]]) children();
 
 module wall_cuts() {
+    // the groove the base's wall lock slides in (right wall; the left is its mirror)
+    translate([wall_lock_x, front_y - 0.01, wall_z0]) dove_slot_cut(back_y - front_y + 0.02, 3, 2);
     // module rails: dovetail grooves, open at the end the module comes in from; a magnet near the
     // closed end holds the module home (its own magnet sits in the tongue's neck)
     for (r = rails) {
@@ -114,6 +117,9 @@ module base_full() {
             for (s = [-1, 1]) translate([s * bin_x, 0, 0]) bin_seat(base_top);
             for (s = [-1, 1]) translate([s * etray_rail_x, etray_y0, base_top - 0.01]) dove_rail(back_y - etray_y0, 3, 2);
             for (s = [-1, 1]) translate([s * pbay_x, front_y + 4, base_top - 0.01]) dove_rail(etray_y0 - front_y - 6, 3, 2);
+            // the walls' locks: a dovetail along each rebate that the wall's bottom edge slides onto
+            // from the front, so lifting the machine by its walls lifts the base too
+            for (s = [-1, 1]) translate([s * wall_lock_x, front_y + 1, wall_z0 - 0.01]) dove_rail(back_y - front_y - 2, 3, 2);
         }
         for (s = [-1, 1]) translate([s > 0 ? wall_in - fit_slide : -wall_out - 1, front_y - 1, wall_z0]) cube([wall_t + 1 + fit_slide, back_y - front_y + 2, 10]);
         for (s = [-1, 1]) translate([s * bin_x, 0, 0]) {
@@ -142,7 +148,6 @@ module base_tile(t) intersection() { base_full(); translate([t[1][0], t[2][0], -
 // magnets underneath; a window in the back wall where the full sensor looks in.
 bin_fw = bin_out_x / 2 + 8.2;          // the front plate covers the frame's gaps: x +-42.7 round the bin
 bin_fp = 4;                            // front plate thickness
-full_z = 14;                           // the full sensor looks in this far below the bin's top
 module bin() {
     xo = bin_out_x / 2;  zt = bin_h;
     difference() {
@@ -158,7 +163,7 @@ module bin() {
         hull() for (x = [-24, 24]) translate([x, front_y - 1, zt - 22]) rotate([-90, 0, 0]) cylinder(d = 18, h = bin_fp + 2);
         translate([-30, front_y + reveal / 2 - 0.01, 30]) cube([60, 0.8, 20]);
         hull() for (x = [-18, 18]) translate([x, bin_y1 - 1, zt - 10]) rotate([-90, 0, 0]) cylinder(d = 14, h = bin_wall + 2);
-        translate([-6, bin_y1 - 1, zt - full_z - 4]) cube([12, bin_wall + 2, 8]);
+        translate([-12, bin_y1 - 1, zt - full_z - 4]) cube([24, bin_wall + 2, 8]);    // wide, so the sensor needn't sit exactly
         for (s = [-1, 1]) translate([s * runner_x - runner[0] / 2 - fit_slide, front_y - 1, -0.01]) cube([runner[0] + 2 * fit_slide, bin_back - front_y + 2, runner[1] + 0.3]);
         for (s = [-1, 1]) translate([s * bin_mag[0], bin_mag[1], -0.01]) magnet_cut();
     }
@@ -167,7 +172,7 @@ module bin() {
 bin_spots = [[-bin_x, bin1_z], [bin_x, bin1_z], [-bin_x, bin3_z], [bin_x, bin3_z]];
 module bin_at(i) translate([bin_spots[i][0], 0, bin_spots[i][1]]) bin();
 
-module trunk_lid(label) chan_lid((chan_z[1] - chan_z[0]) / 3 - 0.5, label = label);
+module trunk_lid(label) chan_lid((chan_z[1] - chan_z[0]) / 3 - 0.5, label = label, notches = true);   // the notches face the back (+y)
 module branch_lid() chan_lid(chan2_y1 - chan_y - 10 - 0.5, label = "FEED");
 
 module frame_assembly() {

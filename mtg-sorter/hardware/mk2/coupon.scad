@@ -98,7 +98,7 @@ module pieces() {
         translate([30 + i * 34, 26, 0]) hook_block(hooks[i]);
         translate([34 + i * 34, 2, hook_w - 0.5]) linear_extrude(0.51) text(fmt(hooks[i]), size = 3, halign = "center", font = "Liberation Sans:style=Bold");
     }
-    translate([0, 40, 0]) rotate([0, 0, 0]) translate([0, 0, lid_t]) chan_lid(40, label = "E");
+    translate([0, 80, 0]) rotate([180, 0, 0]) chan_lid(40, label = "E");     // outer face down, as the real lids print
     translate([30, 44, 0]) test_board();
 }
 
