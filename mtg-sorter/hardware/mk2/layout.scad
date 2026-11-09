@@ -40,6 +40,7 @@ bin_back = bin_y1 + bin_wall;           // 47.5
 bin_floor = 3;
 bin_depth = 150;                        // inside: about 400 cards
 bin_h    = bin_floor + bin_depth;       // 153 outside
+full_z   = 14;                          // the bin-full sensor looks in this far below a bin's top
 
 // ---- frame ----------------------------------------------------------------------------------
 wall_in  = 112;        // inner faces of the side walls (a pusher's far paddle reaches 108.5)

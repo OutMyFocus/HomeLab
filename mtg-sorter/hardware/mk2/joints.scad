@@ -79,7 +79,9 @@ module chan_cut(len, cw = chan_w, cd = chan_d) {
     // the groove the lid's bumps click into
     for (s = [-1, 1]) translate([s * (cw / 2 + 0.6), -0.01, -lid_t - 0.6]) rotate([-90, 0, 0]) cylinder(d = 1.0, h = len + 0.02, $fn = 12);
 }
-module chan_lid(len, cw = chan_w, label = "") {
+// notches = true: a wire entry every 30 mm along one long edge (between the click bumps), so a
+// module's wires drop into the channel there and the lid still lies flush.
+module chan_lid(len, cw = chan_w, label = "", notches = false) {
     w = cw + 2.4;
     difference() {
         union() {
@@ -87,6 +89,7 @@ module chan_lid(len, cw = chan_w, label = "") {
             for (s = [-1, 1]) for (y = [6 : 30 : len - 6]) translate([s * (cw / 2 + 0.4), y, -lid_t - 0.3]) rotate([-90, 0, 0]) cylinder(d = 0.8, h = 8, $fn = 12);
         }
         if (label != "") translate([0, len / 2, -0.4]) linear_extrude(0.41) text(label, size = 5, halign = "center", valign = "center", font = "Liberation Sans:style=Bold");
+        if (notches) for (y = [21 : 30 : len - 11]) translate([-w / 2 - 0.01, y, -lid_t - 1]) cube([w / 2 - 1.7 + 0.01, 8, lid_t + 2]);
     }
 }
 // Comb: a strain-relief clip that holds n wires of diameter wd where they leave a module.

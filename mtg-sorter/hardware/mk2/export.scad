@@ -28,12 +28,13 @@ if (part == "lv2_frame") rotate([90, 0, 0]) lv2_frame();
 if (part == "door") rotate([0, 90, 0]) door();                    // on its edge (brim)
 if (part == "carriage1") carriage(1);
 if (part == "carriage2") carriage(2);
-if (part == "lever") lever();
+if (part == "lever") rotate([180, 0, 0]) lever();
 if (part == "col_front") rotate([180, 0, 0]) col_front();         // standing on its end (brim)
 if (part == "liner_back") rotate([90, 0, 0]) liner_back();
+if (part == "ir_holder") rotate([90, 0, 0]) ir_holder();               // its front face on the plate, the tongue standing up
 
 // scan module: the bed and the carrier lie flat (turned back by the bed's slope)
-if (part == "scan_carrier") rotate([90 - bed_a, 0, 0]) carrier();  // standing on its back edge (tree supports)
+if (part == "scan_carrier") rotate([-90, 0, 0]) carrier();  // standing on the skids' back ends, which are flat (brim, tree supports)
 if (part == "scan_bed") rotate([-bed_a, 0, 0]) bed();
 if (part == "stop_bar") rotate([60, 0, 0]) stop_bar(0);           // the arms' outer faces on the plate
 if (part == "cam_arch") rotate([180, 0, 0]) cam_arch();            // the beam on the plate

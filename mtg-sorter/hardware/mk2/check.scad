@@ -54,7 +54,9 @@ if (what == "scan_frame") intersection() { scan_fixed(); union() { walls(); fram
 if (what == "scan_movers") intersection() { scan_fixed(); union() { movers(1); movers(-1); movers(0); doors_open(); } }
 if (what == "scan_parts") intersection() { carrier(); union() { bed(); cam_arch(); lightbar(1); lightbar(-1); } }
 // the stop bar, up, half way and down, against everything near it
-if (what == "stop_bar") intersection() { union() { stop_bar(0); stop_bar(0.5); stop_bar(1); } union() { scan_fixed(); frames(); walls(); movers(0); movers(1); movers(-1); } }
+// (the pushers stay at the centre while it's down: the app puts it back up before a push, see MK2.md)
+if (what == "stop_bar") intersection() { union() { stop_bar(0); stop_bar(0.5); stop_bar(1); } union() { scan_fixed(); frames(); walls(); movers(0); } }
+if (what == "stop_up_push") intersection() { stop_bar(0); union() { movers(1); movers(-1); movers(0.5); movers(-0.5); } }
 // the feeder cartridge on its rail, against the frame, the scan module and the stop bar
 module feeder_fixed() { stand(); motor_lid(); hopper(); shoe(); }
 if (what == "feeder_frame") intersection() { feeder_fixed(); union() { walls(); frames(); scan_fixed(); stop_bar(0); stop_bar(1); } }
@@ -66,3 +68,27 @@ module covers_all() { front_cover(); back_low(); back_high(); lid_front(); lid_b
 if (what == "covers") intersection() { covers_all(); union() { walls(); base_full(); frames(); scan_fixed(); stop_bar(1); feeder_fixed(); etray(); bins(); } }
 if (what == "covers_each") intersection() { union() { front_cover(); back_low(); lid_back(); } union() { back_high(); lid_front(); } }
 if (what == "drawer") intersection() { drawer(); union() { walls(); base_full(); frames(); bins(); shaft(); servos_at(); movers(1); movers(-1); } }
+// every servo sits free in its pocket (the latches are tested by pulling one back: see MK2.md)
+if (what == "servos_frames") intersection() { servos_at(); frames(); }
+// pulled back 2 mm, each level servo runs into its latch (these must CLASH)
+if (what == "door_latch") intersection() { servos_at(2, "doors"); lv1_frame(); }
+if (what == "push1_latch") intersection() { servos_at(2, "push1"); lv1_frame(); }
+if (what == "push2_latch") intersection() { servos_at(2, "push2"); lv2_frame(); }
+// ... and pulled back 2 mm it hits the latch (this one must CLASH)
+if (what == "stop_latch") intersection() { stop_servo_placed(2); carrier(); }
+if (what == "stop_servo") intersection() { stop_servo_placed(); union() { carrier(); stop_bar(0); stop_bar(1); bed(); lightbar(1); } }
+// the pushers through their whole stroke in eighths, not just the ends and the middle
+module sweep(ps) for (p = ps) movers(p);
+module near_movers() { static_all(); doors_shut(); scan_fixed(); stop_bar(0); ir_holders_at(); }
+if (what == "sweep_left") intersection() { sweep([-0.875, -0.75, -0.625, -0.375, -0.25, -0.125]); near_movers(); }
+if (what == "sweep_right") intersection() { sweep([0.125, 0.25, 0.375, 0.625, 0.75, 0.875]); near_movers(); }
+if (what == "sweep_ends") intersection() { sweep([-1, -0.5, 0, 0.5, 1]); union() { scan_fixed(); stop_bar(0); ir_holders_at(); } }
+// the lever's pin stays inside the carriage's fork at every position (it can't jump out)
+module pin_in_fork(L, lv, p) difference() {
+    intersection() { lever_pin_at(L, p); translate([-200, 68, -100]) cube([400, 4, 800]); }
+    translate([p * push_stroke, 0, L]) fork_space();
+}
+if (what == "yoke") for (L = [lv1_z, lv2_z]) for (p = [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1]) pin_in_fork(L, L == lv1_z ? 1 : 2, p);
+// the bin-full sensor holders sit in their grooves (crush ribs left out) and clear everything else
+if (what == "ir_frames") intersection() { ir_holders_at(false); frames(); }
+if (what == "ir_rest") intersection() { ir_holders_at(); union() { walls(); bins(); base_full(); shaft(); servos_at(); doors_shut(); doors_open(); } }

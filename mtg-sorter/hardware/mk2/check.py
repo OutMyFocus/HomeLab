@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Run the Mk2 clash checks in check.scad: each must come out empty.  python3 check.py [name ...]"""
+"""Run the Mk2 clash checks in check.scad: each must come out empty.  python3 check.py [name ...]
+A check whose name ends in _latch is the other way round: it pulls a servo back 2 mm and must
+CLASH (the latch is what it runs into), so the servo can't back out of its pocket."""
 import os, re, subprocess, sys, tempfile
 from concurrent.futures import ThreadPoolExecutor
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -21,6 +23,8 @@ with ThreadPoolExecutor(8) as ex:
     res = list(ex.map(run, sys.argv[1:] or CHECKS))
 bad = 0
 for w, empty, err in res:
-    print("%-14s %s" % (w, "clear" if empty else "CLASH"), "" if empty else err)
-    bad += not empty
+    want = not w.endswith("_latch")
+    ok = empty == want
+    print("%-14s %s" % (w, "clear" if empty else "CLASH"), ("" if empty else err) + ("" if ok else "   <-- FAIL"))
+    bad += not ok
 sys.exit(1 if bad else 0)
