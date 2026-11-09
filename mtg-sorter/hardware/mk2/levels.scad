@@ -234,6 +234,11 @@ module lv1_frame() {
         translate([-knuckle_x - 0.3, -hinge_y - knuckle_r - 1, L - 70]) cube([2 * knuckle_x + 0.6, 2 * (hinge_y + knuckle_r + 1), 70.5]);
         // status light slot in the fascia
         translate([-60, front_y - 1, L + 18]) cube([120, 7, 3]);
+        // the power button: a 16 mm LED-ring push button, nut behind the fascia (its body stays
+        // above the paddles and the cards going into bin 2), with a ring engraved round it
+        translate([pwr_btn[0], front_y - 1, L + pwr_btn[1]]) rotate([-90, 0, 0]) cylinder(d = 16.3, h = 10, $fn = 64);
+        translate([pwr_btn[0], front_y + reveal / 2 - 0.01, L + pwr_btn[1]]) rotate([-90, 0, 0]) difference() {
+            cylinder(d = 24, h = 0.6, $fn = 64);  translate([0, 0, -1]) cylinder(d = 22.4, h = 3, $fn = 64); }
     }
 }
 

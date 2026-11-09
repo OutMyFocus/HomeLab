@@ -1,14 +1,23 @@
 // Sorter Mk2 electronics tray: every board on one tray that slides out of the back.
 //
 // The tray's back plate is the machine's lower back panel. Pull it by the finger recess: two
-// magnets let go, it slides 120 mm out on the base's rails (the service loops allow that), and
-// every plug is in reach. Nothing is screwed:
-//   Pi 5            split pegs through its four holes (58 x 49), USB-C and both micro-HDMI facing
-//                   the back plate's port window, so its own USB-C supply plugs in from outside
+// magnets let go, it slides 100 mm out on the base's rails (the service loops allow that), and
+// every plug is in reach. Nothing is screwed.
+//
+// Power: ONE plug. A 5 V 10 A brick plugs into the panel jack; from the jack, two Wago blocks
+// share 5 V and ground out to the Pi (a USB-C pigtail into its own port), the PCA9685's V+
+// (servos), the DRV8833 (feeder motor) and the light strip. The servos, motor and lights go
+// through the relay, which the Pi closes when it has booted and opens when it shuts down, so the
+// power button (a 16 mm LED-ring push button on the Pi 5's J2 pads) turns the whole machine on
+// and off, and nothing moves before the software is ready. Never 12 V: there is no regulator.
+//
+//   Pi 5            split pegs through its four holes (58 x 49); the port window lets a screen
+//                   plug into its micro-HDMI for service
 //   PCA9685         split pegs (55.9 x 19, the Adafruit layout; measure yours); a snap-on comb holds
 //                   every servo plug on its header
 //   DRV8833         a cradle with a snap hook over it
 //   Wago 221-415 x2 a clip holder: 5 V and ground for servos, motor, lights and sensors
+//   relay           1-channel 5 V relay module (10 A contacts), a cradle with a snap hook
 //   DC jack         panel-mount 5.5 x 2.1 mm in an 11 mm hole (its own nut)
 //   patch bar       one labelled socket per module harness, at the front edge, under the trunks
 include <joints.scad>
@@ -21,10 +30,11 @@ et_y0 = etray_y0;  et_y1 = back_in;
 plate_top = back_up_z - reveal;            // flush with the upper back panel, one reveal below it
 
 // board positions (x, y of the board's corner nearest -x, -y)
-pi_at  = [-112, et_y1 - 2 - 56];   pi_sz = [85, 56];   pi_holes = [[3.5, 3.5], [61.5, 3.5], [3.5, 52.5], [61.5, 52.5]];
+pi_at  = [-106, et_y1 - 2 - 56];   pi_sz = [85, 56];   pi_holes = [[3.5, 3.5], [61.5, 3.5], [3.5, 52.5], [61.5, 52.5]];
 pca_at = [-6, 196];   pca_sz = [62.5, 25.4];   pca_holes = [[3.3, 3.2], [59.2, 3.2], [3.3, 22.2], [59.2, 22.2]];
 drv_at = [70, 200];   drv_sz = [18.6, 16.4];
-wago_at = [20, 120];  wago_sz = [30.2, 20.4, 8.6];   // 221-415, approximate: measure and adjust
+relay_at = [50, 150];  relay_sz = [50.5, 26.5, 19];   // typical 1-channel module: measure yours
+wago_at = [18, 120];  wago_sz = [30.2, 20.4, 8.6];   // 221-415, approximate: measure and adjust
 jack_at = [96, 40];   // x, z of the DC jack in the back plate
 stand = 6;            // boards stand this high on their pegs
 
@@ -48,6 +58,13 @@ module etray() {
                 translate([2 + drv_sz[0] / 2 - 4, -1, 2]) cube([8, 30, 10]);   // its headers' pins pass here
             }
             translate([drv_at[0] + drv_sz[0] + 2, drv_at[1] + drv_sz[1] / 2, base_top + et_floor + 0.5]) rotate([0, 0, 180]) snap_hook(len = 5.5, t = 1.4, w = 5, lip = 0.8);
+            // relay module cradle with a hook over its board
+            translate([relay_at[0] - 2, relay_at[1] - 2, base_top + et_floor - 0.01]) difference() {
+                cube([relay_sz[0] + 4, relay_sz[1] + 4, 5]);
+                translate([2 - 0.2, 2 - 0.2, 2]) cube([relay_sz[0] + 0.4, relay_sz[1] + 0.4, 10]);
+                translate([-1, 6, 2]) cube([relay_sz[0] + 6, relay_sz[1] - 12, 10]);   // its screw terminals' wires
+            }
+            translate([relay_at[0] + relay_sz[0] / 2, relay_at[1] + relay_sz[1] + 2, base_top + et_floor + 0.5]) rotate([0, 0, -90]) snap_hook(len = 5.5, t = 1.4, w = 6, lip = 0.8);
             // Wago holder: two pockets side by side, a lip each side holds them down
             translate([wago_at[0] - 2, wago_at[1] - 2, base_top + et_floor - 0.01]) difference() {
                 cube([2 * wago_sz[0] + 6, wago_sz[1] + 4, wago_sz[2] + 1.5]);
@@ -80,8 +97,8 @@ module etray() {
 // JST-XH housing pocket for n pins (XHP: (n - 1) x 2.5 + 4.9 wide, 5.75 deep, 7 tall), through the bar
 module xh_socket_cut(n) { w = (n - 1) * 2.5 + 4.9;  translate([-w / 2 - 0.2, 0, -3.5 - 0.2]) cube([w + 0.4, 8.02, 7.4]); }
 // [x, pins, label]: left half = the power side, right half = the signal side
-patch = [[-96, 2, "FEED"], [-74, 3, "LIGHT"], [-52, 3, "EXIT"], [-30, 2, "5V IN"],
-         [8, 6, "BEAMS"], [36, 5, "BINS"], [62, 4, "BUTTON"], [90, 3, "SPARE"]];
+patch = [[-96, 2, "FEED"], [-74, 3, "LIGHT"], [-52, 3, "BEAM"], [-30, 2, "5V"],
+         [4, 6, "BINS"], [34, 6, "FULL"], [62, 4, "BUTTON"], [90, 3, "SPARE"]];
 
 // A comb that snaps over the PCA9685's servo headers so no plug can work loose.
 module pca_comb() {

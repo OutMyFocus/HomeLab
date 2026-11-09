@@ -3,6 +3,10 @@ include <joints.scad>
 include <layout.scad>
 use <frame.scad>
 use <levels.scad>
+use <etray.scad>
+use <scan.scad>
+use <feeder.scad>
+use <covers.scad>
 what = "none";
 
 module walls() { wall_r(); wall_l(); }
@@ -39,3 +43,26 @@ if (what == "card_lv1_l") intersection() { card_sweep(lv1_z, -1); union() { wall
 if (what == "card_lv2_r") intersection() { card_sweep(lv2_z, 1); union() { walls(); bins(); frames(); shaft(); servos_at(); } }
 if (what == "card_lv2_l") intersection() { card_sweep(lv2_z, -1); union() { walls(); bins(); frames(); shaft(); servos_at(); } }
 if (what == "card_fall") intersection() { card_fall(); union() { walls(); bins(); frames(); shaft(); servos_at(); doors_open(); movers(0); } }
+// the electronics tray slides in between the walls, on the base, behind the pusher servos
+if (what == "etray") intersection() { etray(); union() { walls(); base_full(); bins(); frames(); servos_at(); movers(1); movers(-1); } }
+// the power button's body (20 across, 36 deep behind the fascia) clears the paddles and cards
+module pwr_body() translate([pwr_btn[0], front_y, lv1_z + pwr_btn[1]]) rotate([-90, 0, 0]) cylinder(d = 20, h = 40);
+if (what == "button") intersection() { pwr_body(); union() { walls(); bins(); lv2_frame(); shaft(); servos_at(); movers(1); movers(0); card_sweep(lv1_z, 1); } }
+// the scan module: carrier, bed and camera arch sit on their rail without touching the rest
+module scan_fixed() { carrier(); bed(); cam_arch(); cam_hood(); lightbar(1); lightbar(-1); }
+if (what == "scan_frame") intersection() { scan_fixed(); union() { walls(); frames(); bins(); servos_at(); shaft(); } }
+if (what == "scan_movers") intersection() { scan_fixed(); union() { movers(1); movers(-1); movers(0); doors_open(); } }
+if (what == "scan_parts") intersection() { carrier(); union() { bed(); cam_arch(); lightbar(1); lightbar(-1); } }
+// the stop bar, up, half way and down, against everything near it
+if (what == "stop_bar") intersection() { union() { stop_bar(0); stop_bar(0.5); stop_bar(1); } union() { scan_fixed(); frames(); walls(); movers(0); movers(1); movers(-1); } }
+// the feeder cartridge on its rail, against the frame, the scan module and the stop bar
+module feeder_fixed() { stand(); motor_lid(); hopper(); shoe(); }
+if (what == "feeder_frame") intersection() { feeder_fixed(); union() { walls(); frames(); scan_fixed(); stop_bar(0); stop_bar(1); } }
+if (what == "feeder_parts") intersection() { stand(); union() { hopper(); shoe(); roller(); motor_lid(); } }
+if (what == "feeder_shoe") intersection() { shoe(); union() { hopper(); roller(); } }
+if (what == "wheels") intersection() { wheel_sweep(0.3); union() { scan_fixed(); stand(); hopper(); shoe(); motor_lid(); } }
+// the covers close round everything without touching it
+module covers_all() { front_cover(); back_low(); back_high(); lid_front(); lid_back(); }
+if (what == "covers") intersection() { covers_all(); union() { walls(); base_full(); frames(); scan_fixed(); stop_bar(1); feeder_fixed(); etray(); bins(); } }
+if (what == "covers_each") intersection() { union() { front_cover(); back_low(); lid_back(); } union() { back_high(); lid_front(); } }
+if (what == "drawer") intersection() { drawer(); union() { walls(); base_full(); frames(); bins(); shaft(); servos_at(); movers(1); movers(-1); } }
