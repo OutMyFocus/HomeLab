@@ -2,6 +2,7 @@
 
 import csv
 import json
+import time
 
 import cv2
 import numpy as np
@@ -549,3 +550,26 @@ def test_forgetting_the_tracks_mid_recognition_does_not_break_the_scanner(db, mo
     monkeypatch.setattr(app, "pair_up", lambda tracks, cards: (scanner.forget_tracks() or ([], [], [old])))
     scanner.process(np.zeros((200, 100, 3), np.uint8))   # no ValueError
     assert scanner.tracks == []
+
+
+def test_an_empty_bed_does_not_keep_a_card_on_the_table(db, monkeypatch):  # noqa: F811
+    """Nic (2026-11-09): "it keeps thinking this card is on the table" with the bed empty.
+    The bed's texture gave a piece inside the bed box, the bed box stood in for the card's
+    outline, and the card's old track lived on. A bed box that doesn't match a card is the
+    bare bed: no card is kept for it, and an old card there goes."""
+    import app
+    from mtgscanner.tracking import Track
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
+    texture = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)   # a rib of the bed
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[texture]])
+    frame = np.zeros((200, 100, 3), np.uint8)
+    scanner.process(frame)
+    assert scanner.tracks == []                                  # nothing new on a bare bed
+    bed = np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32)
+    old = Track(1, 1, bed, status="locked", card=db.get_card("id0"))
+    old.checked_at, old.checked_time = bed.mean(axis=0), time.monotonic() - 1.0   # looked at 1 s ago
+    old.streak_key, old.streak = "id0", 1
+    scanner.tracks = [old]
+    scanner.process(frame)
+    assert scanner.tracks == []                                  # the card that left is gone

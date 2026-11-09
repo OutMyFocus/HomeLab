@@ -133,6 +133,12 @@ class WaitingForCamera:
 SESSION_SHOWN = 100  # cards of this session listed on the scanner page
 
 
+class BedBox(list):
+    """The outlines of a card that only the bed box stands for (no edge of its own was
+    found, see Scanner._whole_cards). The bed's own texture can give such a piece with
+    no card there at all, so a bed box that doesn't match a card isn't kept as one."""
+
+
 def _smooth(old: float | None, new: float, weight: float = 0.2) -> float:
     """A running average that follows changes gently (for the speed readout)."""
     return new if old is None else old + weight * (new - old)
@@ -332,7 +338,7 @@ class Scanner:
             # and the bed box is exactly where a card lies: try it as well, best match wins.
             # On the Pi's unread cards (2026-11-09) the bed box read 3 of 6 the outline missed.
             return [[g[0], bed, *g[1:]] if on_bed(g) else g for g in cards]
-        return [[bed]] if any(on_bed(g) for g in found) else []
+        return [BedBox([bed])] if any(on_bed(g) for g in found) else []
 
     def _find(self, frame):
         """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
@@ -441,7 +447,12 @@ class Scanner:
         with self.lock:
             table = self._table
             matched, new, gone = pair_up(self.tracks, cards)
-            todo = [(t, outlines, t.needs_check(now)) for t, outlines in matched]
+            # A card held only by the bed box is looked at again soon: with no edge of its
+            # own, the camera can't tell by its outline that it's been taken away.
+            bed_recheck = float(getattr(config, "BED_BOX_RECHECK_SECONDS", 0.5))
+            todo = [(t, outlines, t.needs_check(now) or (
+                        isinstance(outlines, BedBox) and now - t.checked_time >= bed_recheck))
+                    for t, outlines in matched]
         # Recognizing is the slow part, so it happens without holding the lock, and
         # every card that needs a look is recognized at the same time on its own thread.
         jobs = [outlines for _, outlines, check in todo if check] + list(new)
@@ -465,8 +476,19 @@ class Scanner:
                 # that's gone, so leave the new one alone.
                 todo, new, gone = [], [], []
             for t, outlines, check in todo:
-                self._update(t, outlines, next(results) if check else None, frame)
+                result = next(results) if check else None
+                if isinstance(outlines, BedBox) and result is not None and result.card is None:
+                    # Only the bed box, and it isn't a card: the card has left and the
+                    # bed's texture is all that's there (Nic, 2026-11-09: a card that had
+                    # gone stayed "on the table").
+                    self.finish_capture(t)
+                    self.tracks.remove(t)
+                    continue
+                self._update(t, outlines, result, frame)
             for outlines in new:
+                result = next(results)
+                if isinstance(outlines, BedBox) and result.card is None:
+                    continue        # the bare bed, not a card
                 number = next(
                     (n for c, n in zip(cards, numbers) if c is outlines), None
                 )
@@ -474,7 +496,7 @@ class Scanner:
                     next(self._ids), number or free_number(self.tracks), outlines[0]
                 )
                 self.tracks.append(t)
-                self._update(t, outlines, next(results), frame)
+                self._update(t, outlines, result, frame)
             for t in gone:
                 if not t.missing:
                     t.missing_since = now
