@@ -510,6 +510,9 @@ def test_whole_cards_only_measures_the_card_on_the_bed(db, tmp_path, monkeypatch
 
     # the art box alone isn't a card; the whole card is
     frame = np.zeros((200, 100, 3), np.uint8)
+    # (the bed box only stands in once the bare bed is known, and this isn't it)
+    from mtgscanner.vision import fingerprint
+    scanner.empty_bed = fingerprint(np.random.default_rng(1).integers(0, 255, (200, 100, 3), dtype=np.uint8))
     monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[art]])
     (outline,), _ = scanner._find(frame)
     assert np.allclose(outline[0], card)                       # the bed box stands in for the lost edge
@@ -561,6 +564,8 @@ def test_an_empty_bed_does_not_keep_a_card_on_the_table(db, monkeypatch):  # noq
     from mtgscanner.tracking import Track
     scanner = Scanner(db, None, source=FakeCamera(0))
     scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
+    from mtgscanner.vision import fingerprint
+    scanner.empty_bed = fingerprint(np.random.default_rng(1).integers(0, 255, (200, 100, 3), dtype=np.uint8))
     texture = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)   # a rib of the bed
     monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[texture]])
     frame = np.zeros((200, 100, 3), np.uint8)
@@ -589,13 +594,17 @@ def test_the_bare_bed_is_remembered_and_never_read_as_a_card(db, tmp_path, monke
     scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
     rib = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)
     monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[rib]])
-    assert len(scanner._whole_cards(bare)) == 1            # not known yet: the bed box stands in
+    assert scanner._whole_cards(bare) == []                # bare bed not known yet: no stand-in at all
+    whole_rib = np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32)
     scanner._seen = bare
     view = client.post("/api/settings", json={"empty_bed": "now"}).get_json()["view"]
     assert view["empty_bed"] is True
     assert scanner._whole_cards(bare) == []                # the bare bed: nothing to read
     noisy = np.clip(bare.astype(np.int16) + rng.integers(-6, 7, bare.shape), 0, 255).astype(np.uint8)
     assert scanner._whole_cards(noisy) == []               # a little camera noise is still the bed
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[whole_rib]])
+    assert scanner._whole_cards(bare) == []                # ribs outlined as a whole "card": still the bed
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[rib]])
     card = bare.copy()
     card[10:110, 10:70] = rng.integers(0, 255, (100, 60, 3), dtype=np.uint8)   # a card on it
     assert len(scanner._whole_cards(card)) == 1
