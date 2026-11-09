@@ -28,7 +28,8 @@ L = dict(
     ramp_x0=58.0, ramp_z0=211.0, ramp_a=28.0, ramp_x1=101.0,
     tilt=25.0, ramps=0, splitter=0, inner_tilt=10.0, inner_lead=0.0,
     # side view
-    bed_a=30.0, bed_e=(50.0, 296.0), stop_s=2.0, tray_in=45.5, front_h=30.0, back_h=6.0, back_y1=51.5,
+    bed_a=30.0, bed_e=(50.0, 389.0), stop_s=2.0, tray_in=45.5, front_h=30.0, back_h=6.0, back_y1=51.5,
+    stop_axis=(60.0, -11.0), bar_turn=18.0,
 )
 
 def card_body(space, pos, angle, length, mu):
@@ -155,7 +156,7 @@ def bed_case(mu_bed, mu_pla, s_off, stop_t, draw=None):
     a = math.radians(p["bed_a"]); ey, ez = p["bed_e"]
     # the bed runs from its front edge up the slope (y increases backwards: draw y as the x axis)
     top = (ey + 100 * math.cos(a), ez + 100 * math.sin(a))
-    bed = seg(sp, st, (ey, ez - 0.6), (top[0], top[1] - 0.6), mu_bed)
+    bed = seg(sp, st, (ey + 2.3 * math.cos(a), ez + 2.3 * math.sin(a) - 0.6), (top[0], top[1] - 0.6), mu_bed)
     P = p["pivot_z"]; ti = p["tray_in"]
     tray = [seg(sp, st, (-ti, P - 0.6), (ti, P - 0.6), mu_pla),
             seg(sp, st, (-ti, P), (-ti, P + p["front_h"]), mu_pla),
@@ -164,13 +165,17 @@ def bed_case(mu_bed, mu_pla, s_off, stop_t, draw=None):
     s0 = p["stop_s"] + s_off
     cpos = (ey + (s0 + CARD_L / 2) * math.cos(a) - (CARD_T / 2 + 0.3) * math.sin(a), ez + (s0 + CARD_L / 2) * math.sin(a) + (CARD_T / 2 + 0.3) * math.cos(a))
     card, cs = card_body(sp, cpos, a, CARD_L, mu_bed)
-    stop = pymunk.Body(body_type=pymunk.Body.KINEMATIC); sp.add(stop)
-    sseg = seg(sp, stop, (ey + p["stop_s"] * math.cos(a), ez + p["stop_s"] * math.sin(a)), (ey + p["stop_s"] * math.cos(a) - 10 * math.sin(a), ez + p["stop_s"] * math.sin(a) + 10 * math.cos(a)), mu_pla)
+    # the stop bar (scan.scad): its section s -1.7..2, n -13.5..10, on arms that turn about the axis
+    # (s 60, n -11) under the bed; it drops by bar_turn degrees at the servo's 0.1 s / 60 degrees
+    bp = lambda s_, n_: (ey + s_ * math.cos(a) - n_ * math.sin(a), ez + s_ * math.sin(a) + n_ * math.cos(a))
+    ax = bp(*p["stop_axis"])
+    stop = pymunk.Body(body_type=pymunk.Body.KINEMATIC); stop.position = ax; sp.add(stop)
+    corners = [bp(s_, n_) for s_, n_ in ((-1.7, -13.5), (p["stop_s"], -13.5), (p["stop_s"], 10), (-1.7, 10))]
+    sshape = pymunk.Poly(stop, [(x - ax[0], y - ax[1]) for x, y in corners]); sshape.friction = mu_pla; sp.add(sshape)
+    turn = math.radians(p["bar_turn"]); w = math.radians(600.0)
     dt = 1 / 2000.0; t = 0; trace = []
-    removed = False
     while t < 1.5:
-        if not removed and t > stop_t:
-            sp.remove(sseg); removed = True
+        stop.angular_velocity = w if (t > stop_t and stop.angle < turn) else 0.0
         # card touching the tray gets PLA friction
         if card.position.y < ez - 10: cs.friction = mu_pla
         air_drag(card, CARD_L)
@@ -186,7 +191,7 @@ def bed_case(mu_bed, mu_pla, s_off, stop_t, draw=None):
 def draw_case(sp, trace, out, clen):
     from PIL import Image, ImageDraw
     xs = [x for _, x, _, _ in trace]; zs = [z for _, _, z, _ in trace]
-    x0, x1 = -170, 170; z0, z1 = 40, 330
+    x0, x1 = min(xs) - 80, max(xs) + 80; z0, z1 = min(zs) - 40, max(zs) + 60
     sc = 3; W = int((x1 - x0) * sc); H = int((z1 - z0) * sc)
     im = Image.new("RGB", (W, H), "white"); d = ImageDraw.Draw(im)
     f = lambda x, z: ((x - x0) * sc, (z1 - z) * sc)

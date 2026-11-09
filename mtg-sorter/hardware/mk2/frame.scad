@@ -21,6 +21,8 @@ part = "frame";
 rim = 8;                       // full-thickness rim round each tile
 rib = 14;                      // full-thickness strips behind each rail
 chan_z = [etray_z1 - 20, top_z - 40];
+chan2_z = (rail_scan[0] + 15 + rail_feed[0] - 7) / 2;   // 412: between the scan carrier's skids and the feeder's wings
+chan2_y1 = rail_feed[1] + 14;
 zrows = [[wall_z0, seam_z[0]], [seam_z[0], seam_z[1]], [seam_z[1], top_z]];
 ycols = [[front_y, seam_y], [seam_y, back_y]];
 
@@ -36,6 +38,7 @@ module wall_blank() {
             }
             for (r = rails) translate([wall_in - 1, y0, r[0] - rib / 2]) cube([wall_t + 2, y1 - y0, rib]);
             translate([wall_in - 1, chan_y - 9, z0]) cube([wall_t + 2, 18, z1 - z0]);
+            translate([wall_in - 1, chan_y - 9, chan2_z - 9]) cube([wall_t + 2, chan2_y1 - chan_y + 9, 18]);
             translate([wall_in - 1, back_in - 10, z0]) cube([wall_t + 2, 10 + back_t, z1 - z0]);
             translate([wall_in - 1, front_y, z0]) cube([wall_t + 2, 14, z1 - z0]);
             for (yy = ycols) for (zz = zrows) hull() {        // a diagonal brace in each tile
@@ -47,6 +50,7 @@ module wall_blank() {
 }
 
 module into_face_run_y() multmatrix([[0, 0, 1, 0], [0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1]]) children();
+module into_face_run_y2() multmatrix([[0, 0, -1, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 1]]) children();
 module into_face_run_z() multmatrix([[0, 0, -1, 0], [-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) children();
 module key_across_y() multmatrix([[0, 0, -1, 0], [1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]]) children();
 module key_across_z() multmatrix([[0, 0, -1, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 1]]) children();
@@ -65,8 +69,11 @@ module wall_cuts() {
     translate([wall_in - 0.01, front_y + 3 - 0.3, fcover_z]) cube([4.3, 3 + 0.6, top_z]);
     // the lid: a 4 mm ledge round the top
     translate([wall_in - 0.01, front_y + 6, top_z - 4]) cube([4.3, back_in - front_y - 6, 5]);
+    for (y = [-30, 40, 150, 215]) translate([wall_in + 2.15, y, top_z - 4 - mag_pocket_h]) magnet_cut();   // the lid's magnets
     // cable trunk with a flush snap lid
     translate([wall_in, chan_y, chan_z[0]]) into_face_run_z() chan_cut(chan_z[1] - chan_z[0]);
+    // ... and a branch back along the wall, between the scan and feed rails, for the feeder motor's wires
+    translate([wall_in, chan_y, chan2_z]) into_face_run_y2() chan_cut(chan2_y1 - chan_y);
     // tile seams: 3 mm steel pins across each seam (in the rims), bowtie keys on the inner face
     for (zz = zrows) for (z = [zz[0] + 30, zz[1] - 30]) translate([wall_in + wall_t / 2, seam_y - 8, z]) rotate([-90, 0, 0]) pin_press_cut(16);
     for (sz = seam_z) for (y = [front_y + 30, seam_y - 30, seam_y + 30, back_y - 40]) translate([wall_in + wall_t / 2, y, sz - 8]) pin_press_cut(16);
@@ -119,6 +126,7 @@ module base_full() {
             translate([x, y, -0.01]) cylinder(d = 12.6, h = 1);
         for (x = [-90, 90]) translate([x, base_seam_y, base_top]) rotate([0, 0, 90]) key_socket_cut();
         for (y = [front_y + 30, base_seam_y + 60, back_y - 30]) translate([0, y, base_top]) key_socket_cut();
+        translate([0, 48, base_top - mag_pocket_h]) magnet_cut();          // holds the drawer home
         for (y = [front_y + 50, 60, 150]) translate([-8, y, base_t / 2]) rotate([0, 90, 0]) pin_press_cut(16);
         for (x = [-60, 60]) translate([x, base_seam_y - 8, base_t / 2]) rotate([-90, 0, 0]) pin_press_cut(16);
     }
@@ -160,6 +168,7 @@ bin_spots = [[-bin_x, bin1_z], [bin_x, bin1_z], [-bin_x, bin3_z], [bin_x, bin3_z
 module bin_at(i) translate([bin_spots[i][0], 0, bin_spots[i][1]]) bin();
 
 module trunk_lid(label) chan_lid((chan_z[1] - chan_z[0]) / 3 - 0.5, label = label);
+module branch_lid() chan_lid(chan2_y1 - chan_y - 10 - 0.5, label = "FEED");
 
 module frame_assembly() {
     color("#2b2b2b") { wall_r(); wall_l(); }

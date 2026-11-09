@@ -75,16 +75,16 @@ card_s   = 2 + card_l / 2;     // card centre, measured up the slope from the fr
 cam_dist = 120;                // lens above the card centre, square to the bed
 
 // ---- top ------------------------------------------------------------------------------------
-top_z    = 500;                // top of the walls; the lid sits flush between them
+top_z    = 580;                // top of the walls; the lid sits flush between them (camera 516, magazine to the top)
 seam_y   = 88;                 // side walls are 2 x 3 tiles
-seam_z   = [150, 320];         // tile rows: 3..150, 150..312, 312..500 (each under the A1's 256, none on a rail)
+seam_z   = [150, 330];         // tile rows: 3..150, 150..330, 330..580 (each under the A1's 256, none on a rail)
 
 // ---- module rails (dovetail slots in the walls' inner faces, running along y) ----------------
 // [z of the slot centre, y from, y to]
 rail_lv2  = [lv2_z + 6, front_y, 56];          // level 2 (and its shelves), from the front
 rail_lv1  = [lv1_z + 14, front_y, 56];         // level 1, from the front
-rail_scan = [bed_e[1] - 6, front_y, 160];      // scan carrier and camera arch, from the front
-rail_feed = [bedpt(bed_len)[1] + 14, 90, back_in];   // feeder, from the back
+rail_scan = [bed_e[1] + 2, front_y, 160];      // scan carrier and camera arch, from the front (over level 1's webs)
+rail_feed = [bedpt(bed_len)[1] - 12, 152, back_in];  // feeder cartridge, from the back (under its magazine)
 rails = [rail_lv2, rail_lv1, rail_scan, rail_feed];
 
 // ---- the back: pusher drives and electronics -------------------------------------------------
@@ -97,6 +97,7 @@ etray_y0 = 104;                // the electronics tray, behind the pusher servos
 etray_y1 = back_y;
 etray_h  = 76;
 etray_z1 = base_top + etray_h; // 82
-fcover_z = lv1_z + front_h + 4;   // 365: the front cover (over the scan module) starts here
+fcover_z = lv1_z + front_h + 4;   // 379: the front cover (over the scan module) starts here
+pwr_btn = [88, 21];            // the power button in level 1's fascia: x, z over level 1's floor
 chan_y  = 76;                  // the walls' vertical cable trunks
 back_up_z = etray_z1 + 4;      // the upper back panel starts here
