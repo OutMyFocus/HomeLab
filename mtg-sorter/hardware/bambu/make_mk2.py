@@ -9,7 +9,7 @@ One filament (black). Plates marked WHITE are the parts the light has to come th
 show inside the machine: swap to white PLA for those plates. Open it with File > Open Project and
 answer No to "load as a single object".
 """
-import os
+import json, os, re, sys, zipfile
 import make_project as mp
 
 mp.STL = os.path.join(mp.HERE, "..", "mk2", "stl")
@@ -18,12 +18,18 @@ mp.MARGIN = 2.0      # the A1 prints its full 256 x 256 (no prime tower with one
 mp.GAP = 6.0
 mp.BRIM_GAP = 14.0
 
-SOLID, STRUCTURAL, TALL = mp.SOLID, mp.STRUCTURAL, mp.TALL
+# Mk2 prints sturdier than the enclosure did: one more wall and denser infill everywhere.
+mp.GLOBAL = dict(mp.GLOBAL, wall_loops="4", sparse_infill_density="20%")
+SOLID = mp.SOLID
+STRUCTURAL = {"wall_loops": "5", "sparse_infill_density": "30%"}
+BRIM = {"brim_type": "outer_only", "brim_width": "5"}
+TALL = dict(STRUCTURAL, **BRIM)
+SOLID_BRIM = dict(SOLID, **BRIM)
 TREE = {"enable_support": "1", "support_type": "tree(auto)", "support_style": "default",
         "support_threshold_angle": "35", "support_top_z_distance": "0.2"}
 TALL_TREE = dict(TALL, **TREE)
 STRUCT_TREE = dict(STRUCTURAL, **TREE)
-SMOOTH = {"wall_loops": "3", "sparse_infill_density": "20%", "top_shell_layers": "7",
+SMOOTH = {"wall_loops": "4", "sparse_infill_density": "25%", "top_shell_layers": "7",
           "top_surface_line_width": "0.4", "ironing_type": "top", "ironing_flow": "15%",
           "ironing_spacing": "0.1", "ironing_speed": "20"}   # the scan bed: the card slides on it
 
@@ -34,14 +40,30 @@ mp.PER_PART.update({N(k): v for k, v in {
     "bin": TALL, "drawer": TALL,
     "lv1_frame": TALL_TREE, "lv2_frame": TALL_TREE,
     "carriage1": STRUCT_TREE, "carriage2": STRUCT_TREE, "lever": SOLID,
-    "door": TALL, "col_front": TALL, "liner_back": STRUCTURAL,
+    "door": TALL, "col_front": TALL, "liner_back": STRUCTURAL, "ir_holder": STRUCTURAL,
     "scan_carrier": TALL_TREE, "scan_bed": SMOOTH, "stop_bar": STRUCTURAL,
-    "cam_arch": TALL_TREE, "cam_hood": SOLID, "lightbar": dict(SOLID, brim_type="outer_only", brim_width="5"),
-    "fd_stand": STRUCT_TREE, "fd_hopper": TALL, "fd_shoe": dict(SOLID, brim_type="outer_only", brim_width="5"),
+    "cam_arch": TALL_TREE, "cam_hood": SOLID, "lightbar": SOLID_BRIM,
+    "fd_stand": STRUCT_TREE, "fd_hopper": TALL, "fd_shoe": SOLID_BRIM,
     "fd_roller": SOLID, "fd_motor_lid": STRUCTURAL,
     "etray": STRUCT_TREE, "pca_comb": STRUCTURAL,
     "key": SOLID, "trunk_lid": {}, "branch_lid": {},
+    "front_cover": {}, "lid_front": {}, "lid_back": {}, "back_low": {}, "back_high": {},
+    "coupon_plate": {}, "coupon_pieces": {},
 }.items()})
+
+# The print config: the same settings as process presets for Bambu Studio's Import Configs dialog
+# (presets/mk2/*.json), for slicing a part on its own. The 3MF already carries them per part.
+PRESETS = [
+    ("1 Panels and covers", {}),
+    ("2 Frame", STRUCTURAL),
+    ("3 Frame, brim", TALL),
+    ("4 Frame, tree supports", STRUCT_TREE),
+    ("5 Frame, brim, tree supports", TALL_TREE),
+    ("6 Solid", SOLID),
+    ("7 Solid, brim", SOLID_BRIM),
+    ("8 Scan bed, ironed", SMOOTH),
+]
+WHITE = ("bin", "door", "drawer", "scan_bed", "lightbar")
 
 def P(*names):
     out = []
@@ -69,7 +91,7 @@ mp.PLATES = [
     ("16 Bins x4 (WHITE, brim)", P("bin*4")),
     ("17 Level 2 frame (tree supports)", P("lv2_frame")),
     ("18 Level 1 frame (tree supports)", P("lv1_frame")),
-    ("19 Pushers, levers, liners, stop bar", P("carriage1", "carriage2", "lever*2", "col_front", "liner_back", "stop_bar")),
+    ("19 Pushers, levers, liners, stop bar, sensor holders", P("carriage1", "carriage2", "lever*2", "col_front", "liner_back", "stop_bar", "ir_holder*4")),
     ("20 Trapdoors x2, drawer (WHITE)", P("door*2", "drawer")),
     ("21 Scan carrier (tree supports)", P("scan_carrier")),
     ("22 Scan bed, light bars (WHITE)", P("scan_bed", "lightbar*2")),
@@ -84,6 +106,72 @@ mp.PLATES = [
     ("31 Back panel, upper", P("back_high")),
 ]
 
+def preset_of(part):
+    return next(n for n, v in PRESETS if v == mp.PER_PART[N(part)])
+
+
+def write_config():
+    """presets/mk2/: one process preset per group of settings, a README that says which preset and
+    colour each part takes, and the same files zipped for download."""
+    d = os.path.join(mp.HERE, "presets", "mk2")
+    os.makedirs(d, exist_ok=True)
+    files = []
+    for name, extra in PRESETS:
+        full = "MTG Mk2 - %s @BBL A1" % name
+        p = {"type": "process", "name": full, "inherits": mp.PROCESS_BASE, "from": "User",
+             "instantiation": "true", "version": mp.VERSION, "print_settings_id": full, "is_custom_defined": "0"}
+        p.update(mp.GLOBAL)
+        p.update(extra)
+        fn = "MTG_Mk2_" + re.sub(r"[^A-Za-z0-9]+", "_", name) + ".json"
+        with open(os.path.join(d, fn), "w") as f:
+            json.dump(p, f, indent=4)
+        files.append(fn)
+    show = {"wall_loops": "walls", "sparse_infill_density": "infill", "brim_type": "brim", "enable_support": "supports",
+            "ironing_type": "ironing", "top_shell_layers": "top layers"}
+    def say(v):
+        c = dict(mp.GLOBAL, **v)
+        out = ["%s walls" % c["wall_loops"], "%s %s infill" % (c["sparse_infill_density"], c["sparse_infill_pattern"])]
+        if c["brim_type"] != "no_brim": out.append("%s mm outer brim" % c["brim_width"])
+        if c["enable_support"] == "1": out.append("tree supports (auto, %s degrees)" % c["support_threshold_angle"])
+        if c["ironing_type"] != "no ironing": out.append("%s top layers, top surface ironed" % c["top_shell_layers"])
+        return ", ".join(out)
+    L = ["# Sorter Mk2 print config", "",
+         "Process presets for Bambu Studio, for the Bambu Lab A1 with the 0.4 mm nozzle. Written by `make_mk2.py`, so they always match the settings inside `MTG_Sorter_Mk2.3mf`.", "",
+         "The 3MF already has these settings on every part. You only need the presets to slice a part on its own, or to check a plate against them.", "",
+         "## Import", "",
+         "1. In Bambu Studio: **File → Import → Import Configs...**",
+         "2. Pick all eight `.json` files in this folder and press Open.",
+         "3. They show up in the **Process** list under User presets, named `MTG Mk2 - ...`.", "",
+         "## Printer, plate and filament", "",
+         "| Setting | Value |", "|---|---|",
+         "| Printer | %s |" % mp.PRINTER,
+         "| Plate | Textured PEI |",
+         "| Filament | %s, black; white for the parts marked below |" % mp.FILAMENT,
+         "| Layer height | 0.20 mm (every preset inherits `%s`) |" % mp.PROCESS_BASE,
+         "| On every preset | seam aligned, precise outer wall on, elephant foot compensation %s mm |" % mp.GLOBAL["elefant_foot_compensation"], "",
+         "## The presets", "", "| Preset | Settings | Parts |", "|---|---|---|"]
+    parts = sorted({q for _, ps in mp.PLATES for q in ps})
+    for name, extra in PRESETS:
+        mine = [q[4:] for q in parts if mp.PER_PART.get(q, {}) == extra]
+        L.append("| `MTG Mk2 - %s` | %s | %s |" % (name, say(extra), ", ".join(mine) or "none"))
+    L += ["", "## Plate by plate", "", "| Plate | Colour | Presets on it |", "|---|---|---|"]
+    for pname, ps in mp.PLATES:
+        used = sorted({next(n for n, v in PRESETS if v == mp.PER_PART.get(q, {})) for q in ps})
+        white = all(q[4:] in WHITE for q in ps)
+        L.append("| %s | %s | %s |" % (pname, "white" if white else "black", "; ".join(used)))
+    L += ["", "Supports are only on where the table says so. Every other part prints without them.", ""]
+    with open(os.path.join(d, "README.md"), "w") as f:
+        f.write("\n".join(L))
+    z = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Print_Config.zip")
+    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fn in files + ["README.md"]:
+            zi = zipfile.ZipInfo(fn, (2026, 11, 9, 0, 0, 0)); zi.compress_type = zipfile.ZIP_DEFLATED; zi.external_attr = 0o644 << 16
+            zf.writestr(zi, open(os.path.join(d, fn), "rb").read())
+    print("wrote presets/mk2/ (%d presets, README.md) and %s" % (len(files), os.path.basename(z)))
+
+
 if __name__ == "__main__":
     mp.PRESETS = {}     # the enclosure's presets stay as they are
-    mp.main()
+    if "--config" not in sys.argv:
+        mp.main()
+    write_config()

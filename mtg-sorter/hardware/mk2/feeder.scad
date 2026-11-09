@@ -211,7 +211,10 @@ module motor_lid() {
         over_bed(-2.4, Y0);
     }
     for (s = [0, 1]) translate([0, wc[0], 0]) mirror([0, s, 0])
-        translate([(stand_half + pod_x1) / 2, n20_w / 2 + 2.5 + 0.2 + 1.4, wc[1] + n20_h / 2 + 0.01]) rotate([0, 0, -90]) rotate([180, 0, 0]) snap_hook(len = lid_hook, t = 1.4, w = 8, lip = 0.6);
+        translate([(stand_half + pod_x1) / 2, n20_w / 2 + 2.5 + 0.2 + 1.4, wc[1] + n20_h / 2 + 1]) {
+            rotate([0, 0, -90]) rotate([180, 0, 0]) snap_hook(len = lid_hook + 1, t = 1.4, w = 8, lip = 0.6);
+            translate([-4, -2.1, -1]) cube([8, 2.1, 2]);      // the tab that joins the hook to the lid
+        }
 }
 
 // ============================ MAGAZINE ===========================================================
