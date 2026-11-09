@@ -515,6 +515,8 @@ def test_whole_cards_only_measures_the_card_on_the_bed(db, tmp_path, monkeypatch
     monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[card, art]])
     (outline,), _ = scanner._find(frame)
     assert outline[0] is card
+    assert np.allclose(outline[1], card)                       # the bed box is tried too (2026-11-09)
+    assert outline[2] is art
     # a piece outside the bed (the next card in the slot) isn't read
     up_top = np.array([[10, 150], [40, 150], [40, 190], [10, 190]], np.float32)
     monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[up_top]])
