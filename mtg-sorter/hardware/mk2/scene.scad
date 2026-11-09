@@ -1,5 +1,7 @@
-// Scene pieces for the pictures and the clash checks (guide/shot.py, check.py).
-include <frame.scad>
-use <etray.scad>
-use <sort.scad>
-what = "frame";
+// Sorter Mk2: the whole machine in one view (for pictures).
+include <joints.scad>
+include <layout.scad>
+use <frame.scad>
+use <levels.scad>
+frame_assembly();
+levels_assembly();
