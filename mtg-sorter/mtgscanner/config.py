@@ -72,6 +72,7 @@ EMPTY_BED_DISTANCE = 45
 BED_BOX_RECHECK_SECONDS = 0.5
 # The bed box only stands in for a card (or is tried as its second outline) once the bed
 # has looked the same this long: grey levels (0-255) of average change, and seconds.
+BED_LOOKALIKES = 3   # the bare bed's closest cards: on the bed they only count as sure matches
 BED_STILL_LEVEL = 6.0
 BED_STILL_SECONDS = 1.0   # a card only the bed box outlines is looked at this often
 # A card out of sight for this long (a hand over it is shorter) counts as taken away.
