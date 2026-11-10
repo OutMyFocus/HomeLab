@@ -39,24 +39,36 @@
   // ---------- look (saved in this browser only) ----------
   const LOOK_KEY = "mtg-scanner-look";
   const ACCENTS = [
-    ["Ember", "#e8772e"], ["Plains", "#d6a93c"], ["Island", "#3b8eea"], ["Swamp", "#9a6bdc"],
+    ["Aether", "#7c5cff"], ["Ember", "#e8772e"], ["Plains", "#d6a93c"], ["Island", "#3b8eea"], ["Swamp", "#9a6bdc"],
     ["Mountain", "#e5484d"], ["Forest", "#2fa66a"], ["Teal", "#14b8a6"], ["Rose", "#ec4899"],
   ];
   const FONTS = {
-    sans: '"Inter", "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif',
+    sans: '"Inter Var", "Inter", "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif',
     rounded: 'ui-rounded, "SF Pro Rounded", "Nunito", "Quicksand", "Varela Round", "Segoe UI Variable Text", "Segoe UI", sans-serif',
     serif: '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif',
     mono: 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace',
   };
   const DEFAULT_LOOK = {
-    theme: "system", accent: "#e8772e", bins: ["#6b7280", "#8b93a1", "#2bb3a3", "#d6a93c"],
-    layout: "left", density: "cozy", font: "sans", size: 15, radius: 16,
+    v: 2, theme: "system", accent: "#7c5cff", bins: ["#6b7280", "#8b93a1", "#22b3a3", "#f2a93b"],
+    layout: "left", density: "cozy", font: "sans", size: 15, radius: 18,
     glow: true, finder: true, shine: true, stats: true, source: true, match: true, time: true, keys: true, motion: true,
   };
   const SWITCHES = ["glow", "finder", "shine", "stats", "source", "match", "time", "keys", "motion"];
 
   let look = { ...DEFAULT_LOOK };
-  try { look = { ...DEFAULT_LOOK, ...JSON.parse(localStorage.getItem(LOOK_KEY) || "{}") }; } catch (e) {}
+  try {
+    const saved = JSON.parse(localStorage.getItem(LOOK_KEY) || "{}") || {};
+    // Saved before SortR with the old defaults (Ember orange, 16 px corners): take the new ones (see look.js).
+    if (!saved.v) {
+      if ((saved.accent || "").toLowerCase() === "#e8772e") delete saved.accent;
+      if (saved.radius === 16) delete saved.radius;
+      if (JSON.stringify(saved.bins) === JSON.stringify(["#6b7280", "#8b93a1", "#2bb3a3", "#d6a93c"])) delete saved.bins;
+      delete saved.v;
+    }
+    look = { ...DEFAULT_LOOK, ...saved, v: 2 };
+  } catch (e) {}
+  // The light/dark button in the top bar changes the theme without going through this panel.
+  window.addEventListener("mtg-look", e => { if (e.detail?.theme) { look.theme = e.detail.theme; syncControls(); } });
 
   // Dark text on light colors, white text on dark ones.
   function onColor(hex) {

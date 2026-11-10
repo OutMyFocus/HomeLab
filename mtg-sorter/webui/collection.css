@@ -2,7 +2,6 @@
 
 
 /* mana colors: identity for card colors, always shown next to the color's name */
-:root { --mana-W: #e9d8a0; --mana-U: #3b8eea; --mana-B: #7d6b8f; --mana-R: #e5484d; --mana-G: #2fa66a; --mana-M: #d6a93c; --mana-C: #9aa3ad; --mana-: #6b7280; }
 
 .coll { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); }
 .coll > * { min-width: 0; }
