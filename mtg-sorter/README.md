@@ -1,6 +1,6 @@
-# MTG Card Scanner & Sorter
+# SortR: MTG Card Scanner & Sorter
 
-A machine that looks at your Magic: The Gathering cards, works out which card each one is,
+SortR (the app's name) is a machine that looks at your Magic: The Gathering cards, works out which card each one is,
 records it in your collection, and drops it into a bin by price.
 
 It has three parts, built in this order:
@@ -11,7 +11,11 @@ It has three parts, built in this order:
 | 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Stand designed ([`hardware/`](hardware/)) |
 | 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
 
-**Looking after it:** Maintenance, under the gear in the menu at the top of every page (under
+**On your phone:** open the app's address in Safari or Chrome and pick *Add to Home Screen*
+(Safari: the Share button). It gets its own icon and opens full screen like an app, with the
+page menu along the bottom.
+
+**Looking after it:** Maintenance, at the bottom of the sidebar on every page (under
 More on a phone), has the health check-up, updates, restart, backups and logs. It gets a yellow or red dot
 when something needs a look. What to do when something goes wrong:
 [MAINTENANCE.md](MAINTENANCE.md).
@@ -92,15 +96,28 @@ Then open **http://localhost:5000** in your browser. You get:
 - **Wrong card?** (W): pick the right card by name. It's saved instead, and remembered for training.
 - **Other printing?** (P): right card, wrong set. Lists every printing of it (Scryfall's full
   list when online) so you can pick the one you really have.
-- **Home** (`/`, the logo on every page): the whole machine at a glance. Whether the camera,
-  servo board, feeder and Pi are OK, the collection's value and a value chart, cards scanned in
-  the last 14 days, the newest cards, the most valuable ones, the biggest price changes and how
-  full each bin is. The scanner itself is at `/scan`.
-- **Page menu**: the same on every page, and short: **Home**, **Scanner**, then **Cards**
-  (Collection, Sets, Wishlist, Card lookup, Scan history), **Decks** (Decks, Play), **Machine**
-  (Machine, Bins, Lights) and the gear (Settings, Maintenance), each a small drop-down. Press M
-  on the scanner to see every page at once. On a phone it's a bar along the bottom: Home,
-  Scanner, Cards, Decks and More. With no camera connected, the scanner says so and offers **Scan photos instead**.
+- **Home** (`/`, the logo on every page): the whole machine at a glance. The collection's value
+  with its best cards fanned out, whether the camera, servo board, feeder and Pi are OK, a value
+  chart (7 days, 30 days or all; hover or drag a finger along it for any day), your colors as a
+  donut (by value or by cards; tap one to filter the Collection), cards scanned in the last 14
+  days, **Insights** (what stands out: how much the value moved, this week against last week,
+  how much of the value sits in bin 3, cards whose price jumped, wishlist cards you already
+  own), the newest cards, the most valuable ones, the biggest price changes and each bin's cards
+  and value. The scanner itself is at `/scan`.
+- **Page menu**: on a computer, a sidebar with every page in its group: **Home**, **Scanner**,
+  then **Cards** (Collection, Sets, Wishlist, News, Card lookup, Scan history), **Decks** (Decks,
+  Play), **Machine** (Machine, Bins, Lights) and **Settings** (Settings, Maintenance). Its
+  bottom shows SortR's health (green, or what needs a look) and the light/dark switch; the
+  button next to them shrinks it to icons (it does that by itself on a tablet). On a phone it's a
+  bar along the bottom: Home, Scanner, Cards, Decks and More. The bar at the top names the page.
+- **Search everything** (Ctrl K, ⌘ K on a Mac, the search box at the top, or M on the scanner):
+  one box for the cards you own (with their picture and price), every page, and actions like
+  Start scanning, Add a card, Export, New deck or Switch light or dark. Anything else you type
+  can be looked up in Card lookup. With no camera connected, the scanner says so and offers **Scan photos instead**.
+- **Light or dark**: the moon/sun button at the top switches between matching your device,
+  dark and light. The scanner's **Customize** (C) still has the rest: accent color, black
+  (OLED) theme, bin colors, font, text size and corners. If SortR can't be reached (it's
+  restarting, or the Wi-Fi dropped), a red bar says so at the top until it's back.
 - **Collection** (in the menu, or **Whole collection**): everything you've ever saved.
   Search and filter by color, rarity, set, bin, foil and price, sort it, and switch between
   pictures and a list. Tap a card to change how many you have, mark it foil, pick a different
@@ -119,6 +136,13 @@ Then open **http://localhost:5000** in your browser. You get:
   **Spare copies** lists what you have beyond a playset (or however many you keep), cheapest
   printings first, with their value and a list to copy for a trade or a shop. Basic lands are
   left out unless you ask.
+- **News**: Magic news in one place. Articles from the official site (magic.wizards.com) and
+  community sites (MTGGoldfish, EDHREC, Hipsters of the Coast; MTG Arena Zone and r/magicTCG can
+  be turned on under **Sources**), sets coming out soon or just out (from Scryfall), the newest
+  previewed cards, and a red banner when Wizards posts a ban list announcement. Filter by
+  Official, Bans, Previews or Arena, or search. The news is fetched every 30 minutes and saved in
+  `data/news_cache.json`, so it still shows when the internet is down; `--offline` turns
+  fetching off.
 - **Decks**: paste a decklist from Moxfield, Archidekt, MTG Arena, MTGO or
   any website. It shows how much of the deck you already own (any printing counts), which cards
   are missing, what they'd cost at today's prices, and which bin your copies are in. **Copy the

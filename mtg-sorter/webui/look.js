@@ -2,7 +2,7 @@
 // font, corners, spacing) to the other pages. Saved in this browser only, by app.js.
 (() => {
   const FONTS = {
-    sans: '"Inter", "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif',
+    sans: '"Inter Var", "Inter", "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif',
     rounded: 'ui-rounded, "SF Pro Rounded", "Nunito", "Quicksand", "Varela Round", "Segoe UI Variable Text", "Segoe UI", sans-serif',
     serif: '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif',
     mono: 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace',
@@ -13,6 +13,14 @@
   }
   let look = {};
   try { look = JSON.parse(localStorage.getItem("mtg-scanner-look") || "{}") || {}; } catch (e) {}
+  // SortR (look version 2) has a new default accent and corners. A look saved before that with
+  // the old defaults (Ember orange, 16 px) gets the new ones; colors picked on purpose stay.
+  if (!look.v) {
+    if ((look.accent || "").toLowerCase() === "#e8772e") delete look.accent;
+    if (look.radius === 16) delete look.radius;
+    look.v = 2;
+    try { localStorage.setItem("mtg-scanner-look", JSON.stringify(look)); } catch (e) {}
+  }
   const root = document.documentElement, css = root.style;
   if (look.theme) root.dataset.theme = look.theme;
   if (look.density) root.dataset.density = look.density;
