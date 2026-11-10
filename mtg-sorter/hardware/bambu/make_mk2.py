@@ -33,6 +33,26 @@ SMOOTH = {"wall_loops": "4", "sparse_infill_density": "25%", "top_shell_layers":
           "top_surface_line_width": "0.4", "ironing_type": "top", "ironing_flow": "15%",
           "ironing_spacing": "0.1", "ironing_speed": "20"}   # the scan bed: the card slides on it
 
+# Pack each plate as before, then move the whole layout to the middle of the bed, so the brims and
+# tree supports round the big parts have room and stay inside the printable area.
+_pack = mp.pack
+def pack_centred(sizes, gaps):
+    spots = _pack(sizes, gaps)
+    if spots is None:
+        return None
+    boxes = [(x, y, x + (d if r else w), y + (w if r else d)) for (x, y, r), (w, d) in zip(spots, sizes)]
+    x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    x1, y1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+    dx, dy = (mp.BED - (x1 - x0)) / 2 - x0, (mp.BED - (y1 - y0)) / 2 - y0
+    out = [(x + dx, y + dy, r) for x, y, r in spots]
+    for (x, y, r), (w, d), g in zip(out, sizes, gaps):     # a part with a brim keeps the brim and a bit more on the bed
+        need = 7.0 if g == mp.BRIM_GAP else 2.0      # 5 mm brim + 2
+        ww, dd = (d, w) if r else (w, d)
+        if min(x, y, mp.BED - x - ww, mp.BED - y - dd) < need - 1e-6:
+            sys.exit("a part with a brim sits too near the bed's edge (%.1f mm)" % min(x, y, mp.BED - x - ww, mp.BED - y - dd))
+    return out
+mp.pack = pack_centred
+
 N = lambda p: "mk2_" + p
 mp.PER_PART.update({N(k): v for k, v in {
     **{"wall_%s%d%d" % (s, y, z): STRUCTURAL for s in "rl" for y in (0, 1) for z in (0, 1, 2)},
