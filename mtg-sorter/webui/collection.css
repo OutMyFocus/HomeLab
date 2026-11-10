@@ -76,7 +76,7 @@
 .toolbar .actions .btn.primary { padding: 8px 14px; }
 .view-seg button { display: grid; place-items: center; }
 .view-seg svg { width: 16px; height: 16px; }
-.search { flex: 1 1 260px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: calc(var(--radius) * .6); background: var(--raised); }
+.search { flex: 1 1 260px; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: calc(var(--radius) * .6); background: var(--raised); }
 .search svg { color: var(--muted); }
 .search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: 9px 0; }
 .toolbar select, .price-range input, .add-opts input[type=number] { border: 1px solid var(--line); background: var(--raised); color: var(--text); border-radius: calc(var(--radius) * .6);

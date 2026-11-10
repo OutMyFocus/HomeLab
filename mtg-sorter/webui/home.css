@@ -77,16 +77,6 @@ a.stat.link:hover { border-color: var(--line-strong); transform: translateY(-2px
 .chart-panel { display: flex; flex-direction: column; }
 .home .line-chart { height: auto; min-height: 230px; flex: 1; position: relative; touch-action: pan-y; }
 .home .line-chart .empty p { margin: 0; max-width: 40ch; }
-.line-chart .line { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
-.line-chart .halo { fill: color-mix(in oklab, var(--accent) 25%, transparent); animation: halo 2.4s ease-out infinite; transform-box: fill-box; transform-origin: center; }
-@keyframes halo { 0% { transform: scale(.6); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
-.line-chart .cross { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; }
-.line-chart .hit { cursor: crosshair; }
-.chart-tip { position: absolute; z-index: 2; pointer-events: none; display: flex; flex-direction: column; gap: 1px; padding: 6px 10px; border-radius: 10px; white-space: nowrap;
-  background: var(--panel-solid); border: 1px solid var(--line-strong); box-shadow: var(--shadow-pop); font-size: .82rem; line-height: 1.25; }
-.chart-tip small { color: var(--muted); font-size: .72rem; }
-.chart-tip b { font-family: var(--display); font-variant-numeric: tabular-nums; }
-
 .donut-wrap { display: flex; align-items: center; gap: 18px; min-height: 230px; }
 .donut { position: relative; width: 170px; flex: none; }
 .donut svg { width: 100%; height: auto; display: block; }
