@@ -69,6 +69,13 @@
   nav.innerHTML = LINKS.map(k => page(k)).map(p => `<a href="${p.href}" data-key="${p.key}"${cur(p)}>${p.label}</a>`).join("")
     + GROUPS.map(g => `<button type="button" class="menu-btn${g.iconOnly ? " icon-only" : ""}" data-group="${g.key}" aria-haspopup="true" aria-expanded="false"${inGroup(g) ? ' aria-current="page"' : ""}${g.iconOnly ? ` aria-label="${g.label}" title="${g.label}"` : ""}>${g.iconOnly ? icon(g.icon) : g.label + caret}</button>`).join("");
   header.querySelector(".brand").after(nav);
+  // On a phone the header has no page links, so it names the page you're on.
+  const herePage = PAGES.find(p => p.key === current);
+  if (herePage && herePage.key !== "home") {
+    const name = document.createElement("span");
+    name.className = "here-name"; name.textContent = herePage.label;
+    nav.after(name);
+  }
 
   // Phone: a bar along the bottom with Home, Scanner, Cards, Decks and More (Machine and Settings).
   const BAR = [...LINKS.map(k => ({ ...page(k), link: true })), GROUPS[0], GROUPS[1],
@@ -163,6 +170,13 @@
       if (state && groupOf(b.dataset.group).pages.includes("maintenance")) b.dataset.state = state; else delete b.dataset.state;
     }
   }
+
+  // The phone's status bar and browser bar take the page's background color (light, dark or black theme).
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  function syncTheme() { const bg = getComputedStyle(document.body).backgroundColor; if (themeMeta && bg) themeMeta.content = bg; }
+  syncTheme();
+  new MutationObserver(syncTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", syncTheme);
 
   // A dot on Maintenance when the check-up finds something wrong.
   async function checkHealth() {
