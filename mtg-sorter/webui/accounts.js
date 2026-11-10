@@ -104,7 +104,7 @@
     } catch (e) { toast(e.message); }
   };
   $("invCopy").onclick = async () => { await MTG.copy($("invLink").value); toast("Invite link copied"); };
-  $("invShare").onclick = () => navigator.share?.({ title: "Join my MTG Sorter", text: "Here's your invite to my MTG card sorter:", url: $("invLink").value }).catch(() => {});
+  $("invShare").onclick = () => navigator.share?.({ title: "Join my SortR", text: "Here's your invite to my MTG card sorter:", url: $("invLink").value }).catch(() => {});
   $("invites").addEventListener("click", async e => {
     const b = e.target.closest("[data-cancel]"); if (!b) return;
     if (!confirm("Cancel this invite? Nobody else can join with it.")) return;

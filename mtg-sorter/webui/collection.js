@@ -70,6 +70,11 @@
       box.innerHTML = `<div class="empty"><p>${pts.length ? `Today: <b>${money(pts[0].value)}</b>. ` : ""}The chart fills in as the days go by: the total is noted once a day whenever this page or Home is opened.</p></div>`;
       return;
     }
+    if (window.SortRCharts) {   // the same smooth line, hover readout and colors as Home
+      const axis = v => v >= 10000 ? "$" + (v / 1000).toFixed(0) + "k" : v >= 1000 ? "$" + (v / 1000).toFixed(1) + "k" : "$" + Math.round(v);
+      SortRCharts.line(box, pts, { fmt: (v, isAxis) => isAxis ? axis(v) : money(v), tip: p => `${money(p.value)}${p.cards ? ` · ${p.cards.toLocaleString()} cards` : ""}` });
+      return;
+    }
     const W = box.clientWidth || 600, H = box.clientHeight || 220, L = 56, R = 12, T = 12, B = 26;
     const vals = pts.map(p => p.value), lo = Math.min(...vals), hi = Math.max(...vals);
     const pad = (hi - lo) * .12 || Math.max(1, hi * .05);
@@ -440,6 +445,18 @@
   });
 
   // Other pages link here with a search filled in (/collection?q=Sol Ring).
-  { const q = new URLSearchParams(location.search).get("q"); if (q) $("q").value = q; }
-  load();
+  { const ps = new URLSearchParams(location.search), q = ps.get("q"), sort = ps.get("sort");
+    if (q) $("q").value = q;
+    if (sort && [...$("sort").options].some(o => o.value === sort)) { prefs.sort = sort; $("sort").value = sort; }
+    // Home links here with one filter set (/collection?color=U, ?bin=3); applied once the lists are filled.
+    var linked = { fColor: ps.get("color"), fBin: ps.get("bin"), fRarity: ps.get("rarity"), fSet: ps.get("set") }; }
+  // The search palette's "Export the collection" and "Add a card" land here as #export / #add.
+  load().then(() => {
+    let changed = false;
+    for (const [id, v] of Object.entries(linked)) if (v != null && [...$(id).options].some(o => o.value === v)) { $(id).value = v; changed = true; }
+    if (changed) applyFilters();
+    if (location.hash === "#export" && data) openExport();
+    else if (location.hash === "#add") openAdd();
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+  });
 })();
