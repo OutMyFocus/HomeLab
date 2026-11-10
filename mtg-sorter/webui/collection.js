@@ -70,6 +70,11 @@
       box.innerHTML = `<div class="empty"><p>${pts.length ? `Today: <b>${money(pts[0].value)}</b>. ` : ""}The chart fills in as the days go by: the total is noted once a day whenever this page or Home is opened.</p></div>`;
       return;
     }
+    if (window.SortRCharts) {   // the same smooth line, hover readout and colors as Home
+      const axis = v => v >= 10000 ? "$" + (v / 1000).toFixed(0) + "k" : v >= 1000 ? "$" + (v / 1000).toFixed(1) + "k" : "$" + Math.round(v);
+      SortRCharts.line(box, pts, { fmt: (v, isAxis) => isAxis ? axis(v) : money(v), tip: p => `${money(p.value)}${p.cards ? ` · ${p.cards.toLocaleString()} cards` : ""}` });
+      return;
+    }
     const W = box.clientWidth || 600, H = box.clientHeight || 220, L = 56, R = 12, T = 12, B = 26;
     const vals = pts.map(p => p.value), lo = Math.min(...vals), hi = Math.max(...vals);
     const pad = (hi - lo) * .12 || Math.max(1, hi * .05);

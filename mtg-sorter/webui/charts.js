@@ -42,7 +42,7 @@ window.SortRCharts = (() => {
       ${ticks.map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="axis" x="${L - 10}" y="${y(v).toFixed(1)}" text-anchor="end" dominant-baseline="middle">${esc(fmt(v, true))}</text>`).join("")}
       <text class="axis" x="${L}" y="${H - 6}">${short(pts[0].day)}</text><text class="axis" x="${W - R}" y="${H - 6}" text-anchor="end">${short(pts[pts.length - 1].day)}</text>
       <path d="${path}L${last[0].toFixed(1)},${H - B}L${L},${H - B}Z" fill="url(#${id})"/>
-      <path class="line" d="${path}" stroke="url(#${id}s)"/>
+      <path class="line" d="${path}" style="stroke:url(#${id}s)"/>
       <circle class="halo" r="9" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}"/><circle class="dot" r="4.5" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}"/>
       <g class="hover" visibility="hidden"><line class="cross" y1="${T}" y2="${H - B}"/><circle class="dot" r="4.5"/></g>
       <rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg><div class="chart-tip" hidden></div>`;
