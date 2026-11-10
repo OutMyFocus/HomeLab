@@ -89,3 +89,4 @@
   .set-strip { grid-auto-columns: 78%; }
   .preview-strip { grid-auto-columns: 128px; }
 }
+.has-shell .news-bar h1 { display: none; }
