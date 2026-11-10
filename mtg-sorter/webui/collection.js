@@ -440,6 +440,18 @@
   });
 
   // Other pages link here with a search filled in (/collection?q=Sol Ring).
-  { const q = new URLSearchParams(location.search).get("q"); if (q) $("q").value = q; }
-  load();
+  { const ps = new URLSearchParams(location.search), q = ps.get("q"), sort = ps.get("sort");
+    if (q) $("q").value = q;
+    if (sort && [...$("sort").options].some(o => o.value === sort)) { prefs.sort = sort; $("sort").value = sort; }
+    // Home links here with one filter set (/collection?color=U, ?bin=3); applied once the lists are filled.
+    var linked = { fColor: ps.get("color"), fBin: ps.get("bin"), fRarity: ps.get("rarity"), fSet: ps.get("set") }; }
+  // The search palette's "Export the collection" and "Add a card" land here as #export / #add.
+  load().then(() => {
+    let changed = false;
+    for (const [id, v] of Object.entries(linked)) if (v != null && [...$(id).options].some(o => o.value === v)) { $(id).value = v; changed = true; }
+    if (changed) applyFilters();
+    if (location.hash === "#export" && data) openExport();
+    else if (location.hash === "#add") openAdd();
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+  });
 })();
