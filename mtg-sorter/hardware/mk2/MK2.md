@@ -36,7 +36,8 @@ The drop simulation (`sim/drops.py`, `sim/push.py`) had every card landing flat.
    - The level frames, scan carrier, camera arch, feeder stand and electronics tray: tree supports, set to auto.
    - The shoe, roller, levers and keys: solid.
    - The scan bed: ironed on top.
-4. **Swap to white PLA for the plates marked WHITE:** bins, trapdoors, drawer, scan bed and light bars. Everything else is black.
+4. **Don't press Arrange, and leave Support off on the Global tab.** Each plate is already laid out, centred so the brims and supports stay on the bed. The parts that need supports (the level frames, the scan carrier, the camera arch, the feeder stand, the pushers and the electronics tray) have them switched on themselves. Arrange repacks parts from other plates onto the wrong plate and pushes them to the edges, where their supports run off the bed. If that happens, close the project without saving and open the 3MF again.
+5. **Swap to white PLA for the plates marked WHITE:** bins, trapdoors, drawer, scan bed and light bars. Everything else is black.
 
 The wall tiles are 250 mm long and use the A1's whole bed. There's no prime tower with one colour, so they fit.
 
