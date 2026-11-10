@@ -11,6 +11,10 @@ It has three parts, built in this order:
 | 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Stand designed ([`hardware/`](hardware/)) |
 | 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
 
+**On your phone:** open the app's address in Safari or Chrome and pick *Add to Home Screen*
+(Safari: the Share button). It gets its own icon and opens full screen like an app, with the
+page menu along the bottom.
+
 **Looking after it:** Maintenance, under the gear in the menu at the top of every page (under
 More on a phone), has the health check-up, updates, restart, backups and logs. It gets a yellow or red dot
 when something needs a look. What to do when something goes wrong:

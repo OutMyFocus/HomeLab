@@ -44,6 +44,11 @@
 .setting p { margin: 0; max-width: 70ch; }
 .setting .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .field.pin { width: 13em; }
+/* Settings and Lights: their panels sit in two columns on a wide screen instead of one narrow column on the left. */
+@media (min-width: 1100px) {
+  .coll.two-col { display: block; columns: 2; column-gap: var(--gap); }
+  .coll.two-col > * { break-inside: avoid; width: 100%; max-width: none; margin-bottom: var(--gap); }
+}
 
 /* lock screen */
 .lock-body { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
