@@ -667,3 +667,30 @@ def test_a_card_the_bare_bed_reads_as_only_counts_when_sure(db):  # noqa: F811
     other = Match(on_bed[0], db.get_card("id2"), 70, 8, "likely", [])
     if "Card 2" not in scanner.bed_lookalikes():
         assert scanner._screen(on_bed, other).card is not None
+
+
+def test_the_bare_bed_in_dimmer_light_is_still_the_bed(db, monkeypatch, tmp_path):  # noqa: F811
+    """Tower (2026-11-09, 12:43): the light bars dipped, the bare bed's fingerprint no longer
+    matched the remembered one, and the ribs outlined as a card read as Precise Redaction,
+    "sure". The pattern of the bed's middle tells the bare bed apart whatever the light."""
+    import app
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(config, "EMPTY_BED_DISTANCE", -1)      # the fingerprint never matches
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
+    bare = np.full((200, 100, 3), 90, np.uint8)
+    for y in range(0, 200, 8):
+        bare[y:y + 3] = 150                                     # the bed's ribs
+    bare[:, 30:34] = 40                                         # and its centring channel
+    assert scanner.remember_empty_bed(bare)
+    dim = (bare.astype(np.float32) * 0.8).astype(np.uint8)
+    assert scanner.bed_is_empty(dim)
+    card = bare.copy()
+    card[10:110, 10:70] = cv2.resize(fake_card(4), (60, 100))
+    assert not scanner.bed_is_empty(card)
+    ghost = [np.array([[12, 4], [68, 8], [66, 100], [14, 102]], np.float32)]
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [ghost])
+    assert scanner._whole_cards(dim) == []                     # the ribs' outline isn't a card
+    fresh = Scanner(db, None, source=FakeCamera(0))            # kept for next time
+    fresh.restore(json.loads((tmp_path / "settings.json").read_text()))
+    assert np.array_equal(fresh.empty_look, scanner.empty_look)

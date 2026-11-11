@@ -69,6 +69,9 @@ RECHECK_SECONDS = 2.0
 # bed, not a card. Same scale as a match's distance (0-256): the bare bed against itself
 # is well under this, a card on it far over.
 EMPTY_BED_DISTANCE = 45
+# ...or its middle this alike to the bare bed's (-1 to 1, brightness doesn't count): the
+# bare bed in dimmer light is well over this, a card lying on it far under.
+EMPTY_BED_LIKENESS = 0.75
 BED_BOX_RECHECK_SECONDS = 0.5
 # The bed box only stands in for a card (or is tried as its second outline) once the bed
 # has looked the same this long: grey levels (0-255) of average change, and seconds.
