@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Build the Bambu Studio files for the enclosure print.
 
-  python3 make_project.py
+  python3 make_project.py          (the whole enclosure)
+  python3 make_project.py power    (just the two parts with the power jack / button holes)
 
 writes, next to this script:
   MTG_Sorter_Enclosure.3mf   one project, every plate from PRINTING.md laid out on its own
                              plate, the settings from PRINTING.md applied (File > Open Project)
+  MTG_Sorter_Power_Parts.3mf with "power": back_l and deck_fr only, for reprinting them
   presets/*.json             the same settings as process presets, for Bambu Studio's
                              "Import Configs" dialog
 
@@ -92,6 +94,9 @@ PLATES = [
     ("deck_bl", ["enc_deck_bl"]),
     ("deck_br", ["enc_deck_br"]),
 ]
+
+# the two parts that changed for the power jack and button (POWER.md), to reprint on their own
+POWER_PLATES = [p for p in PLATES if p[0] in ("back_l", "deck_fr")]
 
 
 def read_stl(name):
@@ -184,7 +189,7 @@ def write_presets():
         print("wrote presets/" + fn)
 
 
-def main():
+def main(PLATES=PLATES, OUT=OUT):
     profiles = json.load(open(os.path.join(HERE, "a1_system_profiles.json")))
     r = round(sqrt(len(PLATES)))            # Bambu Studio's compute_colum_count()
     cols = r + 1 if sqrt(len(PLATES)) > r else r
@@ -264,8 +269,11 @@ def main():
         z.writestr("Metadata/project_settings.config", json.dumps(project_settings(profiles), indent=4, sort_keys=True))
         z.writestr("Metadata/filament_sequence.json", seq)
     print("wrote", os.path.relpath(OUT, HERE), "%d plates, %d objects" % (len(PLATES), oid // 2))
-    write_presets()
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["power"]:
+        main(POWER_PLATES, os.path.join(HERE, "MTG_Sorter_Power_Parts.3mf"))
+    else:
+        main()
+        write_presets()
