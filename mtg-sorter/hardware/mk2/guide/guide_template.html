@@ -1,0 +1,52 @@
+<title>Sorter Mk2 Assembly</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+{{CSS}}
+</style>
+<div class="wrap">
+<header><h1>Sorter Mk2 assembly</h1>
+<p>The Mk2 build, one picture per step, drawn from the same model the print file comes from. No screws and no glue:
+pins and magnets press in, everything else slides or clicks. Print the plates first (MK2.md, Print), and stop at its
+checkpoints.</p></header>
+<div class="hero"><img src="{{HERO}}" alt="Sorter Mk2, finished"></div>
+<div class="key"><span><i class="sw" style="background:#a3a9b1"></i>already fitted</span>
+<span><i class="sw" style="background:#ff7a1a"></i>this step</span>
+<span><i class="sw" style="background:#d81b60"></i>which way it goes in</span>
+<span><i class="sw" style="background:#2e6fd8"></i>servo</span>
+<span><i class="sw" style="background:#2d6a4f"></i>board</span></div>
+<nav class="toc">{{TOC}}<a href="#wiring">Wiring</a></nav>
+<div class="note"><div><strong>Centre every servo before it goes in.</strong> Plug it into the PCA9685, set it to 90° with the snippet below, then fit the horn and slide the servo into its box. Otherwise the part it moves ends up at the wrong angle.</div><pre>from adafruit_servokit import ServoKit
+kit = ServoKit(channels=16)
+kit.servo[0].angle = 90   # channel, angle</pre></div>
+<div class="note"><div><strong>Never use a 12 V adapter.</strong> Mk2 runs on one 5 V brick and has no regulator, so 12 V would kill the Pi, the servos and the lights.</div></div>
+{{BODY}}
+<section class="part" id="wiring"><h2><small>WIRING</small>Power and pins</h2>
+<article class="step wide"><div class="txt"><h3>One plug, one button</h3>
+<pre>5 V 10 A brick ─ panel jack (back) ─┬─ Wago 5 V ─┬─ USB-C pigtail → Pi 5 (always fed)
+                                    │            └─ relay COM ─ NO ─ Wago "switched 5 V"
+                                    │                                 ├─ PCA9685 V+ (servos)
+                                    │                                 ├─ DRV8833 VCC (feeder motor)
+                                    │                                 ├─ light strip 5 V
+                                    │                                 └─ button's LED ring
+                                    └─ Wago GND ─ everything's ground</pre>
+<ul><li>The power button is a 16 mm momentary button on the Pi 5's J2 pads (solder a 2-pin header: the only soldering in Mk2). Press to boot, press to shut down, hold to force off.</li>
+<li>The relay is on GPIO22, with its trigger jumper on HIGH. Until the app starts, the servos, motor and lights have no power, so nothing twitches at boot.</li>
+<li>Run <code>sudo rpi-eeprom-config --edit</code> on the Pi and add <code>PSU_MAX_CURRENT=5000</code>.</li>
+<li>Servo plugs: brown is GND, orange is 5 V, yellow is signal.</li></ul>
+<table><tr><th>What</th><th>Where</th></tr>
+<tr><td>Stop bar servo</td><td>PCA9685 ch 0</td></tr>
+<tr><td>Level 1 pusher servo</td><td>PCA9685 ch 1</td></tr>
+<tr><td>Front trapdoor servo</td><td>PCA9685 ch 2</td></tr>
+<tr><td>Back trapdoor servo</td><td>PCA9685 ch 3</td></tr>
+<tr><td>Level 2 pusher servo</td><td>PCA9685 ch 4</td></tr>
+<tr><td>Feeder motor</td><td>GPIO17 / GPIO27 → DRV8833 IN1 / IN2</td></tr>
+<tr><td>Light strip data</td><td>GPIO10 (pin 19)</td></tr>
+<tr><td>Relay</td><td>GPIO22</td></tr>
+<tr><td>Bin seated (hall), bins 1 to 4</td><td>GPIO5, 6, 13, 26</td></tr>
+<tr><td>Bin full (TCRT5000), bins 1 to 4</td><td>GPIO16, 20, 21, 12</td></tr>
+<tr><td>Power button</td><td>Pi 5 J2</td></tr></table>
+</div></article></section>
+<footer>Pictures come from <code>hardware/mk2/scene_atoms.scad</code>, rendered by <code>hardware/mk2/guide/build_guide.py</code>. The written steps are in <code>hardware/mk2/MK2.md</code>.</footer>
+</div>

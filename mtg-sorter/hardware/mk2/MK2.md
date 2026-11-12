@@ -45,6 +45,8 @@ The wall tiles are 250 mm long and use the A1's whole bed. There's no prime towe
 
 Nothing is screwed or glued. Steel pins press into their holes, magnets press into their pockets, and everything else slides or clicks.
 
+The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG_Sorter_Mk2_Picture_Assembly.html) (rebuild it with `python3 guide/build_guide.py`).
+
 1. **Base:**
    - Lay the four base tiles on the table.
    - Press a bowtie key into each socket across the seams (5 keys).
