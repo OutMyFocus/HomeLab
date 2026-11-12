@@ -1,0 +1,69 @@
+/* Build-booklet layout: one column of numbered steps, picture first, short lines under it. */
+:root {
+  --paper: #eef0f2; --sheet: #ffffff; --plate: #f8f8f8; --ink: #1d2733; --muted: #5b6673;
+  --rule: #d5dae0; --accent: #e8650f; --accent-ink: #b74c06; --arrow: #d81b60; --chip: #e6e9ed;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #14181d; --sheet: #1c2229; --ink: #e7ebef; --muted: #9aa5b1; --rule: #2e3742;
+  --accent: #ff8a3d; --accent-ink: #ff9d5c; --arrow: #ff5c8a; --chip: #28313b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #14181d; --sheet: #1c2229; --ink: #e7ebef; --muted: #9aa5b1; --rule: #2e3742;
+  --accent: #ff8a3d; --accent-ink: #ff9d5c; --arrow: #ff5c8a; --chip: #28313b; color-scheme: dark }
+* { box-sizing: border-box }
+img { max-width: 100%; height: auto; display: block }
+body { background: var(--paper); color: var(--ink); font: 16px/1.55 var(--body); margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 900px; margin: 0 auto; padding-block: 32px 64px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px }
+header h1 { font: 700 clamp(2.4rem, 6vw, 3.6rem)/1 var(--display); letter-spacing: .01em; margin: 0 0 10px; text-wrap: balance; text-transform: uppercase }
+header p { margin: 0; color: var(--muted); max-width: 62ch }
+.hero { background: #fff; border-radius: 14px; padding: 12px; display: grid; place-items: center }
+.hero img { max-height: 520px; width: auto }
+.key { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--muted) }
+.key span { display: inline-flex; align-items: center; gap: 7px }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block }
+nav.toc { display: flex; flex-wrap: wrap; gap: 8px }
+nav.toc a { font: 600 15px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--ink);
+  text-decoration: none; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--sheet) }
+nav.toc a:hover, nav.toc a:focus-visible { border-color: var(--accent); outline: none }
+.note { background: var(--sheet); border-left: 4px solid var(--accent); border-radius: 6px; padding: 14px 16px; display: grid; gap: 8px }
+.note strong { font-weight: 600 }
+pre { margin: 0; background: var(--chip); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font: 13px/1.5 var(--mono) }
+section.part { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; scroll-margin-top: 16px }
+section.part > h2 { font: 700 2rem/1 var(--display); text-transform: uppercase; letter-spacing: .02em; margin: 24px 0 0;
+  display: flex; align-items: baseline; gap: 12px; border-bottom: 2px solid var(--ink); padding-bottom: 8px }
+section.part > h2 small { font: 600 1rem/1 var(--mono); color: var(--accent-ink) }
+section.part > p { margin: -8px 0 0; color: var(--muted) }
+article.step { background: var(--sheet); border-radius: 12px; overflow: hidden; display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) }
+article.step .pic { background: #fff; display: grid; place-items: center; padding: 10px }
+article.step .pic img { max-height: 440px; width: auto }
+article.step .txt { padding: 18px 20px 20px; display: grid; gap: 12px; align-content: start; min-width: 0 }
+.num { font: 700 3.4rem/.85 var(--display); color: var(--accent) ; font-variant-numeric: tabular-nums }
+.txt h3 { font: 700 1.5rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; margin: 0; text-wrap: balance }
+.txt ul { margin: 0; padding-left: 18px; display: grid; gap: 6px }
+.txt li { padding-left: 2px }
+.meta { display: grid; gap: 6px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 10px }
+.chips { display: flex; flex-wrap: wrap; gap: 5px }
+.chips b { font-weight: 600; color: var(--ink); margin-right: 2px }
+.chip { background: var(--chip); border-radius: 4px; padding: 1px 6px; font: 12px/1.6 var(--mono); color: var(--ink) }
+code { font: .88em var(--mono); background: var(--chip); border-radius: 3px; padding: 0 4px; overflow-wrap: anywhere }
+.co { display: inline-grid; place-items: center; width: 1.45em; height: 1.45em; border-radius: 50%; border: 1.5px solid var(--ink);
+  font: 700 .78em/1 var(--body); vertical-align: .08em; margin-right: 2px }
+article.wide { grid-template-columns: minmax(0, 1fr) }
+article.wide .txt { padding-top: 6px }
+.diagram { background: #f8f8f8; padding: 10px; overflow-x: auto }
+.diagram svg { display: block; min-width: 640px; width: 100%; height: auto }
+table { border-collapse: collapse; width: 100%; font-size: 14px }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--rule) }
+th { font: 600 13px/1.2 var(--display); text-transform: uppercase; letter-spacing: .06em; color: var(--muted) }
+td:first-child { font-variant-numeric: tabular-nums; font-family: var(--mono) }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule); padding-top: 14px }
+a { color: var(--accent-ink) }
+@media (max-width: 720px) {
+  article.step { grid-template-columns: minmax(0, 1fr) }
+  article.step .pic img { max-height: 360px }
+  .num { font-size: 2.6rem }
+}
