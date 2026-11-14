@@ -8,8 +8,9 @@ It has three parts, built in this order:
 | Phase | What | Status |
 |---|---|---|
 | 1. Scanner software | Webcam recognizes cards, saves a collection CSV | **Done (this folder)** |
-| 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Stand designed ([`hardware/`](hardware/)) |
-| 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
+| 2. Raspberry Pi + camera rig | Same software on a Pi 5 with Camera Module 3 and light bars | **Done** (the Pi can run the same Docker image as the server: [`deploy/PI_DOCKER.md`](deploy/PI_DOCKER.md)) |
+| 3. Feeder & sorter, Mk1 | Feeder, scan bed, tilting tray and trapdoors in the enclosure | Built and tested; out of service since its tilting bed broke on 2026-11-09 |
+| 4. Sorter Mk2 | Screwless rebuild: slide-in modules, 4 bins, 450-card magazine, one plug | Designed, parts bought, printing next: [`hardware/mk2/MK2.md`](hardware/mk2/MK2.md). The app still drives Mk1 until Mk2 is built |
 
 **On your phone:** open the app's address in Safari or Chrome and pick *Add to Home Screen*
 (Safari: the Share button). It gets its own icon and opens full screen like an app, with the

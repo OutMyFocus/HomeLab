@@ -1,5 +1,8 @@
 # Printing the enclosure
 
+> This is **Mk1**, out of service since 2026-11-09. To print the new sorter, follow
+> [Mk2's print steps](mk2/MK2.md#print) instead.
+
 Print order and slicer settings for the enclosure parts in
 [`README.md`, Enclosure](README.md#enclosure), on the Bambu Lab A1 in Bambu Studio.
 23 plates plus the three drawers, roughly 1.6 kg of PLA (nearly all black) and 60-odd hours
