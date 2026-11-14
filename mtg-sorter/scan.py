@@ -16,7 +16,8 @@ import argparse
 import cv2
 
 from mtgscanner import config
-from mtgscanner.camera import PI_CAMERA, describe, open_camera, pi_camera_present
+from mtgscanner.camera import PI_CAMERA, open_camera, pi_camera_present
+from mtgscanner.camera import describe as camera_format
 from mtgscanner.collection import add_card
 from mtgscanner.database import Card, Matcher, connect
 from mtgscanner.exchange import load_rate
@@ -58,7 +59,7 @@ def scan_webcam(matcher: Matcher, camera: int) -> None:
         cap = open_camera(camera)
     except RuntimeError:
         raise SystemExit(f"Could not open camera {camera}. Try --camera 1")
-    fmt, size = describe(cap)
+    fmt, size = camera_format(cap)
     print(f"Camera {camera}: {size[0]}x{size[1]} {fmt}" + ("" if fmt in ("MJPG", "PICM") else " (not MJPG: expect a low frame rate)"))
 
     foil = False
