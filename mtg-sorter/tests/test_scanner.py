@@ -380,3 +380,27 @@ def test_a_dim_card_is_looked_up_again_with_more_contrast(db):
         assert hit.distance <= plain.distance                 # never worse than without it
         found += db.get_card(hit.id).id == f"id{seed}"
     assert found >= 3
+
+
+def test_scan_py_webcam_mode_starts(monkeypatch, capsys):
+    """`python scan.py` with a webcam reads the camera's format before the first frame.
+    scan.py's own describe(card, foil) used to hide the camera's describe(cap), so it
+    crashed with a TypeError before showing anything."""
+    import cv2
+    import scan
+
+    class FakeCap:
+        def get(self, prop):
+            return {cv2.CAP_PROP_FOURCC: int.from_bytes(b"MJPG", "little"),
+                    cv2.CAP_PROP_FRAME_WIDTH: 1280, cv2.CAP_PROP_FRAME_HEIGHT: 720}.get(prop, 0)
+
+        def read(self):
+            return False, None   # no picture: the loop ends at once
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr(scan, "open_camera", lambda index: FakeCap())
+    monkeypatch.setattr(scan.cv2, "destroyAllWindows", lambda: None)
+    scan.scan_webcam(matcher=None, camera=0)
+    assert "Camera 0: 1280x720 MJPG" in capsys.readouterr().out
