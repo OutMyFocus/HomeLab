@@ -26,7 +26,13 @@ for (const m of sc.meshes) {
 }
 for (const a of (sc.arrows || [])) {
   const f = new THREE.Vector3(...a[0]), t = new THREE.Vector3(...a[1]); const d = t.clone().sub(f); const L = d.length();
-  scene.add(new THREE.ArrowHelper(d.normalize(), f, L, a[2] || 0xd62828, Math.min(14, L * 0.35), Math.min(8, L * 0.2)));
+  if (a[3]) {   // a solid arrow, a[3] thick (for pictures of the whole machine)
+    const w = a[3], hl = Math.min(w * 3.2, L * 0.45), mat = new THREE.MeshBasicMaterial({color: a[2] || 0xd62828});
+    const g = new THREE.Group();
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(w / 2, w / 2, L - hl, 16), mat); sh.position.y = (L - hl) / 2; g.add(sh);
+    const hd = new THREE.Mesh(new THREE.ConeGeometry(w * 1.3, hl, 20), mat); hd.position.y = L - hl / 2; g.add(hd);
+    g.position.copy(f); g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize()); scene.add(g);
+  } else scene.add(new THREE.ArrowHelper(d.normalize(), f, L, a[2] || 0xd62828, Math.min(14, L * 0.35), Math.min(8, L * 0.2)));
 }
 const cam = new THREE.PerspectiveCamera(sc.fov || 30, W / H, 1, 10000);
 cam.up.set(0, 0, 1); cam.position.set(...sc.eye); cam.lookAt(...sc.ctr);
