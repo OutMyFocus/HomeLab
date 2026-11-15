@@ -317,6 +317,12 @@
   function hideBlocked(scope = document) {
     for (const k of blocked) scope.querySelectorAll(`[data-key="${k}"]`).forEach(a => a.hidden = true);
     if (scope !== document) return;
+    // Other links to a page this account can't open (Home's machine and health tiles) stay
+    // as information but stop being links, so they don't lead to "can't open this page".
+    for (const k of blocked) {
+      const href = PAGES.find(p => p.key === k)?.href;
+      if (href) document.querySelectorAll(`a[href="${href}"]:not([data-key])`).forEach(a => a.removeAttribute("href"));
+    }
     for (const b of menuBtns()) b.hidden = groupOf(b.dataset.group).pages.every(k => blocked.has(k));
     for (const s of side.querySelectorAll(".side-sec[data-group]")) s.hidden = [...s.querySelectorAll("a")].every(a => a.hidden);
   }
