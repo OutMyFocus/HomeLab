@@ -8,7 +8,9 @@
   let state = null, shownId = null, toastT;
   // This page's own scanner, once its device becomes a camera: a token the page made up,
   // which names that scanner in every request (and the name typed as "who's scanning").
-  const device = { on: false, stream: null, token: null, facing: "environment", torch: false, who: "",
+  // `want`: the person turned this device's camera on and hasn't pressed Stop, so the page
+  // brings the camera back by itself whenever the phone pauses it (screen lock, app switch).
+  const device = { on: false, want: false, stream: null, token: null, facing: "environment", torch: false, who: "",
     name: /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "Phone camera" : "Computer camera" };
   try { device.token = sessionStorage.getItem("mtg-cam-token"); device.who = localStorage.getItem("mtg-scanner-who") || ""; } catch (e) {}
   if (!device.token) {
@@ -191,6 +193,7 @@
     $("othersScanning").textContent = others.length ? `Also scanning: ${others.join(", ")}` : "";
     if (device.on && isPhone && s.status === "locked" && state?.status !== "locked") { try { navigator.vibrate?.(25); } catch (e) {} }
     const st = $("camStatus"); st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status;
+    checkPaused(s);
     showCamera(s.status !== "waiting");
     $("noCamHint").textContent = s.on_pi
       ? "On the Pi: power off, reseat the ribbon cable (contacts facing the board at both ends), then power on. It keeps looking, so the picture appears by itself once a camera works."
@@ -348,7 +351,10 @@
     const v = $("localCam"); v.srcObject = stream;
     try { await v.play(); } catch (e) {}
     const track = stream.getVideoTracks()[0];
-    track.onended = () => { if (device.on) { stopDeviceCamera(true); toast("The camera was closed"); } };
+    // The phone took the camera away (screen locked, another app, a call): get it back
+    // as soon as the page is in front again, instead of giving up on scanning.
+    track.onended = () => { if (device.want) resumeDevice(false); };
+    frameSeen = Date.now(); framesFlowed = false; watchFrames(v);
     // The picture box takes the camera's shape (a phone held upright gives a tall picture).
     fitDeviceBox();
     v.onresize = fitDeviceBox;
@@ -378,10 +384,8 @@
       toast(e.name === "NotAllowedError" ? "Camera permission was refused" : `Couldn't open this ${deviceWord}'s camera`);
       return false;
     }
-    device.on = true; camIndex = "browser";
-    document.querySelector(".camera").classList.add("device");
-    $("camDevice").hidden = false;
-    fitDeviceBox();
+    device.on = device.want = true; camIndex = "browser";
+    showDeviceTools();
     device.who = $("whoInput").value.trim().slice(0, 40);
     try { localStorage.setItem("mtg-scanner-who", device.who); } catch (e) {}
     $("camStatus").textContent = "Handing the camera to the scanner…";
@@ -405,6 +409,11 @@
       $("torchBtn").setAttribute("aria-pressed", device.torch);
     } catch (e) { toast("This camera's light can't be turned on from here"); }
   };
+  function showDeviceTools() {
+    document.querySelector(".camera").classList.add("device");
+    $("camDevice").hidden = false;
+    fitDeviceBox();
+  }
   $("stopDeviceBtn").onclick = () => { stopDeviceCamera(true); toast("Stopped scanning with this device"); loadCameras(); };
 
   // Asking the scanner for this device's camera. A phone on cellular (or Tailscale waking
@@ -425,39 +434,116 @@
   // at most about 8 a second, and not while the page is hidden. Pictures shrink while the
   // link is slow (a phone on cellular) and grow back once it keeps up: a small picture
   // several times a second beats a sharp one every second.
+  // Nothing in the loop may hang it: iPhones freeze a request that's under way when the
+  // screen locks and sometimes never finish it, so every step has a time limit and the
+  // next picture is always lined up (a watchdog below restarts the loop if it still stops).
   const FRAME_WIDTHS = [1280, 1024, 800, 640];
-  let frameSize = 0, quickFrames = 0;
+  let frameSize = 0, quickFrames = 0, loopId = 0, lastTick = 0;
+  const within = (ms, promise) => Promise.race([promise, new Promise(res => setTimeout(() => res(null), ms))]);
   async function sendFrame() {
     clearTimeout(sendT);
     if (!device.on) return;
-    if (document.hidden) { sendT = setTimeout(sendFrame, 500); return; }
-    const v = $("localCam"), started = Date.now();
-    if (v.videoWidth) {
+    const me = ++loopId, started = lastTick = Date.now();
+    let wait = 125;
+    try {
+      if (document.hidden) { wait = 500; return; }
+      const v = $("localCam");
+      if (!v.videoWidth || device.stream?.getVideoTracks()[0]?.readyState !== "live") return;   // no picture, or a dead camera's last one
       const w = Math.min(FRAME_WIDTHS[frameSize], v.videoWidth), h = Math.round(v.videoHeight * w / v.videoWidth);
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       ctx.drawImage(v, 0, 0, w, h);
-      const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", frameSize ? 0.7 : 0.8));
-      if (!device.on) return;
-      const sent = Date.now();
-      try {
-        const r = await fetch("/api/frame", { method: "POST", headers: { "Content-Type": "image/jpeg", ...scannerHeaders() }, body: blob });
-        if (r.status === 409) {   // the app restarted, or dropped this page after a long sleep: ask for a scanner again
-          try { render(await claimScanner()); }
-          catch (e) { stopDeviceCamera(false); toast("Couldn't get the scanner back"); loadCameras(); return; }
-        }
-        if (r.status === 401) { location.href = "/lock?next=/scan"; return; }
-        const took = Date.now() - sent;
-        if (took > 450 && frameSize < FRAME_WIDTHS.length - 1) { frameSize++; quickFrames = 0; }
-        else if (took < 150 && frameSize > 0 && ++quickFrames >= 24) { frameSize--; quickFrames = 0; }
-      } catch (e) {}   // the scanner is restarting or Wi-Fi blinked: keep trying
+      const blob = await within(3000, new Promise(res => canvas.toBlob(res, "image/jpeg", frameSize ? 0.7 : 0.8)));
+      if (!blob || !device.on || me !== loopId) return;
+      const sent = Date.now(), abort = new AbortController(), giveUp = setTimeout(() => abort.abort(), 8000);
+      let r;
+      try { r = await fetch("/api/frame", { method: "POST", headers: { "Content-Type": "image/jpeg", ...scannerHeaders() }, body: blob, signal: abort.signal }); }
+      finally { clearTimeout(giveUp); }
+      if (r.status === 409) {   // the app restarted, or dropped this page after a long sleep: ask for a scanner again
+        try { render(await claimScanner()); }
+        catch (e) { lostScanner(); return; }
+      }
+      if (r.status === 401) { location.href = "/lock?next=/scan"; return; }
+      const took = Date.now() - sent;
+      if (took > 450 && frameSize < FRAME_WIDTHS.length - 1) { frameSize++; quickFrames = 0; }
+      else if (took < 150 && frameSize > 0 && ++quickFrames >= 24) { frameSize--; quickFrames = 0; }
+    } catch (e) {   // the scanner is restarting, Wi-Fi blinked, or the request timed out: keep trying
+    } finally {
+      if (me === loopId && device.on) sendT = setTimeout(sendFrame, wait === 500 ? 500 : Math.max(40, wait - (Date.now() - started)));
     }
-    sendT = setTimeout(sendFrame, Math.max(40, 125 - (Date.now() - started)));
+  }
+
+  // ---------- keeping this device's camera going ----------
+  // An iPhone pauses the camera when the screen locks, the app goes to the background or
+  // another app takes the camera, and doesn't always start it again. The page notices
+  // (no new frames, the camera ended, the video stopped playing) and opens it again by
+  // itself. If that needs a tap (the phone refuses without one), a button says so.
+  let frameSeen = 0, framesFlowed = false, watching = false, reviving = false, reviveFails = 0, lastRevive = 0;
+  function watchFrames(v) {   // note when the video last showed a new frame
+    if (watching) return;
+    watching = true;
+    const seen = () => { frameSeen = Date.now(); framesFlowed = true; };
+    if (v.requestVideoFrameCallback) { const cb = () => { seen(); v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb); }
+    v.addEventListener("timeupdate", seen);
+  }
+  function cameraTrouble() {
+    const t = device.stream?.getVideoTracks()[0], v = $("localCam");
+    if (!t || t.readyState !== "live") return "ended";
+    if (v.paused) return "paused";
+    if (framesFlowed && Date.now() - frameSeen > 4000) return "frozen";   // only once frames had come, so a browser that never reports them isn't restarted over and over
+    return null;
+  }
+  async function resumeDevice(tapped) {
+    if (!device.want || reviving || document.hidden) return;
+    reviving = true; lastRevive = Date.now();
+    try {
+      const trouble = cameraTrouble(), v = $("localCam");
+      if (tapped || trouble === "ended" || trouble === "frozen") {
+        $("camStatus").textContent = `Turning this ${deviceWord}'s camera back on…`;
+        await openDeviceStream();
+      } else if (trouble === "paused") await v.play();
+      frameSeen = Date.now();
+      if (!device.on) { device.on = true; camIndex = "browser"; showDeviceTools(); }
+      render(await claimScanner());   // the scanner may have given up on this camera meanwhile
+      reviveFails = 0; showResume(false);
+      sendFrame();
+    } catch (e) {
+      if (e.message === "Locked") return;
+      reviveFails++;
+      if (tapped || reviveFails >= 2) showResume(true, e.name === "NotAllowedError" ? "Allow the camera for this site in Settings, then tap here" : null);
+    } finally { reviving = false; }
+  }
+  // The button over the picture: "Camera paused, tap to turn it back on".
+  function showResume(on, why) {
+    $("camResume").hidden = !on; resumeForPause = false;
+    if (on) $("camResumeWhy").textContent = why || "Tap to turn it back on";
+  }
+  $("camResume").onclick = () => resumeDevice(true);
+  // Every couple of seconds: is the picture loop alive, and is the camera still sending?
+  setInterval(() => {
+    if (!device.want || document.hidden || reviving) return;
+    if (device.on && Date.now() - lastTick > 6000) sendFrame();   // the loop got stuck: start it again
+    if ((!device.on || cameraTrouble()) && $("camResume").hidden && Date.now() - lastRevive > 5000) resumeDevice(false);
+  }, 2000);
+  // The scanner hasn't heard from this phone for a while (status "paused") although the
+  // page is in front: offer the button too, in case the automatic tries don't help.
+  let resumeForPause = false;
+  function checkPaused(s) {
+    if (!device.want) return;
+    if (s.status === "paused") {
+      if ($("camResume").hidden && !reviving && Date.now() - lastRevive > 8000) { showResume(true); resumeForPause = true; }
+    } else if (resumeForPause) { resumeForPause = false; showResume(false); }   // the pictures got through again by themselves
+  }
+  // The scanner couldn't be reached for a while: stop sending and wait for a tap (or the
+  // next time the page comes back to the front).
+  function lostScanner() {
+    clearTimeout(sendT); device.on = false;
+    showResume(true, "Lost the scanner. Tap to try again");
   }
 
   function stopDeviceCamera(tellScanner) {
     clearTimeout(sendT);
     const was = device.on;
-    device.on = false;
+    device.on = device.want = false; showResume(false);
     device.stream?.getTracks().forEach(t => t.stop());
     device.stream = null; $("localCam").srcObject = null;
     document.querySelector(".camera").classList.remove("device");
@@ -467,15 +553,24 @@
     camShown = null; if (state) showCamera(state.status !== "waiting");
   }
   // Closing the tab: tell the scanner right away, so it goes back to its own camera.
+  // (An iPhone also does this when it puts the page aside; `want` stays, so coming back
+  // to the page turns the camera on again.)
   addEventListener("pagehide", () => {
     if (!device.on) return;
-    device.on = false;
+    device.on = false; clearTimeout(sendT);
     navigator.sendBeacon?.("/api/camera/release", new Blob([JSON.stringify({ token: device.token })], { type: "application/json" }));
   });
-  // Back from the background: the scanner may have given up on this camera meanwhile, so ask for it again.
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && device.on) api("/api/camera", { index: "browser", name: device.name, token: device.token, who: device.who }).then(render).catch(() => {});
-  });
+  // Back from the background (or the page restored from the back/forward cache): start
+  // the camera again if the phone stopped it, and ask for the scanner again, which may
+  // have given up on this camera meanwhile.
+  const backInFront = () => {
+    if (document.hidden || !device.want) return;
+    frameSeen = Date.now();   // frames stop while the page is hidden: give the video a moment before calling it frozen
+    reviveFails = 0; showResume(false); resumeDevice(false);
+  };
+  document.addEventListener("visibilitychange", backInFront);
+  addEventListener("pageshow", e => { if (e.persisted) backInFront(); });
+  addEventListener("focus", () => { if (device.want && !device.on) backInFront(); });
   $("noCamDevice").hidden = !canUseDevice;
   $("noCamOther").hidden = canUseDevice;
   $("deviceTitle").textContent = `Scan with this ${deviceWord}`;
