@@ -59,7 +59,7 @@ from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_
 from mtgscanner.sort_run import add_sort_run_routes
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.system import ON_PI, add_system_routes
-from mtgscanner.tracking import Track, free_number, pair_up
+from mtgscanner.tracking import Track, free_number, is_piece, pair_up
 from mtgscanner.training import forget_all, ready_to_learn, train
 from mtgscanner.vault_prices import VaultPrices
 
@@ -435,7 +435,9 @@ class Scanner:
         A whole card on the bed also gets the bed box as a second outline to try. Both only
         once the bare bed is known (remember_empty_bed), and never while the bed is bare."""
         h, w = frame.shape[:2]
-        found = find_cards(frame)
+        # Nothing covers a card on the bed, and its outlines were tuned as they are found:
+        # no putting cards back together from their sides here (that's for a hand-held card).
+        found = find_cards(frame, rebuild=False)
         least = self.min_card * w * h
         cards = [g for g in found if cv2.contourArea(np.asarray(g[0], np.float32)) >= least]
         if not self.bed_box:
@@ -586,10 +588,16 @@ class Scanner:
         # Recognizing is the slow part, so it happens without holding the lock, and
         # every card that needs a look is recognized at the same time on its own thread.
         jobs = [outlines for _, outlines, check in todo if check] + list(new)
+        # Only a piece of a card that was read shows (its art box, the half beside a
+        # thumb): where the whole card was is tried first, and it stays that card if it
+        # still reads there.
+        whole = {id(outlines): [t.corners, *outlines] for t, outlines, check in todo
+                 if check and t.card is not None and not isinstance(outlines, BedBox)
+                 and is_piece(outlines[0], t.corners)}
         found = (
             list(
                 self._pool.map(
-                    lambda o: identify_outlines(self.matcher, frame, o), jobs
+                    lambda o: identify_outlines(self.matcher, frame, whole.get(id(o), o)), jobs
                 )
             )
             if jobs
@@ -657,10 +665,12 @@ class Scanner:
     def _update(self, t: Track, outlines, result: Match | None, frame):
         t.missing = 0
         if result is None:  # not checked this frame: just follow it
-            t.corners = outlines[0]
+            t.follow(outlines[0])
             return
         card = result.card
         t.corners, t.distance, t.margin = result.corners, result.distance, result.margin
+        t.seen = np.asarray(outlines[0], np.float32)
+        t.piece = card is not None and is_piece(t.seen, t.corners)
         if (self.auto_straight and card is not None and result.confidence == "sure"
                 and result.corners is not None and not t.straight_sampled
                 and not isinstance(self.source, BrowserSource)):

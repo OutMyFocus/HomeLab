@@ -7,7 +7,8 @@ import numpy as np
 
 from . import config
 from .database import Card, Hit, Matcher
-from .vision import boost_contrast, find_card_candidates, fingerprint, grow, warp_card, tame_glare
+from .vision import (SIDES_GOOD_FIT, boost_contrast, find_scored_candidates, fingerprint, grow, tame_glare,
+                     warp_card)
 
 GOOD_ENOUGH = 40   # a match this close is certain: stop trying other outlines
 
@@ -52,26 +53,36 @@ def identify_frame(matcher: Matcher, frame):
     return best
 
 
-def find_cards(frame, min_area: float | None = None) -> list[list[np.ndarray]]:
+def find_cards(frame, min_area: float | None = None, rebuild: bool = True) -> list[list[np.ndarray]]:
     """Every card in the picture, as a list of outlines per card.
 
     The detector often outlines the same card more than once (each of its methods
     finds it a little differently), so outlines whose centers sit inside each other
-    are grouped as one card. The biggest outline of each card comes first. min_area
+    are grouped as one card. The biggest clean outline of each card comes first. min_area
     is the smallest card to look for, as a share of the picture (config.MIN_CARD_AREA).
+
+    A card whose outline is broken (a thumb over one edge, a card sticking out of the
+    picture) is put back together from the sides that show, unless rebuild is off.
     """
-    candidates = find_card_candidates(frame, config.MIN_CARD_AREA if min_area is None else min_area)
-    candidates = sorted(candidates, key=cv2.contourArea, reverse=True)
-    cards: list[list[np.ndarray]] = []
-    for c in candidates:
+    scored = find_scored_candidates(frame, config.MIN_CARD_AREA if min_area is None else min_area, rebuild)
+    scored.sort(key=lambda s: cv2.contourArea(s[1]), reverse=True)
+    groups: list[list[tuple[float, np.ndarray]]] = []
+    for fit, c in scored:
         center = tuple(map(float, c.mean(axis=0)))
-        for group in cards:
-            if cv2.pointPolygonTest(group[0], center, False) >= 0:
-                group.append(c)
+        for group in groups:
+            if cv2.pointPolygonTest(group[0][1], center, False) >= 0:
+                group.append((fit, c))
                 break
         else:
-            cards.append([c])
-    return cards
+            groups.append([(fit, c)])
+    # Clean outlines first (biggest first), then the guesses by how well they fit: a
+    # shape stretched over a thumb is bigger than the card under it, and must not stand
+    # for the card (nor push the real outline out of the ones that get tried).
+    def guesses_last(scored_outline) -> float:
+        fit = scored_outline[0]
+        return 0.0 if fit >= SIDES_GOOD_FIT else 1.0 - fit
+
+    return [[c for _, c in sorted(group, key=guesses_last)] for group in groups]
 
 
 def find_card_in_slot(frame, slot: list[float]) -> list[np.ndarray] | None:
@@ -91,7 +102,7 @@ def find_card_in_slot(frame, slot: list[float]) -> list[np.ndarray] | None:
     if bx - ax < 8 or by - ay < 8:
         return None
     rect = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.float32)
-    for outlines in find_cards(frame[ay:by, ax:bx], config.SLOT_MIN_CARD):
+    for outlines in find_cards(frame[ay:by, ax:bx], config.SLOT_MIN_CARD, rebuild=False):
         moved = [(o + (ax, ay)).astype(np.float32) for o in outlines]
         if cv2.pointPolygonTest(rect, tuple(map(float, moved[0].mean(axis=0))), False) >= 0:
             return moved
