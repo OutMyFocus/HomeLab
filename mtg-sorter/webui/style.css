@@ -810,6 +810,14 @@ input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
 .cam-device .cam-btn.stop svg { color: var(--bad); opacity: 1; }
 .cam-device .cam-btn[aria-pressed="true"] { background: color-mix(in oklab, var(--accent) 35%, rgba(10, 12, 15, .7)); }
 .camera.device { background: #0b0d10; }
+/* The phone paused its camera and needs a tap to start it again */
+.cam-resume { position: absolute; inset: 0; z-index: 5; display: grid; place-content: center; justify-items: center; gap: 6px; width: 100%;
+  border: 0; color: #fff; background: rgba(8, 10, 13, .72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: pointer; font: inherit; }
+.cam-resume[hidden] { display: none; }
+.cam-resume svg { width: 44px; height: 44px; padding: 12px; box-sizing: content-box; border-radius: 50%; background: var(--accent); color: #fff; margin-bottom: 6px; }
+.cam-resume b { font-size: 1.05rem; font-weight: 650; }
+.cam-resume span { font-size: .88rem; opacity: .8; max-width: 26ch; text-align: center; }
+.camera.no-cam .cam-resume { display: none; }
 .camera.device .camera-status::before { background: var(--accent); box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 60%, transparent); animation: pulse 1.6s infinite; }
 @keyframes pulse { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 .device-offer { display: grid; justify-items: center; gap: 10px; }
