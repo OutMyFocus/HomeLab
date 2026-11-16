@@ -404,3 +404,142 @@ def test_scan_py_webcam_mode_starts(monkeypatch, capsys):
     monkeypatch.setattr(scan.cv2, "destroyAllWindows", lambda: None)
     scan.scan_webcam(matcher=None, camera=0)
     assert "Camera 0: 1280x720 MJPG" in capsys.readouterr().out
+
+
+# --- The whole card, not a piece of it (Nic, 2026-11-16) ----------------------------
+
+PHOTO_CORNERS = np.float32([[220, 90], [560, 120], [530, 590], [190, 560]])   # where photograph() puts the card
+
+
+def _overlap(a, b, shape=(720, 960)) -> float:
+    """How much two outlines cover the same part of the picture (1.0 = the same)."""
+    ma, mb = np.zeros(shape, np.uint8), np.zeros(shape, np.uint8)
+    cv2.fillPoly(ma, [np.int32(a)], 1)
+    cv2.fillPoly(mb, [np.int32(b)], 1)
+    return float((ma & mb).sum() / max(1, (ma | mb).sum()))
+
+
+def _thumb(photo: np.ndarray, start, end, width=46) -> np.ndarray:
+    """A thumb from the edge of the picture onto the card."""
+    photo = photo.copy()
+    cv2.line(photo, start, end, (150, 170, 215), width, cv2.LINE_AA)
+    return cv2.GaussianBlur(photo, (3, 3), 0)
+
+
+@pytest.mark.parametrize("start,end", [((345, 719), (360, 520)),     # over the bottom edge
+                                       ((959, 330), (500, 340)),     # over the right edge
+                                       ((400, 0), (395, 150)),       # over the top edge
+                                       ((0, 250), (250, 260))])      # over the left edge
+def test_a_thumb_over_one_edge_still_gives_the_whole_card(db, start, end):
+    """Nic: "it keeps looking at small sections of certain cards" (2026-11-16). A thumb
+    over an edge breaks the card's outline; the scanner used to settle for a piece of the
+    card, or a shape stretched over the thumb. The card is put back together from the
+    sides that still show."""
+    from mtgscanner.recognize import find_cards, identify_frame
+    photo = _thumb(photograph(fake_card(2)), start, end)
+    cards = find_cards(photo)
+    assert cards and _overlap(cards[0][0], PHOTO_CORNERS) > 0.93      # the card's main outline is the whole card
+    corners, card, distance = identify_frame(db, photo)
+    assert card is not None and card.id == "id2"
+    assert _overlap(corners, PHOTO_CORNERS) > 0.9
+
+
+def test_a_card_sticking_out_of_the_picture_is_still_outlined():
+    """Held close to the phone, a card's end leaves the picture. Its three sides inside
+    still say where it ends."""
+    from mtgscanner.recognize import find_cards
+    photo = photograph(fake_card(1))[:575]            # the bottom edge is cut off
+    cards = find_cards(photo)
+    assert cards and _overlap(cards[0][0], PHOTO_CORNERS) > 0.9
+
+
+def test_a_clean_card_keeps_its_own_outline():
+    """A card lying free on the table: one card, and its main outline is the clean one
+    the camera found, exactly on it (nothing changes for the machine's camera)."""
+    from mtgscanner.recognize import find_cards
+    from mtgscanner.vision import SIDES_GOOD_FIT, find_scored_candidates
+    photo = photograph(fake_card(0))
+    cards = find_cards(photo)
+    assert len(cards) == 1 and _overlap(cards[0][0], PHOTO_CORNERS) > 0.97
+    best = max(find_scored_candidates(photo), key=lambda s: cv2.contourArea(s[1]))
+    assert best[0] >= SIDES_GOOD_FIT and np.allclose(best[1], cards[0][0])
+
+
+def _piece(x0, y0, x1, y1) -> np.ndarray:
+    """A part of the card in photograph(): shares of its width and height."""
+    m = cv2.getPerspectiveTransform(np.float32([[0, 0], [1, 0], [1, 1], [0, 1]]), PHOTO_CORNERS)
+    return cv2.perspectiveTransform(np.float32([[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]), m)[0]
+
+
+def test_a_read_card_keeps_its_outline_when_only_a_piece_shows():
+    from types import SimpleNamespace
+    from mtgscanner.tracking import PIECE_RECHECK, Track, is_piece
+    art, text = _piece(0.08, 0.11, 0.92, 0.56), _piece(0.08, 0.63, 0.92, 0.9)
+    assert is_piece(art, PHOTO_CORNERS) and is_piece(text, PHOTO_CORNERS)
+    assert not is_piece(PHOTO_CORNERS * 0.97 + 8, PHOTO_CORNERS)        # the card itself, a little off
+    assert not is_piece(art + 400, PHOTO_CORNERS)                       # another, smaller card beside it
+
+    t = Track(id=1, number=1, corners=PHOTO_CORNERS.copy(), card=SimpleNamespace(id="x"), status="locked")
+    t.seen, t.checked_at, t.checked_time, t.streak_key = PHOTO_CORNERS.copy(), t.center, 100.0, "x"
+    t.follow(art)
+    assert t.piece and np.allclose(t.corners, PHOTO_CORNERS)            # the box stays on the whole card
+    assert not t.needs_check(100.0 + PIECE_RECHECK / 2)
+    assert t.needs_check(100.0 + PIECE_RECHECK + 0.01)                  # but it's looked at again soon
+    t.follow(text)                                                      # another piece: still the card
+    assert np.allclose(t.corners, PHOTO_CORNERS)
+    t.follow(PHOTO_CORNERS + 30)                                        # the whole outline is back, moved
+    assert not t.piece and np.allclose(t.corners, PHOTO_CORNERS + 30)
+
+    unread = Track(id=2, number=2, corners=PHOTO_CORNERS.copy())        # a card never read has no claim:
+    unread.follow(art)                                                  # it goes where its outline goes
+    assert np.allclose(unread.corners, art)
+
+
+def test_the_best_outline_follows_the_card_between_looks():
+    """The outline that matched best (a little bigger than the one found, say) moves with
+    the card on the pictures in between, instead of snapping back to the found one."""
+    from mtgscanner.tracking import Track
+    from mtgscanner.vision import grow
+    t = Track(id=1, number=1, corners=grow(PHOTO_CORNERS, 1.04))
+    t.seen = PHOTO_CORNERS.copy()
+    t.follow(PHOTO_CORNERS + (12, -7))
+    assert np.allclose(t.corners, grow(PHOTO_CORNERS, 1.04) + (12, -7), atol=0.5)
+
+
+def test_pieces_of_a_known_card_are_no_new_cards():
+    from types import SimpleNamespace
+    from mtgscanner.tracking import Track, pair_up
+    art, text = _piece(0.08, 0.11, 0.92, 0.56), _piece(0.08, 0.63, 0.92, 0.9)
+    known = Track(id=1, number=1, corners=PHOTO_CORNERS.copy(), card=SimpleNamespace(id="x"))
+    matched, new, gone = pair_up([known], [[art], [text], [art + 400]])
+    assert [t.id for t, _ in matched] == [1] and not gone
+    assert len(new) == 1 and np.allclose(new[0][0], art + 400)          # only the card beside it is new
+    unread = Track(id=2, number=2, corners=PHOTO_CORNERS.copy())        # nothing known there: every outline counts
+    assert len(pair_up([unread], [[art], [text]])[1]) == 1
+
+
+def test_scanner_holds_a_read_card_through_pictures_with_only_a_piece(db, monkeypatch, tmp_path):
+    """The whole chain: a card is read, then the camera only finds its art box for a
+    while. One card stays on the table, with its name and its whole outline."""
+    import app as app_module
+    from app import Scanner
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    scanner = Scanner(db, None, source=None)
+    photo = photograph(fake_card(3))
+    scanner.process(photo)
+    assert len(scanner.tracks) == 1 and scanner.tracks[0].card.id == "id3"
+    art, text = _piece(0.08, 0.11, 0.92, 0.56), _piece(0.08, 0.63, 0.92, 0.9)
+    monkeypatch.setattr(scanner, "_find", lambda frame: ([[art], [text]], [None, None]))
+    for _ in range(6):
+        scanner.tracks[0].checked_time -= 10      # time passes: each picture is a new look
+        scanner.process(photo)
+    assert len(scanner.tracks) == 1
+    t = scanner.tracks[0]
+    assert t.card.id == "id3" and t.status == "locked"
+    assert _overlap(t.corners, PHOTO_CORNERS) > 0.9
+    # The card is taken away and another's piece shows in its place: the name goes.
+    blank = np.full_like(photo, 170)
+    for _ in range(6):
+        scanner.tracks[0].checked_time -= 10
+        scanner.process(blank)
+    assert scanner.tracks[0].card is None

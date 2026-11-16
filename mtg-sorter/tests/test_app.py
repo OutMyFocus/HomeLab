@@ -326,7 +326,7 @@ def test_the_slot_is_the_outline_when_the_card_has_no_findable_edges(db, tmp_pat
     scanner, client = table_app(db, tmp_path, monkeypatch, mode="slots", slots=[slot])
     table = EMPTY.copy()
     card_at(table, 2, 100, 100)
-    monkeypatch.setattr(recognize, "find_cards", lambda frame, *a: [])   # as with a card in a box or a shiny sleeve
+    monkeypatch.setattr(recognize, "find_cards", lambda frame, *a, **kw: [])   # as with a card in a box or a shiny sleeve
     show(scanner, table, config.STABLE_FRAMES + 2)
     (c,) = client.get("/api/state").get_json()["cards"]
     assert c["card"]["id"] == "id2"
@@ -514,17 +514,17 @@ def test_whole_cards_only_measures_the_card_on_the_bed(db, tmp_path, monkeypatch
     # (the bed box only stands in once the bare bed is known, and this isn't it)
     from mtgscanner.vision import fingerprint
     scanner.empty_bed = fingerprint(np.random.default_rng(1).integers(0, 255, (200, 100, 3), dtype=np.uint8))
-    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[art]])
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[art]])
     (outline,), _ = scanner._find(frame)
     assert np.allclose(outline[0], card)                       # the bed box stands in for the lost edge
-    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[card, art]])
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[card, art]])
     (outline,), _ = scanner._find(frame)
     assert outline[0] is card
     assert np.allclose(outline[1], card)                       # the bed box is tried too (2026-11-09)
     assert outline[2] is art
     # a piece outside the bed (the next card in the slot) isn't read
     up_top = np.array([[10, 150], [40, 150], [40, 190], [10, 190]], np.float32)
-    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[up_top]])
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[up_top]])
     assert scanner._find(frame) == ([], [])
 
     fresh = Scanner(db, None, source=FakeCamera(0))            # kept for next time
@@ -550,7 +550,7 @@ def test_forgetting_the_tracks_mid_recognition_does_not_break_the_scanner(db, mo
     old = Track(1, 1, np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32), status="locked")
     old.missing = 99                                     # gone on this picture
     scanner.tracks = [old]
-    monkeypatch.setattr(app, "find_cards", lambda frame, min_area=None: [])
+    monkeypatch.setattr(app, "find_cards", lambda frame, min_area=None, **kw: [])
     monkeypatch.setattr(app, "pair_up", lambda tracks, cards: (scanner.forget_tracks() or ([], [], [old])))
     scanner.process(np.zeros((200, 100, 3), np.uint8))   # no ValueError
     assert scanner.tracks == []
@@ -569,7 +569,7 @@ def test_an_empty_bed_does_not_keep_a_card_on_the_table(db, monkeypatch):  # noq
     from mtgscanner.vision import fingerprint
     scanner.empty_bed = fingerprint(np.random.default_rng(1).integers(0, 255, (200, 100, 3), dtype=np.uint8))
     texture = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)   # a rib of the bed
-    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[texture]])
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[texture]])
     frame = np.zeros((200, 100, 3), np.uint8)
     scanner.process(frame)
     assert scanner.tracks == []                                  # nothing new on a bare bed
@@ -596,7 +596,7 @@ def test_the_bare_bed_is_remembered_and_never_read_as_a_card(db, tmp_path, monke
     bare = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)          # the bed's ribs
     scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
     rib = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)
-    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[rib]])
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[rib]])
     assert scanner._whole_cards(bare) == []                # bare bed not known yet: no stand-in at all
     whole_rib = np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32)
     scanner._seen = bare
@@ -605,9 +605,9 @@ def test_the_bare_bed_is_remembered_and_never_read_as_a_card(db, tmp_path, monke
     assert scanner._whole_cards(bare) == []                # the bare bed: nothing to read
     noisy = np.clip(bare.astype(np.int16) + rng.integers(-6, 7, bare.shape), 0, 255).astype(np.uint8)
     assert scanner._whole_cards(noisy) == []               # a little camera noise is still the bed
-    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[whole_rib]])
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[whole_rib]])
     assert scanner._whole_cards(bare) == []                # ribs outlined as a whole "card": still the bed
-    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[rib]])
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[rib]])
     card = bare.copy()
     card[10:110, 10:70] = rng.integers(0, 255, (100, 60, 3), dtype=np.uint8)   # a card on it
     assert len(scanner._whole_cards(card)) == 1
@@ -632,7 +632,7 @@ def test_the_bed_box_only_stands_in_for_a_card_at_rest(db, monkeypatch):  # noqa
     scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
     scanner.empty_bed = fingerprint(rng.integers(0, 255, (200, 100, 3), dtype=np.uint8))
     piece = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)
-    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [[piece]])
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[piece]])
     a = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)
     b = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)
     assert scanner._whole_cards(a) == []            # just seen: wait
@@ -689,7 +689,7 @@ def test_the_bare_bed_in_dimmer_light_is_still_the_bed(db, monkeypatch, tmp_path
     card[10:110, 10:70] = cv2.resize(fake_card(4), (60, 100))
     assert not scanner.bed_is_empty(card)
     ghost = [np.array([[12, 4], [68, 8], [66, 100], [14, 102]], np.float32)]
-    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None: [ghost])
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [ghost])
     assert scanner._whole_cards(dim) == []                     # the ribs' outline isn't a card
     fresh = Scanner(db, None, source=FakeCamera(0))            # kept for next time
     fresh.restore(json.loads((tmp_path / "settings.json").read_text()))
