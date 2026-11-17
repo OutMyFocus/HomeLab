@@ -92,6 +92,7 @@ class Track:
     straight_sampled: bool = False  # already gave auto-straighten its one sample
     seen: np.ndarray | None = None  # the outline the camera found when corners was last set
     piece: bool = False             # only a piece of the card shows right now
+    printing_lead: float = 0.0      # how clearly the card's printing was told from its look-alikes
 
     @property
     def center(self) -> np.ndarray:

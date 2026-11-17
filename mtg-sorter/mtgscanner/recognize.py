@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
-from . import config
+from . import config, printings
 from .database import Card, Hit, Matcher
 from .vision import (SIDES_GOOD_FIT, boost_contrast, find_scored_candidates, fingerprint, grow, tame_glare,
                      warp_card)
@@ -25,6 +25,8 @@ class Match:
     margin: int = 0                     # lead over the closest card with a different name
     confidence: str | None = None       # "sure", "likely" or "unsure" (None when card is None)
     candidates: list[tuple[Card, int]] = field(default_factory=list)   # other possible cards, closest first
+    lookalikes: tuple[str, ...] = ()    # ids of the printings the fingerprint can't tell apart (this card among them)
+    printing_lead: float = 0.0          # how clearly their details chose this one (0: the fingerprint chose)
 
 
 def confidence_of(distance: int, margin: int) -> str | None:
@@ -141,8 +143,53 @@ def _distinct(outlines: list[np.ndarray], limit: int = 4) -> list[np.ndarray]:
     return kept or [outlines[0]]
 
 
-def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray]) -> Match:
-    """Recognize one card from its outlines."""
+# An outline a few percent off the card's real edge (the coloured frame inside a black
+# border on a dark table, a shadow along one side) reads as the right card, but only
+# just, or not surely enough to count. Each side of the outline is then nudged in and
+# out, and kept where the picture comes closest to that card's stock picture; the
+# result is then looked up among every card again, so it has to win on its own merits.
+REFINE_STEPS = (0.04, 0.02, 0.01)      # how far a side is nudged, as a share of the card's size
+
+
+def _nudge(corners: np.ndarray, side: int, share: float) -> np.ndarray:
+    """The outline with one side pushed outward by a share of the card's size across it
+    (inward when negative). Sides: 0 top, 1 right, 2 bottom, 3 left of the corner list."""
+    a, b = side, (side + 1) % 4
+    across = ((corners[(side + 2) % 4] + corners[(side + 3) % 4]) - (corners[a] + corners[b])) / 2
+    moved = corners.copy()
+    moved[[a, b]] -= across * share
+    return moved
+
+
+def refine_outline(matcher: Matcher, frame, corners: np.ndarray, card_id: str) -> np.ndarray | None:
+    """The outline moved to where it reads closest to one card (None: no closer than it is)."""
+    def distance(c) -> int | None:
+        return matcher.distance_to(card_id, fingerprint(warp_card(frame, c)))
+
+    start = distance(corners)
+    if start is None:
+        return None
+    turned = np.roll(corners, 2, axis=0)        # the card may be upside down
+    other = distance(turned)
+    best, at = (other, turned) if other < start else (start, corners)
+    first = min(start, other)
+    for step in REFINE_STEPS:
+        for side in range(4):
+            tries = [(distance(c), c) for c in (_nudge(at, side, step), _nudge(at, side, -step))]
+            d, c = min(tries, key=lambda t: t[0])
+            if d < best:
+                best, at = d, c
+    return at if best < first else None
+
+
+def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray], refine: bool = True,
+                      wait: float = printings.LIVE_WAIT) -> Match:
+    """Recognize one card from its outlines.
+
+    With refine, an outline that reads as a card but not surely is nudged onto the card's
+    real edge (see refine_outline), and a card with look-alike printings is told from
+    them by the details that differ (see printings.py; `wait` is how long that may wait
+    for stock pictures it hasn't got yet)."""
     best: tuple[np.ndarray, Hit | None] = (outlines[0], None)
     for found in _distinct(outlines):
         for factor in config.OUTLINE_FACTORS:
@@ -155,9 +202,59 @@ def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray]) -> Ma
         if best[1].distance <= GOOD_ENOUGH:
             break
     corners, hit = best
+    if refine and hit.id and hit.distance <= config.CANDIDATE_DISTANCE and confidence_of(hit.distance, hit.margin) != "sure":
+        better = refine_outline(matcher, frame, corners, hit.id)
+        if better is not None:
+            again = _rank(matcher, warp_card(frame, better))
+            # Nudging toward a card flatters it a little (a plain rectangle can be pulled
+            # toward a plain card), so the nudged outline only counts when it's sure.
+            if again.distance < hit.distance and confidence_of(again.distance, again.margin) == "sure":
+                corners, hit = better, again
     if hit.distance > config.MAX_MATCH_DISTANCE:
         corners = outlines[0]       # nothing matched, so the "best" outline means little: keep the card's main one
-    return _match(matcher, corners, hit)
+    match = _match(matcher, corners, hit)
+    if match.card is not None and match.confidence != "sure" and _sticks_out(corners, frame.shape):
+        # The part outside the picture comes out black, which looks a little like any
+        # dark or plain card: an outline that leaves the picture has to be sure, or it's
+        # only a guess to offer.
+        return Match(corners, None, hit.distance, hit.margin, None, [(match.card, hit.distance), *match.candidates])
+    if refine and match.card is not None:
+        _choose_printing(matcher, frame, match, wait)
+    return match
+
+
+def _choose_printing(matcher: Matcher, frame, match: Match, wait: float):
+    """Note the card's look-alike printings (same art and frame, another set) and, with
+    stock pictures to go by, choose among them by the details that differ: see
+    printings.py. Changes match in place."""
+    card_img = warp_card(frame, match.corners)
+    turned = cv2.rotate(card_img, cv2.ROTATE_180)
+    near, far = fingerprint(card_img), fingerprint(turned)
+    if (matcher.distance_to(match.card.id, far) or 0) < (matcher.distance_to(match.card.id, near) or 0):
+        card_img, near = turned, far            # the card is upside down in the picture
+    alike = matcher.lookalikes(match.card.id, near, printings.WINDOW, printings.MOST)
+    if len(alike) < 2:
+        return
+    match.lookalikes = tuple(card_id for card_id, _ in alike)
+    if matcher.pictures is None:
+        return
+    try:
+        chosen = printings.pick_printing(card_img, alike, matcher.pictures, wait)
+    except Exception as e:      # never let this stop a card being read
+        print(f"Printing check skipped after an error: {e!r}")
+        return
+    if chosen is None:
+        return
+    card_id, match.printing_lead = chosen
+    if card_id != match.card.id:
+        match.card = matcher.get_card(card_id)
+
+
+def _sticks_out(corners: np.ndarray, shape, slack: float = 0.01) -> bool:
+    """Whether an outline leaves the picture (by more than a hair)."""
+    h, w = shape[:2]
+    over = slack * _size(corners)
+    return bool(corners.min() < -over or corners[:, 0].max() > w - 1 + over or corners[:, 1].max() > h - 1 + over)
 
 
 def _match(matcher: Matcher, corners, hit: Hit) -> Match:

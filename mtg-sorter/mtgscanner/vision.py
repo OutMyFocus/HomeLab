@@ -172,7 +172,7 @@ SIDES_POOR_FIT = 0.6      # ...and one further than this is dropped when a rebui
 SIDES_MIN_FIT_4 = 0.8     # a card rebuilt from 4 sides: this share of it lies on the outline
 SIDES_MIN_FIT_3 = 0.64    # ...from 3 sides (the 4th worked out from the card's shape)
 SIDES_MOST = 4            # rebuilt cards kept per picture
-SIDES_OUT = 0.05          # a rebuilt card may stick out of the picture by this share of its diagonal
+SIDES_OUT = 0.10          # a rebuilt card may stick out of the picture by this share of its diagonal
 CARD_RATIO = 63 / 88      # a card's width over its height
 
 
