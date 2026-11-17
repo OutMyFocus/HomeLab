@@ -19,6 +19,7 @@ checkpoints.</p></header>
 <div class="note"><div><strong>Centre every servo before it goes in.</strong> Plug it into the PCA9685, set it to 90° with the snippet below, then fit the horn and slide the servo into its box. Otherwise the part it moves ends up at the wrong angle.</div><pre>from adafruit_servokit import ServoKit
 kit = ServoKit(channels=16)
 kit.servo[0].angle = 90   # channel, angle</pre></div>
+<div class="note"><div><strong>Magnets: 54 in all (two 50-packs).</strong> Press the frame's magnet in first, let its partner snap onto it, dot the partner's top face, and press the partner in dot side first. Do every bin seat and every bin the same way up, so any bin fits any spot.</div></div>
 <div class="note"><div><strong>Never use a 12 V adapter.</strong> Mk2 runs on one 5 V brick and has no regulator, so 12 V would kill the Pi, the servos and the lights.</div></div>
 {{BODY}}
 <section class="part" id="wiring"><h2><small>WIRING</small>Power and pins</h2>
