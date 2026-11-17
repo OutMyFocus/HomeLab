@@ -4,7 +4,7 @@ A full redesign of the sorter. It's one solid box, 244 mm wide, 308 mm deep and 
 
 - **Print file:** [`../bambu/MTG_Sorter_Mk2.3mf`](../bambu/MTG_Sorter_Mk2.3mf). It has 31 plates in print order, with the settings already applied. Answer **No** to "load as a single object".
 - **Print config:** [`../bambu/presets/mk2/`](../bambu/presets/mk2/README.md). It has the same settings as eight Bambu Studio process presets, plus a table of which preset and colour each part takes. [`../bambu/MTG_Sorter_Mk2_Print_Config.zip`](../bambu/MTG_Sorter_Mk2_Print_Config.zip) is the same folder as one download.
-- **Parts to buy:** the Amazon.ca list. It has 17 items, and you reuse your Pi 5, camera, PCA9685, DRV8833, light strip and MG90S servos.
+- **Parts to buy:** the Amazon.ca list in [PARTS.md](PARTS.md). It has 17 items, and you reuse your Pi 5, camera, PCA9685, DRV8833, light strip and MG90S servos.
 
 ![Mk2, closed](img/mk2_closed.png) ![Mk2, inside](img/mk2_iso.png)
 
