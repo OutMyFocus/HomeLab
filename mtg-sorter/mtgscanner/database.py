@@ -146,6 +146,9 @@ class Matcher:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
         self._lock = threading.Lock()
+        # Stock pictures to tell look-alike printings apart (printings.StockPictures), when
+        # the app has the internet for them. None: the fingerprint's choice stands.
+        self.pictures = None
         self.reload()
 
     def reload(self):
@@ -168,6 +171,8 @@ class Matcher:
         self.card_count, self.learned_count = len(rows) - len(learned), len(learned)
         # Cards still on the whole-card-only fingerprint (built before the art one was added).
         self.old_count = int((~hashes[2][:self.card_count]).sum())
+        # Where each card's own (stock) fingerprint is in the table, for distance_to().
+        self._rows = {card_id: i for i, card_id in reversed(list(enumerate(ids[:self.card_count])))}
         self._table = ids, hashes, names   # swapped in one step, so a scan never sees half of it
 
     def add_learned(self, scan: str, card_id: str, fp: bytes):
@@ -192,6 +197,35 @@ class Matcher:
         if i >= self.card_count and dists[i] > config.MAX_LEARNED_DISTANCE:
             i = int(dists[:self.card_count].argmin())   # not close enough to trust: stock pictures only
         return i
+
+    def distance_to(self, card_id: str, fp: bytes) -> int | None:
+        """How far a fingerprint is from one card's stock picture (None: no such card).
+        Much cheaper than rank(), which compares with every card."""
+        ids, (whole, art, has_art), _ = self._table
+        i = self._rows.get(card_id)
+        if i is None or i >= len(ids) or ids[i] != card_id:
+            return None
+        return int(_distances((whole[i:i + 1], art[i:i + 1], has_art[i:i + 1]), fp)[0])
+
+    def lookalikes(self, card_id: str, fp: bytes, window: int, most: int) -> list[tuple[str, int]]:
+        """The printings of this card that the fingerprint can hardly tell apart from it:
+        same name, and no more than `window` bits further from fp than the closest of
+        them. (card id, distance), this card first, then the closest ones."""
+        ids, hashes, names = self._table
+        i = self._rows.get(card_id)
+        if i is None or i >= len(ids) or ids[i] != card_id:
+            return []
+        same = np.flatnonzero(names[:self.card_count] == names[i])
+        if len(same) < 2:
+            return []
+        whole, art, has_art = hashes
+        dists = _distances((whole[same], art[same], has_art[same]), fp)
+        close = [(int(d), ids[int(j)]) for d, j in zip(dists, same) if d <= int(dists.min()) + window]
+        mine = next((d for d, other in close if other == card_id), None)
+        if mine is None or len(close) < 2:
+            return []
+        rest = sorted((d, other) for d, other in close if other != card_id)[:most - 1]
+        return [(card_id, mine)] + [(other, d) for d, other in rest]
 
     def best_match(self, fp: bytes) -> tuple[str, int]:
         """Return (card id, distance) of the closest card. Smaller distance is better."""

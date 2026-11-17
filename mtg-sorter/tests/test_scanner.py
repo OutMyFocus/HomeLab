@@ -355,7 +355,7 @@ def test_auto_straighten_takes_one_sample_per_card(db, monkeypatch, tmp_path):
     corners = _camera_quad((540, 900), 0)
     card = SimpleNamespace(id="x")
     result = SimpleNamespace(card=card, corners=corners, distance=5, margin=20,
-                             confidence="sure", candidates=[])
+                             confidence="sure", candidates=[], lookalikes=(), printing_lead=0.0)
     t = Track(id=1, number=1, corners=corners)
     for _ in range(6):
         try:

@@ -12,6 +12,9 @@ COLLECTION_CSV = DATA_DIR / "collection.csv"
 VAULT_PRICES = DATA_DIR / "vault_prices.json"
 # Scans kept to improve recognition (turn on "Collect scans" in the app).
 CAPTURES_DIR = DATA_DIR / "captures"
+# Stock pictures of printings that look alike, fetched to tell them apart (printings.py).
+# Only a cache: safe to delete, and left out of backups.
+STOCK_DIR = DATA_DIR / "stock"
 
 # Scryfall asks every app to identify itself. See https://scryfall.com/docs/api
 USER_AGENT = "HomeLabMTGSorter/0.1"

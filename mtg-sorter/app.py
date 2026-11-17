@@ -29,6 +29,7 @@ import cv2
 import numpy as np
 from flask import Flask, Response, abort, jsonify, make_response, request, send_file, send_from_directory
 from mtgscanner import camera as cameras_mod, config, view
+from mtgscanner.printings import FETCH_SECONDS, StockPictures
 from mtgscanner.camera import BrowserSource, CameraSource, list_cameras  # noqa: F401  (tests patch these here)
 from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
@@ -594,10 +595,14 @@ class Scanner:
         whole = {id(outlines): [t.corners, *outlines] for t, outlines, check in todo
                  if check and t.card is not None and not isinstance(outlines, BedBox)
                  and is_piece(outlines[0], t.corners)}
+        # The machine's scan bed ("Whole cards only") reads its cards the way it always
+        # has: nudged outlines and the look-alike printing check are for the phone and
+        # webcam, where they were measured.
+        careful = self.min_card is None
         found = (
             list(
                 self._pool.map(
-                    lambda o: identify_outlines(self.matcher, frame, whole.get(id(o), o)), jobs
+                    lambda o: identify_outlines(self.matcher, frame, whole.get(id(o), o), refine=careful), jobs
                 )
             )
             if jobs
@@ -668,6 +673,16 @@ class Scanner:
             t.follow(outlines[0])
             return
         card = result.card
+        if (card is not None and t.card is not None and card.id != t.card.id
+                and t.card.id in result.lookalikes
+                and (t.saved or result.printing_lead <= t.printing_lead)):
+            # The same card, read as another of its look-alike printings this time. Once
+            # saved it stays what was saved; before that, the look that told the printings
+            # apart most clearly keeps its answer (a card used to flip between printings
+            # from one look to the next, and Auto could save it twice).
+            card = t.card
+        elif card is not None:
+            t.printing_lead = result.printing_lead
         t.corners, t.distance, t.margin = result.corners, result.distance, result.margin
         t.seen = np.asarray(outlines[0], np.float32)
         t.piece = card is not None and is_piece(t.seen, t.corners)
@@ -1529,7 +1544,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 continue
             # A photo can show a whole table of cards: report each one.
             found = [
-                identify_outlines(scanner.matcher, frame, outlines)
+                identify_outlines(scanner.matcher, frame, outlines, wait=FETCH_SECONDS)
                 for outlines in find_cards(frame)
             ]
             cards = [m for m in found if m.card]
@@ -1665,6 +1680,9 @@ def main():
                 else " (not MJPG: expect a low frame rate)"
             )
         )
+    if not args.offline:
+        # Stock pictures to tell look-alike printings apart, fetched as cards are seen.
+        matcher.pictures = StockPictures(config.STOCK_DIR)
     scanner = Scanner(matcher, vault, source, None if args.offline else Live())
     if isinstance(source, WaitingForCamera):
         source.on_found = scanner.use_source

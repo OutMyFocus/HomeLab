@@ -34,6 +34,12 @@ when something needs a look. What to do when something goes wrong:
 4. **Look it up.** `build_db.py` already downloaded every card image from
    [Scryfall](https://scryfall.com) and fingerprinted it. The scanner finds the closest
    fingerprint. That gives the card name, set, collector number and price.
+5. **Tell the printings apart.** A card and its reprint with the same art and frame look
+   alike to the fingerprint. For those, the scan is laid over Scryfall's pictures of each
+   printing and compared only where they differ (the set symbol, the small print at the
+   bottom). The pictures are fetched the first time such a card is seen and kept in
+   `data/stock/` (a cache: safe to delete). With `--offline`, or on the sorter's scan bed
+   ("Whole cards only"), the fingerprint's choice stands.
 
 ## Setup (once)
 
@@ -343,8 +349,9 @@ pytest
 
 ## Known limits (for now)
 
-- **Same art, different set.** Reprints that reuse the exact same art and frame can look
-  identical to the camera. The scanner picks one of them, so double-check the set on cards that matter.
+- **Same art, different set.** Reprints that reuse the exact same art and frame differ only
+  in small details. The scanner compares those (step 5 above) and gets most of them right,
+  not all: double-check the set on cards that matter.
 - **Foil glare** can hide the card. Tilt your light or use a diffuser.
 - **Low-contrast art** (hazy, pale artwork) under warm lighting can fail to match.
   The camera rig's white LED and fixed card position fix most of this.
