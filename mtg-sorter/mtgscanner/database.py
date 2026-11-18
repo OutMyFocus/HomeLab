@@ -304,6 +304,15 @@ class Matcher:
             return self.conn.execute("SELECT upper(set_code), max(set_name), count(*) FROM cards "
                                      "GROUP BY upper(set_code)").fetchall()
 
+    def set_numbers(self) -> dict[str, set[str]]:
+        """{SET: every collector number the database has for it}, in one query."""
+        out: dict[str, set[str]] = {}
+        with self._lock:
+            rows = self.conn.execute("SELECT upper(set_code), collector_number FROM cards").fetchall()
+        for code, number in rows:
+            out.setdefault(code, set()).add(number)
+        return out
+
     def set_cards(self, set_code: str) -> list[Card]:
         """Every card of one set in the database."""
         with self._lock:

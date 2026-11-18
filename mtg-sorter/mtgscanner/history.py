@@ -2,7 +2,8 @@
 
 There's no separate log: sessions are worked out from the "Scanned at" time of each row
 in data/collection.csv. Cards saved within half an hour of each other count as one
-session.
+session. Only scanned (or added by hand) cards count: imports aren't sessions, and are
+listed and removed on the Sources page.
 """
 
 from datetime import datetime, timedelta
@@ -10,7 +11,9 @@ from datetime import datetime, timedelta
 from flask import Response, jsonify, request, send_from_directory
 
 from . import accounts, config
+from .collection import COLLECTION_LOCK
 from .library import export, holdings, qty, read_rows, write_rows
+from .vault import SCANNED
 
 GAP = timedelta(minutes=30)
 
@@ -29,9 +32,17 @@ def _price(row) -> float:
         return 0.0
 
 
+def _scanned(row) -> bool:
+    """A card the scanner (or the Collection page's Add) saved, not one from an import.
+    Saved cards have no Source, or the name typed on a phone, and always a bin; imported
+    rows have the import's name as Source and no bin."""
+    source = (row.get("Source") or "").strip()
+    return not source or source == SCANNED or bool((row.get("Bin") or "").strip())
+
+
 def sessions(rows: list[dict]) -> list[dict]:
     """Newest first: {start, end, cards, value, top, bins, rows: [...]}."""
-    timed = sorted(((t, r) for r in rows if (t := _when(r))), key=lambda x: x[0])
+    timed = sorted(((t, r) for r in rows if _scanned(r) and (t := _when(r))), key=lambda x: x[0])
     groups: list[list] = []
     for t, r in timed:
         if groups and t - groups[-1][-1][0] <= GAP:
@@ -67,7 +78,7 @@ def per_day(rows: list[dict], days: int = 30, today=None) -> list[dict]:
     today = today or datetime.now().date()
     counts = {(today - timedelta(days=i)).isoformat(): {"cards": 0, "value": 0.0} for i in range(days)}
     for r in rows:
-        t = _when(r)
+        t = _when(r) if _scanned(r) else None
         if t and (d := t.date().isoformat()) in counts:
             counts[d]["cards"] += qty(r)
             counts[d]["value"] = round(counts[d]["value"] + _price(r) * qty(r), 2)
@@ -75,8 +86,9 @@ def per_day(rows: list[dict], days: int = 30, today=None) -> list[dict]:
 
 
 def _in(row, start, end) -> bool:
+    """A scanned card saved in that session (imports at the same time are left alone)."""
     t = _when(row)
-    return t is not None and start <= t <= end
+    return t is not None and start <= t <= end and _scanned(row)
 
 
 def _span(js):
@@ -112,7 +124,7 @@ def add_history_routes(app, scanner, web_dir):
             start, end = _span(body())
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-        with scanner.lock:
+        with scanner.lock, COLLECTION_LOCK:   # nothing saved between the read and the write is lost
             rows = read_rows(accounts.collection_csv())
             keep = [r for r in rows if not _in(r, start, end)]
             if len(keep) == len(rows):

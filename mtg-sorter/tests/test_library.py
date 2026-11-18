@@ -246,3 +246,287 @@ def test_searches_are_spaced_out(live):
     live.printings("Card 1")
     live.printings("Card 1")
     assert slept and max(slept) > 0.3                                  # about 2 a second, as Scryfall asks
+
+
+# --- Keeping the collection file safe --------------------------------------------------------
+
+import gzip  # noqa: E402
+import io  # noqa: E402
+import json  # noqa: E402
+import threading  # noqa: E402
+
+from mtgscanner import collection, history  # noqa: E402
+from mtgscanner.collection import COLLECTION_LOCK, COLUMNS, add_card, ensure_columns, remove_entry, remove_last  # noqa: E402
+
+
+def write_raw(text, encoding="utf-8"):
+    config.COLLECTION_CSV.write_bytes(text.encode(encoding))
+
+
+def line(name, card_id="", qty="1", price="", bin_label="Bulk", at="2026-11-01T10:00:00", source="", number="1",
+         foil="normal"):
+    return io_csv([name, qty, "TST", "Test Set", number, foil, "rare", card_id, price, "", bin_label, at, source])
+
+
+def io_csv(values):
+    buf = io.StringIO()
+    csv.writer(buf).writerow(values)
+    return buf.getvalue()
+
+
+HEADER = io_csv(COLUMNS)
+
+
+def test_a_csv_saved_by_excel_keeps_its_names(client, db):  # noqa: F811
+    write_raw("﻿" + HEADER + line("Old Card", qty="2"))           # "CSV UTF-8" adds a BOM
+    assert [r["Name"] for r in library.read_rows(config.COLLECTION_CSV)] == ["Old Card"]
+    add_card(config.COLLECTION_CSV, db.get_card("id1"), False, "Bulk", (1.0, ""))
+    names = [r["Name"] for r in library.read_rows(config.COLLECTION_CSV)]
+    assert names == ["Old Card", "Card 1"]
+    assert not config.COLLECTION_CSV.read_bytes().startswith(b"\xef\xbb\xbf")
+    assert (config.COLLECTION_CSV.parent / "collection.csv.bak").exists()
+
+
+def test_a_csv_in_the_old_windows_encoding(client, db):  # noqa: F811
+    write_raw(HEADER + line("Séance"), "cp1252")
+    assert client.get("/api/collection").status_code == 200
+    assert library.read_rows(config.COLLECTION_CSV)[0]["Name"] == "Séance"
+    add_card(config.COLLECTION_CSV, db.get_card("id1"), False, "Bulk", (1.0, ""))   # turned into UTF-8 first
+    text = config.COLLECTION_CSV.read_bytes().decode("utf-8")
+    assert "Séance" in text and "Card 1" in text
+
+
+def test_a_notes_column_is_kept(client, db):  # noqa: F811
+    old = ["Name", "Quantity", "Set code", "Collector number", "Foil", "Notes"]     # older columns, plus Notes
+    write_raw(io_csv(old) + io_csv(["Old Card", "3", "ABC", "5", "normal", "from Dad"]))
+    add_card(config.COLLECTION_CSV, db.get_card("id1"), False, "Bulk", (1.0, ""))
+    read = library.read_rows(config.COLLECTION_CSV)
+    assert read[0]["Notes"] == "from Dad" and read[1]["Name"] == "Card 1"
+    library.set_quantity(config.COLLECTION_CSV, read[0]["Name"] + "|ABC|5#normal", 2)
+    read = library.read_rows(config.COLLECTION_CSV)
+    assert read[0]["Notes"] == "from Dad" and read[0]["Quantity"] == "2"
+
+
+def test_a_csv_without_a_name_column_is_never_rewritten(client):
+    write_raw("Card,Count\nSol Ring,1\n")
+    before = config.COLLECTION_CSV.read_bytes()
+    with pytest.raises(ValueError, match="no Name column"):
+        ensure_columns(config.COLLECTION_CSV)
+    assert config.COLLECTION_CSV.read_bytes() == before
+    assert (config.COLLECTION_CSV.parent / "collection.csv.bak").read_bytes() == before
+
+
+def test_undo_copes_with_blank_lines(client):
+    write_raw(HEADER + line("A", "ida", at="2026-11-01T10:00:00") + "\n" + line("B", "idb", at="2026-11-01T10:01:00")
+              + "\n")
+    assert remove_entry(config.COLLECTION_CSV, "ida", "2026-11-01T10:00:00")
+    assert [r["Name"] for r in library.read_rows(config.COLLECTION_CSV)] == ["B"]
+    assert remove_last(config.COLLECTION_CSV)                 # the card, not the blank line after it
+    assert library.read_rows(config.COLLECTION_CSV) == []
+    assert not list(config.COLLECTION_CSV.parent.glob("*.tmp"))
+
+
+def blocked_by_the_lock(fn):
+    """True if fn waits while another thread holds COLLECTION_LOCK, then runs once it's free."""
+    done = threading.Event()
+    with COLLECTION_LOCK:
+        t = threading.Thread(target=lambda: (fn(), done.set()))
+        t.start()
+        waited = not done.wait(0.3)
+    t.join(5)
+    return waited and done.is_set()
+
+
+def test_every_writer_takes_the_collection_lock(client, db):  # noqa: F811
+    path, card = config.COLLECTION_CSV, db.get_card("id1")
+    at = add_card(path, card, False, "Bulk", (1.0, ""))
+    assert blocked_by_the_lock(lambda: add_card(path, card, False, "Bulk", (1.0, "")))
+    assert blocked_by_the_lock(lambda: library.set_quantity(path, "id1#normal", 5))
+    assert blocked_by_the_lock(lambda: library.set_foil(path, "id1#normal", True))
+    assert blocked_by_the_lock(lambda: library.set_printing(path, "id1#foil", card))
+    assert blocked_by_the_lock(lambda: remove_entry(path, "id1", at))
+    assert blocked_by_the_lock(lambda: remove_last(path))
+    assert blocked_by_the_lock(lambda: collection.append_rows(path, []))
+
+
+def test_scans_saved_during_edits_are_kept(client, db):  # noqa: F811
+    # A phone saving cards (under its own scanner's lock) while the Collection page edits.
+    path = config.COLLECTION_CSV
+    add_card(path, db.get_card("id2"), False, "Bulk", (1.0, ""))
+    add_card(path, db.get_card("id1"), False, "Bulk", (1.0, ""))
+
+    def scan():
+        for _ in range(40):
+            add_card(path, db.get_card("id1"), False, "Bulk", (1.0, ""))
+
+    def edit():
+        for n in range(40):
+            library.set_quantity(path, "id2#normal", 1 + n % 3)
+
+    threads = [threading.Thread(target=scan), threading.Thread(target=edit)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert library.quantity(path, "id1#normal") == 41
+
+
+# --- Prices when scanned -------------------------------------------------------------------
+
+def test_price_when_scanned_is_per_copy(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    rows = [{"Name": "X", "Quantity": "10", "Set code": "ZZZ", "Collector number": "1", "Foil": "normal",
+             "Price CAD": "1.00"},
+            {"Name": "X", "Quantity": "1", "Set code": "ZZZ", "Collector number": "1", "Foil": "normal",
+             "Price CAD": "12.00"},
+            {"Name": "X", "Quantity": "5", "Set code": "ZZZ", "Collector number": "1", "Foil": "normal",
+             "Price CAD": ""}]                                        # copies without a price don't count
+    item = library.holdings(rows, None)[0]
+    assert item["scanned_price"] == 2.0 and item["qty"] == 16
+    assert item["value"] == 32.0 and item["price_source"] == "Price when it was scanned"
+
+
+def test_correcting_the_printing_or_finish_prices_it_again(client):
+    client.post("/api/add", json={"id": "id1"})
+    js = client.post("/api/collection/edit", json={"key": "id1#normal", "printing": REPRINT}).get_json()
+    item = js["cards"][0]
+    assert item["set"] == "REP" and item["change"] == 0 and item["scanned_price"] == item["price"]
+    js = client.post("/api/collection/edit", json={"key": f"{REPRINT}#normal", "foil": True}).get_json()
+    item = js["cards"][0]
+    assert item["foil"] and not item["change"] and js["summary"]["change"] == 0
+
+
+def test_bins_are_the_same_with_the_rules_looked_up_once(client, db):  # noqa: F811
+    from mtgscanner import sort_rules
+    from mtgscanner.sorting import bin_for
+    for card_id in ("id0", "id1", "id2"):
+        client.post("/api/add", json={"id": card_id})
+    for wanted in (False, True):
+        sort_rules.save({**sort_rules.default_rules(),
+                         "wanted": {"on": wanted, "bin": 3, "only": False, "text": "1 Card 2"}})
+        for item in client.get("/api/collection").get_json()["cards"]:
+            card = db.get_card(item["id"])
+            assert item["bin"] == bin_for(card, item["foil"], item["price"])[0]
+
+
+# --- The +/- buttons and delete -------------------------------------------------------------
+
+def test_steps_count_from_what_the_file_has_now(client, db):  # noqa: F811
+    client.post("/api/add", json={"id": "id1"})                 # the page shows 1
+    for _ in range(2):                                          # the machine saves 2 more meanwhile
+        add_card(config.COLLECTION_CSV, db.get_card("id1"), False, "Bulk", (1.0, ""))
+    js = client.post("/api/collection/edit", json={"key": "id1#normal", "step": 1}).get_json()
+    assert js["cards"][0]["qty"] == 4
+    client.post("/api/collection/edit", json={"key": "id1#normal", "step": 1})
+    client.post("/api/collection/edit", json={"key": "id1#normal", "step": 1})      # a double tap: both count
+    assert library.quantity(config.COLLECTION_CSV, "id1#normal") == 6
+    js = client.post("/api/collection/edit", json={"key": "id1#normal", "step": -1}).get_json()
+    assert js["cards"][0]["qty"] == 5
+    for bad in (1.5, True, 101, "1"):
+        assert client.post("/api/collection/edit", json={"key": "id1#normal", "step": bad}).status_code == 400
+    assert client.post("/api/collection/edit", json={"key": "id9#normal", "step": 1}).status_code == 404
+
+
+def test_delete_refuses_copies_the_page_hasnt_shown(client, db):  # noqa: F811
+    client.post("/api/add", json={"id": "id1"})
+    add_card(config.COLLECTION_CSV, db.get_card("id1"), False, "Bulk", (1.0, ""))
+    res = client.post("/api/collection/edit", json={"key": "id1#normal", "delete": True, "seen": 1})
+    assert res.status_code == 409 and res.get_json()["qty"] == 2
+    assert library.quantity(config.COLLECTION_CSV, "id1#normal") == 2
+    js = client.post("/api/collection/edit", json={"key": "id1#normal", "delete": True, "seen": 2}).get_json()
+    assert js["cards"] == []
+
+
+# --- Value over time -------------------------------------------------------------------------
+
+def test_a_damaged_value_history_is_kept_aside(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    library.history_file().write_text('{"2026-10-30": {"val')
+    library.note_value({"value": 5.0, "cards": 1}, "2026-10-31")
+    assert (tmp_path / "price_history.json.bad").read_text() == '{"2026-10-30": {"val'
+    assert list(library.load_history()) == ["2026-10-31"]
+
+
+def test_a_history_that_cant_be_read_is_never_saved_over(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    library.note_value({"value": 10.0, "cards": 2}, "2026-10-30")
+    before = library.history_file().read_text()
+    real = type(library.history_file()).read_text
+
+    def refuse(self, *a, **k):
+        if self.name == "price_history.json":
+            raise PermissionError("busy")
+        return real(self, *a, **k)
+
+    with monkeypatch.context() as m:
+        m.setattr(type(library.history_file()), "read_text", refuse)
+        days = library.note_value({"value": 12.0, "cards": 3}, "2026-10-31")
+    assert days == [{"day": "2026-10-31", "value": 12.0, "cards": 3}]
+    assert library.history_file().read_text() == before
+
+
+def test_page_loads_at_the_same_time_keep_every_day(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    library.history_file().write_text(json.dumps({f"2026-01-{d:02d}": {"value": 1.0, "cards": 1} for d in range(1, 29)}))
+    start = threading.Barrier(4)
+
+    def load(n):
+        start.wait()
+        for i in range(10):
+            library.note_value({"value": float(n * 100 + i), "cards": 5}, "2026-11-18")
+
+    threads = [threading.Thread(target=load, args=(n,)) for n in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(library.load_history()) == 29
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+# --- History: imports aren't sessions ------------------------------------------------------
+
+def test_imports_are_not_scanning_sessions(client, db):  # noqa: F811
+    from datetime import datetime
+    now = datetime.now().isoformat(timespec="seconds")
+    write_raw(HEADER + "".join(line(f"Imported {i}", qty="100", bin_label="", at=now, source="My ManaBox", number=str(i))
+                               for i in range(3)))
+    add_card(config.COLLECTION_CSV, db.get_card("id1"), False, "Bulk", (1.0, ""))
+    add_card(config.COLLECTION_CSV, db.get_card("id2"), False, "Bulk", (1.0, ""), origin="Sam")   # a phone
+    js = client.get("/api/history").get_json()
+    assert js["total_sessions"] == 1 and js["sessions"][0]["cards"] == 2
+    assert js["days"][-1]["cards"] == 2
+    s = js["sessions"][0]
+    client.post("/api/history/delete", json={"start": s["start"], "end": s["end"]})
+    assert [r["Name"] for r in library.read_rows(config.COLLECTION_CSV)] == ["Imported 0", "Imported 1", "Imported 2"]
+    assert not history._scanned({"Source": "My ManaBox", "Bin": ""})
+
+
+# --- Big answers are sent gzipped ------------------------------------------------------------
+
+def test_big_json_is_gzipped_and_streams_are_left_alone(client):
+    app = client.application
+    big = json.dumps({"x": "y" * 100_000})
+
+    @app.get("/test-stream")
+    def test_stream():
+        return app.response_class((c for c in [big]), mimetype="application/json")
+
+    @app.get("/test-already")
+    def test_already():
+        return app.response_class(gzip.compress(big.encode()), mimetype="application/json",
+                                  headers={"Content-Encoding": "gzip"})
+
+    write_raw(HEADER + "".join(line(f"Card number {i}", number=str(i)) for i in range(300)))
+    plain = client.get("/api/collection")
+    assert "Content-Encoding" not in plain.headers                # the browser didn't ask for it
+    zipped = client.get("/api/collection", headers={"Accept-Encoding": "gzip, deflate"})
+    assert zipped.headers["Content-Encoding"] == "gzip" and "Accept-Encoding" in zipped.headers["Vary"]
+    assert int(zipped.headers["Content-Length"]) == len(zipped.data) < len(plain.data)
+    assert json.loads(gzip.decompress(zipped.data))["summary"]["cards"] == 300
+    small = client.get("/api/history", headers={"Accept-Encoding": "gzip"})
+    assert "Content-Encoding" not in small.headers                # small answers aren't worth it
+    res = client.get("/test-stream", headers={"Accept-Encoding": "gzip"})
+    assert "Content-Encoding" not in res.headers and res.get_data(as_text=True) == big
+    res = client.get("/test-already", headers={"Accept-Encoding": "gzip"})
+    assert gzip.decompress(res.data).decode() == big                # not gzipped twice

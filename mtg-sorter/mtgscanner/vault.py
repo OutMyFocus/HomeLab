@@ -24,7 +24,7 @@ from pathlib import Path
 from flask import jsonify, request, send_from_directory
 
 from . import accounts, ca_prices, carddb, config, decks, exchange, play, wishlist
-from .collection import append_rows, ensure_columns
+from .collection import COLLECTION_LOCK, append_rows, ensure_columns
 from .library import read_rows, write_rows
 from .live import API, card_from_scryfall
 from .montreal import add_montreal_routes
@@ -494,7 +494,7 @@ def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
             rows = read_rows(accounts.collection_csv())
         name = unique_source(rows, js.get("name"))
         new = to_rows(scanner, cards, name, "")
-        with scanner.lock:
+        with scanner.lock, COLLECTION_LOCK:
             append_rows(accounts.collection_csv(), new)
             rows = read_rows(accounts.collection_csv())
         return jsonify({"source": name, "cards": sum(c["q"] for c in cards), "sources": sources(rows)})
@@ -504,7 +504,7 @@ def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
         name = str(body().get("name") or "").strip()
         if not name or name == SCANNED:
             return jsonify({"error": "Pick an imported source. Scanned cards are removed on the History page"}), 400
-        with scanner.lock:
+        with scanner.lock, COLLECTION_LOCK:   # a card saved meanwhile (a phone's scan) isn't lost
             ensure_columns(accounts.collection_csv())
             rows = read_rows(accounts.collection_csv())
             keep = [r for r in rows if (r.get("Source") or "").strip() != name]

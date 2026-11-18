@@ -17,6 +17,7 @@ from your laptop or phone.
 """
 
 import argparse
+import gzip
 import itertools
 import json
 import os
@@ -1062,6 +1063,23 @@ def make_lights():
 
 def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
+
+    # Big JSON answers (the whole collection is megabytes) are sent gzipped, about 15 times
+    # smaller over the internet. Registered first, so it runs after every other hook.
+    @app.after_request
+    def gzip_big_json(response):
+        if (response.status_code != 200 or response.direct_passthrough or response.is_streamed
+                or response.mimetype != "application/json" or "Content-Encoding" in response.headers
+                or "gzip" not in request.headers.get("Accept-Encoding", "").lower()):
+            return response
+        data = response.get_data()
+        if len(data) < 64 * 1024:
+            return response
+        response.set_data(gzip.compress(data, compresslevel=6))   # also sets Content-Length
+        response.headers["Content-Encoding"] = "gzip"
+        response.vary.add("Accept-Encoding")
+        return response
+
     # On the server, MTG_MACHINE_URL points at the sorter's Pi, which does the moving.
     machine = machine or (RemoteMachine(remote_url()) if remote_url() else Machine())
     scanner.lights = lights or scanner.lights or make_lights()

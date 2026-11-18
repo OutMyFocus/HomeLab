@@ -45,9 +45,10 @@ def card_price(card: Card, foil: bool, vault: VaultPrices | None = None, live=No
     return round(usd * rate, 2), f"{source} US price × {rate:.2f}{', ' + note if note else ''}"
 
 
-def bin_for(card: Card, foil: bool, price: float | None) -> tuple[int, str]:
-    """Return (bin number, bin name) for a card whose price you already know."""
-    return sort_rules.pick(card, foil, price)
+def bin_for(card: Card, foil: bool, price: float | None, rules: dict | None = None) -> tuple[int, str]:
+    """Return (bin number, bin name) for a card whose price you already know. Pass the
+    rules (sort_rules.load()) when doing many cards, so they're looked up once."""
+    return sort_rules.pick(card, foil, price, rules)
 
 
 def bin_for_price(price: float | None) -> tuple[int, str]:
