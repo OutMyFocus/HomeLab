@@ -25,6 +25,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+# OpenCV refuses pictures bigger than this before it decodes them: a small file can claim
+# to be a huge picture (a 0.7 MB PNG of 16000 x 16000 took 768 MB). 60 MP still lets a
+# 48 or 50 MP phone photo through. Set before cv2 loads; the Dockerfile sets it too.
+os.environ.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", "60000000")
+
 import cv2
 import numpy as np
 from flask import Flask, Response, abort, jsonify, make_response, request, send_file, send_from_directory
@@ -134,6 +139,12 @@ class WaitingForCamera:
 # --- The scanner, running in the background ----------------------------------------
 
 SESSION_SHOWN = 100  # cards of this session listed on the scanner page
+FRAME_MAX_BYTES = 10 * 1024 * 1024   # the biggest picture a phone may send to /api/frame
+STREAM_RESEND_SECONDS = 2.0    # a still picture is sent again this often (see stream())
+STREAM_GIVE_UP_SECONDS = 10.0  # a stream with no picture at all ends after this long
+# Each saved card's number ("seq"), for every scanner: it starts from the time the app
+# started, in ms, so it keeps going up after a restart and the page's alerts never wait.
+_SAVE_NUMBERS = itertools.count(time.time_ns() // 1_000_000)
 
 
 LOOK_SIZE = (24, 34)   # width, height of _bed_look
@@ -175,7 +186,12 @@ class Scanner:
         self.matcher, self.vault, self.source, self.live = matcher, vault, source, live
         self.lights = None  # the RGB light bars (lights.py), which flash for saved, unsure and unknown cards
         self.lock = threading.Lock()
-        self.jpeg = None  # latest camera picture for the page
+        # The latest camera picture for the page, made into a JPEG only when a page asks
+        # for it (see the jpeg property): encoding every picture cost ~20 ms each on the
+        # Pi even with no page open.
+        self._preview_lock = threading.Lock()
+        self._preview_frame = None   # the newest picture, not encoded yet
+        self._preview = None         # the last one encoded
         self.tap = None  # feed_watch.FrameTap: "Feed one card" watches the pictures through it
         self.frame_size = None  # (width, height) of the camera picture
         self.started = False  # True once the first picture arrived
@@ -243,10 +259,24 @@ class Scanner:
         self._last_look = 0.0         # when it was looked at (time.monotonic)
         self.jpeg_full = None         # the full-size picture, made only while someone streams ?full=1
         self.full_viewers = 0
+        self.viewers_lock = threading.Lock()   # for full_viewers, counted by each open stream
         workers = config.IDENTIFY_THREADS or min(8, os.cpu_count() or 2)
         self._pool = ThreadPoolExecutor(
             max_workers=workers, thread_name_prefix="identify"
         )
+
+    @property
+    def jpeg(self) -> bytes | None:
+        """The latest camera picture as a JPEG preview (None before the first one)."""
+        with self._preview_lock:
+            if self._preview_frame is not None:
+                self._preview, self._preview_frame = self._encode(self._preview_frame), None
+            return self._preview
+
+    @jpeg.setter
+    def jpeg(self, value):
+        with self._preview_lock:
+            self._preview, self._preview_frame = value, None
 
     def use_source(self, source):
         """Switch cameras. The background thread makes the swap between frames."""
@@ -301,8 +331,15 @@ class Scanner:
         self.min_card = value
         (x0, y0), (x1, y1) = corners.min(axis=0), corners.max(axis=0)
         self.bed_box = view.clean_box([x0 / w, y0 / h, x1 / w, y1 / h])
+        self.empty_bed = self.empty_look = None   # measured in the old bed box: press Bed is empty again
         self.forget_tracks()
         return value
+
+    def bed_settings(self) -> dict:
+        """Whole cards only and the bare bed, as save_settings keeps them."""
+        return {"min_card": self.min_card, "bed_box": self.bed_box,
+                "empty_bed": self.empty_bed.hex() if self.empty_bed is not None else None,
+                "empty_look": self.empty_look.tobytes().hex() if self.empty_look is not None else None}
 
     def _bed_rect(self, frame):
         h, w = frame.shape[:2]
@@ -401,17 +438,24 @@ class Scanner:
                 raise ValueError(f"That card's outline doesn't look right (it would turn the picture {turn:.1f}°): "
                                  "lay it square against the pins, or use a white-bordered card, and try again")
             self.straight = setting
+        self._last_small = None   # the picture changes: look at the next one straight away
         self.forget_tracks()
 
     def set_view(self, rotate: int | None = None, crop=False):
         """Turn the picture to `rotate` degrees and/or crop it. `crop` is a box drawn on
         the picture as it shows now (so it zooms in further), None for the whole picture,
-        False to leave it. Slots stay on the same spots of the table. Call with the lock held."""
+        False to leave it. Slots stay on the same spots of the table, and so does the bed
+        box when the picture turns. A new crop turns Whole cards only off (its card size and
+        bed box were measured on the old picture). Call with the lock held."""
         if rotate is not None and rotate != self.rotate:
             turns = (rotate - self.rotate) // 90
             if self.crop:
                 self.crop = view.turn_box(self.crop, turns)
             self.slots = [view.turn_box(sl, turns) for sl in self.slots]
+            if self.bed_box:
+                # the card keeps its share of the picture, so min_card stays as it is
+                self.bed_box = view.turn_box(self.bed_box, turns)
+            self.empty_bed = self.empty_look = None   # the bare bed looks turned now: measure it again
             self.rotate = rotate
         if crop is not False:
             old = self.crop
@@ -419,7 +463,12 @@ class Scanner:
             if new is not None and view.is_whole(new):
                 new = None
             full = [view.inside(sl, old) for sl in self.slots]
-            self.crop = [round(v, 4) for v in new] if new else None
+            new = [round(v, 4) for v in new] if new else None
+            if new != old:
+                # the card on the bed is a different share of the new picture, somewhere else
+                self.min_card = self.bed_box = None
+                self.empty_bed = self.empty_look = None
+            self.crop = new
             self.slots = clean_slots([view.relative(sl, self.crop) for sl in full]) or []
             self.straight = None  # measured on the old picture: straighten again
         if rotate is not None:
@@ -427,6 +476,7 @@ class Scanner:
         if rotate is not None or crop is not False:
             self._auto_straight.reset()
             self._pending_straight = None
+            self._last_small = None
         self.forget_tracks()  # outlines and numbers belong to the old picture
 
     def _whole_cards(self, frame):
@@ -532,26 +582,33 @@ class Scanner:
             with self.lock:
                 if not self.tracks:     # between cards: the new warp can't upset a reading
                     self.straight, self._pending_straight = self._pending_straight, None
+                    self._last_small = None
                     save_settings(straight=self.straight)
-        if self.straight:
-            frame = view.straighten(frame, self.straight)
-        self._seen = frame
         if self.tap is not None and self.tap.watching:
             # A feed is watching for its card to land (feed_watch.py): hand it every
             # picture straight away and skip finding and recognizing cards until it's done,
             # which can take a few hundred ms a picture and made it see the card late.
+            if self.straight:
+                frame = view.straighten(frame, self.straight)
+            self._seen = frame
             self.tap.put(frame)
             self._publish(frame)
             return
+        # Checked before straightening, which warps the whole picture (~16 ms on the Pi):
+        # most pictures are the same as the last one and are skipped.
         if self._still(frame) and time.monotonic() - self._last_look < 1 / max(0.5, config.SCAN_IDLE_FPS):
             return      # nothing has changed: no need to look again so soon
         self._last_look = time.monotonic()
+        if self.straight:
+            frame = view.straighten(frame, self.straight)
+        self._seen = frame
         self.process(frame)
 
     def _still(self, frame) -> bool:
         """True when the picture is the same as the last one looked at and no card on the
         table is waiting for an answer, so the scanner can take it easy (SCAN_IDLE_FPS)."""
-        small = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (64, 48), interpolation=cv2.INTER_AREA)
+        # every 4th pixel is plenty for a 64 x 48 thumbnail, and 4x quicker
+        small = cv2.cvtColor(cv2.resize(frame[::4, ::4], (64, 48), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
         last, self._last_small = self._last_small, small
         if last is None:
             return False
@@ -562,13 +619,14 @@ class Scanner:
             return not any(t.needs_check(now) for t in self.tracks)
 
     def _publish(self, frame):
-        """Keep the picture for the pages (and for a full-size stream when one is open)."""
-        jpeg = self._encode(frame)
+        """Keep the picture for the pages (and for a full-size stream when one is open).
+        The preview is only encoded when a page asks for it (see jpeg)."""
         full = self._encode(frame, full=True) if self.full_viewers > 0 else None
+        with self._preview_lock:
+            self._preview_frame = frame
         with self.lock:
             self.started = True
             self.frame_size = (frame.shape[1], frame.shape[0])
-            self.jpeg = jpeg
             self.jpeg_full = full
 
     def process(self, frame):
@@ -746,7 +804,8 @@ class Scanner:
     ):
         bin_no, bin_label = choose_bin(card, foil, self.vault, self.live)
         price = card_price(card, foil, self.vault, self.live)
-        scanned_at = add_card(self.collection(), card, foil, bin_label, price, self.owner)
+        path = self.collection()
+        scanned_at = add_card(path, card, foil, bin_label, price, self.owner)
         with accounts.acting_as(self.account):   # their own alerts and wishlist
             special = self._special(card, price[0])
         self._light("valuable" if special else "saved")
@@ -756,6 +815,12 @@ class Scanner:
                 "time": time.strftime("%H:%M:%S"),
                 "scanned_at": scanned_at,
                 "track": track.id if track else None,
+                # goes up with every card saved: the page's alerts never miss one saved
+                # in the same second as the one before
+                "seq": next(_SAVE_NUMBERS),
+                # the collection it went into, for Undo (the machine's scanner saves into
+                # whoever pressed last); never sent to the page
+                "_csv": path,
             }
         )
         if track:
@@ -922,7 +987,8 @@ class Scanner:
                 | {"open": sum(1 for t in self.tracks if t.capture)},
                 # The newest cards only: the page asks several times a second, and a
                 # long session would make every answer big. History has the rest.
-                "session": self.session[: -SESSION_SHOWN - 1 : -1],
+                "session": [{k: v for k, v in e.items() if not k.startswith("_")}
+                            for e in self.session[: -SESSION_SHOWN - 1 : -1]],
                 "session_count": len(self.session),
                 "totals": totals,
                 "perf": {
@@ -1095,21 +1161,33 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         full = request.args.get("full") in ("1", "true", "yes")
 
         def frames():
-            last = None
+            # Only a write notices that the page has gone, so a still picture is sent again
+            # every STREAM_RESEND_SECONDS, and with no picture at all the stream ends after
+            # STREAM_GIVE_UP_SECONDS (the page and the server ask again). Before, each
+            # stream left behind kept a thread busy until the app restarted.
+            last, began = None, time.monotonic()
+            sent_at = began
             if full:
-                sc.full_viewers += 1
+                with sc.viewers_lock:
+                    sc.full_viewers += 1
             try:
                 while not sc.stopped:
                     jpeg = sc.jpeg_full if full else sc.jpeg
-                    if jpeg is not None and jpeg is not last:
-                        last = jpeg
+                    picture = jpeg if jpeg is not None else last
+                    now = time.monotonic()
+                    if picture is None:
+                        if now - began >= STREAM_GIVE_UP_SECONDS:
+                            return
+                    elif picture is not last or now - sent_at >= STREAM_RESEND_SECONDS:
+                        last, sent_at = picture, now
                         yield (
-                            b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                            b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + picture + b"\r\n"
                         )
                     time.sleep(0.04)
             finally:
                 if full:
-                    sc.full_viewers = max(0, sc.full_viewers - 1)
+                    with sc.viewers_lock:
+                        sc.full_viewers = max(0, sc.full_viewers - 1)
 
         return Response(frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
@@ -1117,8 +1195,8 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     def state():
         return state_for(current())
 
-    def state_for(sc: Scanner):
-        s = sc.state()
+    def state_for(sc: Scanner, extra: dict | None = None):
+        s = sc.state() | (extra or {})
         s["db_count"] = scanner.matcher.card_count
         s["learned"] = scanner.matcher.learned_count
         rate = f"US$1 = CA${config.USD_TO_CAD:.4f}"
@@ -1189,7 +1267,8 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                     return jsonify({"error": "Rotate must be 0, 90, 180 or 270"}), 400
                 sc.set_view(rotate, crop)
                 if remember:
-                    save_settings(rotate=sc.rotate, crop=sc.crop, slots=sc.slots, straight=sc.straight)
+                    save_settings(rotate=sc.rotate, crop=sc.crop, slots=sc.slots, straight=sc.straight,
+                                  **sc.bed_settings())
             if "auto_straight" in body:
                 sc.auto_straight = bool(body["auto_straight"])
                 if remember:
@@ -1212,13 +1291,15 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                     sc.forget_tracks()
                 if raw is None:
                     sc.bed_box = None
+                    sc.empty_bed = sc.empty_look = None
                 if remember:
-                    save_settings(min_card=sc.min_card, bed_box=sc.bed_box)
+                    save_settings(**sc.bed_settings())
             if "empty_bed" in body:
                 # "now": the bed is bare, remember it; null: forget it
                 if body["empty_bed"] is None:
                     sc.empty_bed = sc.empty_look = None
-                    save_settings(empty_bed=None, empty_look=None)
+                    if remember:   # a phone or desk scanner only forgets its own
+                        save_settings(empty_bed=None, empty_look=None)
                 elif body["empty_bed"] == "now":
                     if not sc.remember_empty_bed(save=remember):
                         return jsonify({"error": "Turn on Whole cards only first (it marks where the bed is)"}), 400
@@ -1229,10 +1310,12 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 box = view.clean_box(body["bed_box"]) if body["bed_box"] is not None else None
                 if body["bed_box"] is not None and box is None:
                     return jsonify({"error": "bed_box must be [x0, y0, x1, y1] as shares of the picture, or null"}), 400
+                if box != sc.bed_box:   # the bare bed was measured in the old box
+                    sc.empty_bed = sc.empty_look = None
                 sc.bed_box = box
                 sc.forget_tracks()
                 if remember:
-                    save_settings(bed_box=sc.bed_box)
+                    save_settings(**sc.bed_settings())
             if "straighten" in body:
                 try:
                     raw = body["straighten"]
@@ -1327,7 +1410,13 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             sc = None
         if sc is None:
             return jsonify({"error": "This device isn't scanning anymore: pick its camera again"}), 409
-        img = cv2.imdecode(np.frombuffer(request.get_data(), np.uint8), cv2.IMREAD_COLOR)
+        too_big = jsonify({"error": "That picture is too big"}), 413
+        if (request.content_length or 0) > FRAME_MAX_BYTES:
+            return too_big
+        data = request.stream.read(FRAME_MAX_BYTES + 1)
+        if len(data) > FRAME_MAX_BYTES:
+            return too_big
+        img = decode_picture(data)
         if img is None:
             return jsonify({"error": "Couldn't read the picture"}), 400
         sc.source.push(img)
@@ -1422,7 +1511,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                     else None
                 )
                 if wrong and remove_entry(
-                    sc.collection(), wrong["id"], wrong["scanned_at"]
+                    wrong.get("_csv") or sc.collection(), wrong["id"], wrong["scanned_at"]
                 ):
                     sc.session.remove(wrong)
                 t.status, t.card, t.confidence, t.candidates = "locked", card, None, []
@@ -1484,7 +1573,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         with scanner.lock:
             for t in scanner.tracks:  # include the cards on the table right now
                 scanner.finish_capture(t)
-            result = train(scanner.matcher, scanner.captures, include_auto)
+        # Training reads every scan and reloads the database: seconds on the Pi. Holding the
+        # scanner's lock all that time froze the picture, every page and a sort run. It
+        # doesn't need it: the database has a lock of its own, and the log is only read.
+        result = train(scanner.matcher, scanner.captures, include_auto)
         return jsonify(result)
 
     @app.post("/api/forget")
@@ -1503,7 +1595,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             return unknown_card()
         sc = acting()
         with sc.lock:
-            sc._save(card, bool(body.get("foil")), sc.track(body.get("track")))
+            t = sc.track(body.get("track"))
+            # saved already (a double click, or Auto just did): once is enough
+            if not (t is not None and t.saved and t.card is not None and t.card.id == card.id):
+                sc._save(card, bool(body.get("foil")), t)
         return state_for(sc)
 
     @app.post("/api/save_all")
@@ -1520,27 +1615,35 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     @app.post("/api/undo")
     def undo():
         sc = acting()
+        result = None
         with sc.lock:
             last = sc.session[-1] if sc.session else None
-            # The exact card saved last (an import may have added rows after it since).
-            path = sc.collection()
-            if last and (remove_entry(path, last["id"], last.get("scanned_at", ""))
-                         or (not last.get("scanned_at") and remove_last(path))):
-                undone = sc.session.pop()
-                t = sc.track(undone["track"])
-                if t and t.card and t.card.id == undone["id"]:
+            if last:
+                # The exact card saved last (an import may have added rows after it since),
+                # in the collection it went into (the machine saves into whoever pressed).
+                path = last.get("_csv") or sc.collection()
+                removed = bool(remove_entry(path, last["id"], last.get("scanned_at", ""))
+                               or (not last.get("scanned_at") and remove_last(path)))
+                # Gone from the collection already (deleted or changed on another page):
+                # it leaves the session all the same, or Undo would be stuck on it for good.
+                sc.session.pop()
+                result = {"undone": removed, "name": last["name"]}
+                t = sc.track(last["track"])
+                if removed and t and t.card and t.card.id == last["id"]:
                     t.saved = False
                     if t.capture and t.capture["verdict"] in ("saved", "auto-saved"):
                         t.capture["verdict"] = ""
-        return state_for(sc)
+        return state_for(sc, {"undo": result})
 
     @app.post("/api/photos")
     def photos():
         results = []
-        for f in request.files.getlist("photos"):
-            frame = cv2.imdecode(np.frombuffer(f.read(), np.uint8), cv2.IMREAD_COLOR)
+        # "index": which of the uploaded files a result is for (phones name every photo
+        # image.jpg, so the page can't go by the name)
+        for index, f in enumerate(request.files.getlist("photos")):
+            frame = decode_picture(f.read())
             if frame is None:
-                results.append({"file": f.filename, "error": "Couldn't open this file"})
+                results.append({"file": f.filename, "index": index, "error": "Couldn't open this file"})
                 continue
             # A photo can show a whole table of cards: report each one.
             found = [
@@ -1550,12 +1653,13 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             cards = [m for m in found if m.card]
             if not found:
                 results.append(
-                    {"file": f.filename, "error": "No card found in the photo"}
+                    {"file": f.filename, "index": index, "error": "No card found in the photo"}
                 )
             elif not cards:
                 results.append(
                     {
                         "file": f.filename,
+                        "index": index,
                         "error": "Card not recognized"
                         if len(found) == 1
                         else f"None of the {len(found)} cards recognized",
@@ -1565,6 +1669,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 results.append(
                     {
                         "file": f.filename,
+                        "index": index,
                         "card": card_info(m.card, False, scanner.vault, m.distance, live)
                         | {"confidence": m.confidence},
                     }
@@ -1580,7 +1685,51 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             path, as_attachment=True, download_name="collection.csv"
         )
 
+    @app.errorhandler(404)
+    def not_found(_e):
+        """A mistyped or old address: SortR's own page with a way back, not a bare error.
+        (The login and the PIN are checked before this, as for every page.)"""
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "That isn't something SortR knows how to do"}), 404
+        page = assets.stamp(NOT_FOUND_PAGE.encode(), WEB)
+        return Response(page, status=404, mimetype="text/html")
+
     return app
+
+
+NOT_FOUND_PAGE = """<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="icon" href="/static/app-icon.svg" type="image/svg+xml">
+  <meta name="color-scheme" content="dark light">
+  <title>SortR · Page not found</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span>SortR</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+  <main class="coll">
+    <h1>That page doesn't exist.</h1>
+    <p class="sub">The link may be old, or mistyped.</p>
+    <p><a class="btn" href="/">Go to Home</a></p>
+  </main>
+</body>
+</html>
+"""
+
+
+def decode_picture(data: bytes):
+    """A picture sent to the app, or None if it can't be read (or is over the size limit at
+    the top of this file, which some OpenCV versions raise as an error)."""
+    try:
+        return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    except cv2.error:
+        return None
 
 
 def clean_min_card(value) -> float | None:
@@ -1593,17 +1742,41 @@ def clean_min_card(value) -> float | None:
 
 def load_settings() -> dict:
     try:
-        return json.loads(SETTINGS_FILE.read_text())
+        saved = json.loads(SETTINGS_FILE.read_text())
     except (OSError, ValueError):
         return {}
+    return saved if isinstance(saved, dict) else {}
+
+
+# The scanner thread, a sort run (once per card) and the pages all save settings: one at a
+# time, or two at once read each other's half-written file and kept only their own change
+# (the crop, slots, bed box and camera all lost).
+_SETTINGS_LOCK = threading.Lock()
 
 
 def save_settings(**changes):
-    try:
-        config.DATA_DIR.mkdir(exist_ok=True)
-        SETTINGS_FILE.write_text(json.dumps(load_settings() | changes))
-    except OSError:
-        pass
+    with _SETTINGS_LOCK:
+        try:
+            config.DATA_DIR.mkdir(exist_ok=True)
+            try:
+                text = SETTINGS_FILE.read_text()
+            except FileNotFoundError:
+                text = "{}"
+            try:
+                saved = json.loads(text)
+            except ValueError:
+                saved = None
+            if not isinstance(saved, dict):
+                # damaged: keep a copy to look at, then start again from what's changed
+                SETTINGS_FILE.with_suffix(".bad").write_text(text)
+                saved = {}
+            # written next to it and then swapped in, so a restart mid-write can't leave
+            # half a file
+            tmp = SETTINGS_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(saved | changes))
+            tmp.replace(SETTINGS_FILE)
+        except OSError:
+            pass
 
 
 def startup_camera(index: int | None) -> CameraSource:

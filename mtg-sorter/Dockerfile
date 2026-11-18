@@ -47,11 +47,14 @@ ENV PATH=/opt/venv/bin:$PATH \
 # --- the app, the same for both ---------------------------------------------------------
 FROM base-${TARGETARCH}
 
+# OPENCV_IO_MAX_IMAGE_PIXELS: a picture sent to the app bigger than 60 MP is refused before
+# it's decoded (a small file can claim a huge picture and fill the memory).
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     MTG_DATA_DIR=/data \
     MTG_IN_DOCKER=1 \
-    OPENCV_LOG_LEVEL=ERROR
+    OPENCV_LOG_LEVEL=ERROR \
+    OPENCV_IO_MAX_IMAGE_PIXELS=60000000
 
 WORKDIR /app
 
