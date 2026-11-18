@@ -228,6 +228,7 @@ class Lights:
         self._flash = None        # (rgb, started) while a flash is showing
         self._held = 0            # > 0 while a feed watches the camera: the picture must not change
         self._held_at = 0.0
+        self._dim = None          # percent: every LED at most this bright for now (see dim)
         self._wake = threading.Event()
         self._thread = None
         self.started = time.monotonic()
@@ -292,7 +293,8 @@ class Lights:
         card = self.settings["card"]
         px = np.zeros((card["count"], 3))
         if card["on"]:
-            px[:] = to_rgb(card["color"]) * card["brightness"] / 100
+            level = card["brightness"] if self._dim is None else min(card["brightness"], self._dim)
+            px[:] = to_rgb(card["color"]) * level / 100
         px = limit_power(np.vstack([status, px]), config.LIGHTS_MAX_AMPS)
         return np.clip(np.rint(px), 0, 255).astype(np.uint8), moving
 
@@ -313,10 +315,18 @@ class Lights:
             self._held = max(0, self._held - 1)
         self._wake.set()
 
+    def dim(self, level=None):
+        """Turn every LED, the card light too, down to at most `level` percent for a while
+        (the sort run's second look at a foil, which glares); dim(None) puts them back.
+        Only for now: nothing is saved, so a restart comes back at the saved brightness."""
+        with self.lock:
+            self._dim = None if level is None else _number(level, 0, 100, "Brightness")
+        self._wake.set()
+
     def _render_status(self, now: float) -> tuple[np.ndarray, bool]:
         s = self.settings
         n = s["count"]
-        level = s["brightness"] / 100
+        level = (s["brightness"] if self._dim is None else min(s["brightness"], self._dim)) / 100
         if self._held:
             now = self._held_at      # the effect stands still
         if not s["on"]:
@@ -401,6 +411,7 @@ class Lights:
                 "ok": self._out is not None,
                 "error": self.error,
                 "settings": self.settings,
+                "dimmed": self._dim,                              # percent, while a sort run dims them
                 "effects": list(EFFECTS.items()),                 # lists keep the order
                 "events": [[k, label] for k, (label, _) in EVENTS.items()],
                 "max_count": MAX_LEDS,

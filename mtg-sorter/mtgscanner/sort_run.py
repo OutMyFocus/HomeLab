@@ -17,7 +17,8 @@ What each card ends up as:
             the pins only drop for a recognized card. So the run waits with the pins up
             and the card on the bed ("waiting" in the status) until you choose on the page:
             Look again, Unread bin (drop it into the fallback bin: the Bins page's
-            "everything else", or config.SORT_FALLBACK_BIN when that is bin 0), or Stop. If
+            "everything else", or config.SORT_FALLBACK_BIN when that is bin 0, and never
+            the bin kept for wanted cards only: see unread_tray), or Stop. If
             the scanner reads the card meanwhile (you straightened it, say), it carries on
             by itself. config.SORT_DROP_UNREAD = True drops it to the fallback bin at once.
   none      nothing reached the bed (the run stops after two in a row: hopper empty)
@@ -34,13 +35,18 @@ the server sends its own Bins page rules with the start, so the list you made th
 the one the Pi uses; started on the Pi's own page, the Pi's saved rules are used.
 """
 
+import logging
 import threading
 import time
 
 from flask import jsonify, request
 
 from . import config, sort_rules
+from .machine import claim, release
 
+log = logging.getLogger(__name__)
+
+DIMMED = "dimmed"           # _dim_lights: the bars were dimmed with Lights.dim
 LANDED_FROM = 0.45          # a landed card's middle is below this share of the picture's height
 MAX_CARDS = 1000
 
@@ -75,13 +81,22 @@ class SortRun:
                 raise RuntimeError("A sort run is already going: stop it first")
             speed = round(min(1.0, max(0.1, float(speed or self.machine.feeder_defaults()["speed"]))), 2)
             max_cards = max(0, min(MAX_CARDS, int(max_cards or 0)))
+            # Nothing else may move the machine while the run drives it (the Machine page's
+            # buttons get 409 until the run has stopped); a tuning run or a card being fed by
+            # hand keeps this one from starting.
+            claim(self.machine, "sort run")
             self.stop_asked = False
             self.decision = None
             self.rules, self.taken = rules, {}
             self.state = {"running": True, "cards": [], "done": None, "speed": speed,
                           "max_cards": max_cards, "started_at": time.time(), "waiting": None}
             self.thread = threading.Thread(target=self._run, args=(speed, max_cards), daemon=True)
-            self.thread.start()
+            try:
+                self.thread.start()
+            except Exception:
+                self.state["running"] = False
+                release(self.machine, "sort run")
+                raise
         return self.status()
 
     def stop(self) -> dict:
@@ -175,7 +190,15 @@ class SortRun:
                     reason = "nothing came out twice in a row: the hopper is empty"
                     return
             reason = "stopped"
+        except Exception as e:     # no servo board at the start, an I2C or disk error mid-card
+            log.exception("The sort run stopped on an error")
+            reason = f"error: {e}"
         finally:
+            try:
+                self.machine.stop_feeder()      # never leave the motor turning
+            except Exception:
+                pass
+            release(self.machine, "sort run")    # free before the page sees "done"
             with self.lock:
                 self.state["running"] = False
                 self.state["waiting"] = None
@@ -204,19 +227,44 @@ class SortRun:
         bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
         return int(bin_no) if int(bin_no) in bins else int(getattr(config, "SORT_FALLBACK_BIN", 1))
 
+    @staticmethod
+    def unread_tray(rules) -> int:
+        """The tray an unread card (or one for bin 0) really drops into. The unread bin
+        may be bin 0, which has no tray, and the tray it falls back to may be the one
+        kept for wanted cards only: then it goes where the wanted bin's other cards go."""
+        first = SortRun.real_bin(sort_rules.unread_bin(rules))
+        return SortRun.real_bin(sort_rules.unread_bin({**rules, "fallback": first}))
+
+    @staticmethod
+    def tray_for(rules, bin_no) -> int:
+        """The tray a card the rules give `bin_no` drops into (bin 0 has no tray)."""
+        real = SortRun.real_bin(bin_no)
+        return real if real == int(bin_no) else SortRun.unread_tray({**rules, "fallback": real})
+
     def _lights(self):
         lights = getattr(self.scanner, "lights", None)
         return lights if lights is not None and hasattr(lights, "update") and hasattr(lights, "settings") else None
 
     def _dim_lights(self):
-        """Turn the light bars down for a second look at a card that glares (a foil).
-        Returns the brightness to put back, or None when there are no bars to dim."""
+        """Turn the light bars down for a second look at a card that glares (a foil): the
+        card light over the bed as well as the status lights, for a while only (Lights.dim,
+        never saved to lights.json). Returns what to put back (DIMMED, or the old brightness
+        for bars without dim()), or None when there are no bars to dim."""
         lights = self._lights()
         if lights is None:
             return None
         try:
-            before = int(lights.settings.get("brightness", 0))
             level = int(getattr(config, "SORT_FOIL_BRIGHTNESS", 8))
+            s = lights.settings
+            if callable(getattr(lights, "dim", None)):
+                card = s.get("card") or {}
+                brightest = max(int(s.get("brightness", 0)),
+                                int(card.get("brightness", 0)) if card.get("on") else 0)
+                if brightest <= level:
+                    return None
+                lights.dim(level)
+                return DIMMED
+            before = int(s.get("brightness", 0))
             if before <= level:
                 return None
             lights.update({"brightness": level})
@@ -228,7 +276,10 @@ class SortRun:
         lights = self._lights()
         if lights is not None:
             try:
-                lights.update({"brightness": int(brightness)})
+                if brightness == DIMMED:
+                    lights.dim(None)
+                else:
+                    lights.update({"brightness": int(brightness)})
             except Exception:
                 pass
 
@@ -286,7 +337,7 @@ class SortRun:
         recognize it, save it, and say which bin it goes in. Fills in `card` for the table.
         An unread card waits on the bed for a decision (see the top of this file)."""
         rules = self.rules or sort_rules.load()
-        fallback = self.real_bin(sort_rules.unread_bin(rules))
+        fallback = self.unread_tray(rules)
         while True:
             track = self._look(card)
             if track is not None and track.status == "locked":
@@ -368,7 +419,7 @@ class SortRun:
                     card["wanted"] = True
                 real = self.real_bin(bin_no)
                 if real != bin_no and not wanted:       # bin 0 → the tray for unread cards
-                    real = self.real_bin(sort_rules.unread_bin({**rules, "fallback": real}))
+                    real = self.unread_tray({**rules, "fallback": real})
                 card.update({"status": "saved", "name": shown.name, "set": shown.set_code,
                              "number": shown.collector_number, "price": saved.get("price"),
                              "bin": real, "bin_label": label if real == bin_no else rules["names"][str(real)]})

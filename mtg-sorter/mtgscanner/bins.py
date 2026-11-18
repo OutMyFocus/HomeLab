@@ -8,6 +8,7 @@ from flask import jsonify, request, send_from_directory
 
 from . import accounts, config, decks, sort_rules, wishlist
 from .library import holdings, read_rows
+from .sort_run import SortRun
 
 
 def preview(rules: dict, items: list[dict], taken: dict | None = None) -> dict:
@@ -78,6 +79,10 @@ def add_bins_routes(app, scanner, web_dir):
             "colors": sort_rules.COLORS,
             "rarities": sort_rules.RARITIES,
             "bins": sort_rules.BINS,
+            # the bins with a tray on this sorter; a card for any other bin (bin 0 on the
+            # Mk1) drops into fallback_tray, as a sort run does it with these rules
+            "trays": sorted(config.SORT_BINS),
+            "fallback_tray": SortRun.tray_for(rules, 0),
             "decks": [{"id": d["id"], "name": d.get("name") or "Untitled deck"} for d in decks.load_decks()],
             "wishlist": len(wishlist.load_items()),
         })

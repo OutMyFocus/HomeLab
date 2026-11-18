@@ -178,3 +178,26 @@ def test_lights_stand_still_while_held(spi):
     assert moving
     lights.flash("unknown", force=True)
     assert lights._flash is not None
+
+
+def test_dim_turns_the_card_light_down_too_and_saves_nothing(lights):
+    """The sort run's second look at a foil: the card light over the bed is what glares, so
+    it dims as well as the status lights, and nothing goes into lights.json (a restart
+    during the look used to leave the bars at 8 %)."""
+    from mtgscanner.sort_run import SortRun
+    lights.update({"color": "#ffffff", "brightness": 30, "count": 2,
+                   "card": {"count": 2, "color": "#ffffff", "brightness": 60, "on": True}})
+    saved = L.settings_file().read_text()
+    before, _ = lights.render(0)
+    assert before[2].tolist() == [153, 153, 153]                    # card light at 60 %
+    run = SortRun(None, type("Scanner", (), {"lights": lights})(), None)
+    back = run._dim_lights()
+    frame, _ = lights.render(0)
+    assert frame[0].tolist() == [20, 20, 20] and frame[2].tolist() == [20, 20, 20]   # both at 8 %
+    assert lights.state()["dimmed"] == 8
+    assert lights.settings["brightness"] == 30 and lights.settings["card"]["brightness"] == 60
+    assert L.settings_file().read_text() == saved and Lights().settings["brightness"] == 30
+    run._restore_lights(back)
+    assert np.array_equal(lights.render(0)[0], before) and lights.state()["dimmed"] is None
+    lights.dim(50)                       # never brighter than the saved level
+    assert lights.render(0)[0][0].tolist() == [76, 76, 76]

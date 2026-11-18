@@ -24,7 +24,7 @@ import numpy as np
 from flask import jsonify, request
 
 from . import config
-from .machine import load_saved
+from .machine import Busy, claim, load_saved, release
 
 SMALL_W = 160   # pictures are compared at this width: plenty to see a card, and quick
 
@@ -358,17 +358,32 @@ def add_feed_watch_routes(app, scanner, machine):
     hardware) the Pi does it, since the Pi has both the motor and the camera."""
     watcher = None if hasattr(machine, "feed_one") else FeedWatcher(scanner, machine)
     run = machine.feed_one if watcher is None else watcher.feed_one
+    LOST = "Lost touch with the sorter's servo board or motor ({e}). Check its power and wiring, then try again."
+
+    def guarded(action):
+        """One card fed by hand: refused while a run drives the machine, and keeps a run
+        from starting until it's done. The checks are here, not in feed_one or sort_one,
+        because the runs call those from their own thread."""
+        claim(machine, "one-card feed")
+        try:
+            return action()
+        finally:
+            release(machine, "one-card feed")
 
     @app.post("/api/machine/feed_one")
     def machine_feed_one():
         body = request.get_json(silent=True) or {}
         try:
-            out = run(body.get("speed"), body.get("max_seconds"), body.get("zone"), body.get("backoff"),
-                      push=body.get("push"))
+            out = guarded(lambda: run(body.get("speed"), body.get("max_seconds"), body.get("zone"),
+                                      body.get("backoff"), push=body.get("push")))
+        except Busy as e:
+            return jsonify(error=str(e)), 409
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
+        except OSError as e:
+            return jsonify(error=LOST.format(e=e)), 503
         return jsonify(out | {"message": MESSAGES.get(out.get("result"), "")})
 
     @app.post("/api/machine/sort_one")
@@ -376,12 +391,16 @@ def add_feed_watch_routes(app, scanner, machine):
         body = request.get_json(silent=True) or {}
         run_sort = machine.sort_one if watcher is None else watcher.sort_one
         try:
-            out = run_sort(body.get("bin"), body.get("speed"), body.get("drop"), body.get("backoff"),
-                           push=body.get("push"))
+            out = guarded(lambda: run_sort(body.get("bin"), body.get("speed"), body.get("drop"),
+                                           body.get("backoff"), push=body.get("push")))
+        except Busy as e:
+            return jsonify(error=str(e)), 409
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
+        except OSError as e:
+            return jsonify(error=LOST.format(e=e)), 503
         if out.get("result") in ("none", "stuck"):
             message = MESSAGES[out["result"]]
         elif out.get("dropped") is False:
@@ -410,6 +429,8 @@ def add_feed_watch_routes(app, scanner, machine):
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
+        except OSError as e:
+            return jsonify(error=f"Couldn't save the zone ({e}). Is the data folder full or read-only?"), 503
         return jsonify({"zone": clean_zone(body.get("zone"))})
 
     return watcher

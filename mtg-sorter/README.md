@@ -189,8 +189,10 @@ Then open **http://localhost:5000** in your browser. You get:
   **Prices and card data** shows when the weekly Canadian price check and card database update
   last ran, with buttons to run them now. **Bring in Commander Vault** imports everything from
   a Commander Vault export file (see below).
-- **Bins**: choose what goes into each of the sorter's 4 bins, by price, color,
-  rarity, set and foil, without editing any code. Pick a ready-made setup (by price, by rarity,
+- **Bins**: choose what goes into each bin (0 to 3), by price, color,
+  rarity, set and foil, without editing any code. Bins without a tray on your sorter (bin 0
+  on the Mk1, which has trays for bins 1, 2 and 3) drop their cards into another bin; the
+  page says which. Pick a ready-made setup (by price, by rarity,
   by color, keep the good stuff, pull valuable then by color) or write your own rules. The
   counts show how your collection would be split before you save. Saved in
   `data/sort_rules.json`; **Back to the original price bins** undoes it.
