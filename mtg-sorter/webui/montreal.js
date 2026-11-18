@@ -34,7 +34,8 @@ window.Montreal = (() => {
     const when = d.checked === "today" ? "today" : d.date ? `price check of ${d.date}` : "";
     const rows = (d.stores || []).map((s, i) => `<li class="${i === 0 ? "first" : ""} ${s.in_stock === false ? "out" : ""}">
         ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.title || s.store)}">${esc(s.store)}</a>` : `<span>${esc(s.store)}</span>`}
-        <span class="tag ${s.exact ? "exact" : ""}">${s.exact ? "this printing" : d.checked === "today" ? "cheapest" : ""}${s.in_stock === false ? " · out of stock" : ""}</span>
+        <span class="tag ${s.exact ? "exact" : ""}">${[s.exact ? "this printing" : d.checked === "today" && s.checked !== "weekly" ? "cheapest" : "",
+            d.checked === "today" && s.checked === "weekly" ? "weekly price" : ""].filter(Boolean).join(" · ")}${s.in_stock === false ? " · out of stock" : ""}</span>
         <b>${money(s.price)}</b></li>`).join("");
     const links = (d.links || []).map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.store)}</a>`).join(" · ");
     el.innerHTML = `<div class="mtl-head">Montreal stores <small>${esc(when)}${d.foil ? " · foil" : ""} · Near Mint</small></div>

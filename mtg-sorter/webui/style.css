@@ -909,3 +909,7 @@ label.inline > input:not([type="checkbox"], [type="radio"]) { min-width: 0; max-
 .chart-tip small { color: var(--muted); font-size: .72rem; }
 .chart-tip b { font-family: var(--display); font-variant-numeric: tabular-nums; }
 
+
+/* Read out by screen readers, never shown (the toasts' #toastLive). */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }

@@ -166,6 +166,17 @@ def test_the_servers_machine_page_moves_the_pi(db, pi):  # noqa: F811
     assert server.post("/api/machine/move", json={"part": "nope", "position": "x"}).status_code == 400
 
 
+def test_the_pi_being_busy_reaches_the_servers_page_as_busy(db, pi):  # noqa: F811
+    """A run on the Pi keeps the server's Machine page buttons out with the Pi's own words."""
+    m, pi_client = pi
+    _, server = server_with(db, pi_client)
+    m.run = "sort run"
+    r = server.post("/api/machine/move", json={"part": "pins", "position": "down"})
+    assert r.status_code == 409 and "sort run" in r.get_json()["error"]
+    m.run = None
+    assert server.post("/api/machine/move", json={"part": "pins", "position": "down"}).status_code == 200
+
+
 def test_the_server_sends_its_bins_rules_when_it_starts_a_sort(db, pi, monkeypatch):  # noqa: F811
     """The wanted list is made on the server's Bins page; the Pi sorts by it."""
     from mtgscanner import sort_rules

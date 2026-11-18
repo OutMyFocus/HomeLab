@@ -290,7 +290,10 @@ and scans from their phone land in their own collection. Pick a role or tick per
 Member = Scan + Edit, Viewer = look only. The card database, prices, bins and the machine
 are shared. Requests from the Pi or server itself always count as the owner. Locked out?
 Delete `data/users.json` and the login is gone (everyone's cards stay; turn accounts on
-again to get them back).
+again to get them back). `data/users.json.bak` next to it is a copy from the last save,
+which the app uses by itself if `users.json` gets damaged. If neither can be read, the pages
+say "users.json is damaged, so nobody can log in" and only the Pi or server itself gets in:
+put back `users.json` from a backup, or delete it to turn accounts off.
 
 ## Commander Vault is part of the app now
 

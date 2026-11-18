@@ -568,6 +568,18 @@ def test_two_cards_a_few_mm_apart_are_two_cards(db, gap):
     assert sorted(m.card.id for m in found if m.card) == ["id2", "id3"]
 
 
+def test_a_photo_of_two_cards_a_few_mm_apart_lists_both(db, monkeypatch, tmp_path):
+    """Photos (Scan page, Upload photos) read each card of an outline around two."""
+    import io
+    import app as app_module
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    client = app_module.create_app(app_module.Scanner(db, None, source=None)).test_client()
+    photo = cv2.imencode(".jpg", _table_of([fake_card(2), fake_card(3)], 10), [cv2.IMWRITE_JPEG_QUALITY, 95])[1]
+    res = client.post("/api/photos", data={"photos": [(io.BytesIO(photo.tobytes()), "image.jpg")]},
+                      content_type="multipart/form-data").get_json()
+    assert sorted(r["card"]["id"] for r in res if "card" in r) == ["id2", "id3"]
+
+
 def _split_card() -> np.ndarray:
     """A split card: two halves, each with its own frame, on one card."""
     img = np.zeros((CARD_H, CARD_W, 3), np.uint8)

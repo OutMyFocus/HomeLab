@@ -236,7 +236,7 @@ def save(data) -> dict:
     tmp = rules_file().with_suffix(".tmp")
     tmp.write_text(json.dumps(rules, indent=1))
     tmp.replace(rules_file())
-    _cache["rules"] = None
+    _forget()
     return rules
 
 
@@ -245,7 +245,14 @@ def reset():
         rules_file().unlink()
     except FileNotFoundError:
         pass
+    _forget()
+
+
+def _forget():
+    """Read the rules again next time (they were saved or reset), and count them again."""
+    global _counted
     _cache["rules"] = None
+    _counted = None
 
 
 def color_group(colors) -> str:
@@ -269,17 +276,31 @@ def fits(rule: dict, card, foil: bool, price) -> bool:
     return True
 
 
+# The last wanted list counted, as (its "wanted" dict, a signature of it, the counts): the
+# collection's bins and a sort run ask once per card, with the same rules every time. The
+# dict itself is kept, so its id can't be taken by another dict meanwhile.
+_counted: tuple | None = None
+
+
 def wanted_counts(rules: dict) -> dict[str, int]:
-    """{name key: copies wanted} for the wanted list in use (empty when it's off)."""
+    """{name key: copies wanted} for the wanted list in use (empty when it's off). The
+    answer is shared: don't change it."""
+    global _counted
     w = rules.get("wanted") or {}
     if not w.get("on"):
         return {}
+    cards = w.get("cards") or []
+    sign = (id(cards), len(cards), bool(w.get("skip_basics")))
+    last = _counted
+    if last is not None and last[0] is w and last[1] == sign:
+        return last[2]
     out = {}
     for c in w.get("cards") or []:
         key = name_key(c["name"])
         if w.get("skip_basics") and key in BASICS:
             continue
         out[key] = out.get(key, 0) + int(c.get("qty") or 1)
+    _counted = (w, sign, out)
     return out
 
 

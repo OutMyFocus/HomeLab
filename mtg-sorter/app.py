@@ -62,7 +62,7 @@ from mtgscanner.feed_watch import add_feed_watch_routes
 from mtgscanner.tuning import add_tuning_routes
 from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
 from mtgscanner.remote_machine import RemoteCameraSource, RemoteLights, RemoteMachine, remote_url
-from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
+from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_card, identify_outlines
 from mtgscanner.sort_run import add_sort_run_routes
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.system import ON_PI, add_system_routes
@@ -1663,10 +1663,12 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             if frame is None:
                 results.append({"file": f.filename, "index": index, "error": "Couldn't open this file"})
                 continue
-            # A photo can show a whole table of cards: report each one.
+            # A photo can show a whole table of cards: report each one (and each of the
+            # cards lying close enough together to come out as one outline).
             found = [
-                identify_outlines(scanner.matcher, frame, outlines, wait=FETCH_SECONDS)
+                m
                 for outlines in find_cards(frame)
+                for _, m in identify_card(scanner.matcher, frame, outlines, wait=FETCH_SECONDS)
             ]
             cards = [m for m in found if m.card]
             if not found:

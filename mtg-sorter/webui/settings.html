@@ -156,8 +156,8 @@
         Wi-Fi can't. Each phone or laptop stays unlocked for 30 days after typing it. The Pi itself is never locked out.
         Forgot it? On the Pi, delete <code>data/pin.json</code>.</p>
       <div class="row">
-        <input class="field pin" id="pin1" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="New PIN (4 to 8 digits)">
-        <input class="field pin" id="pin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="Type it again">
+        <input class="field pin" id="pin1" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="New PIN (6 to 8 digits is safer)" aria-label="New PIN">
+        <input class="field pin" id="pin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="Type it again" aria-label="Type the new PIN again">
         <button class="btn primary" id="pinSet">Set PIN</button>
       </div>
       <div class="row" id="pinOn" hidden>

@@ -165,6 +165,8 @@
   </section>
 </div>
 <div id="toast" hidden></div>
+<!-- what the toast says, read out by screen readers (never shown) -->
+<div id="toastLive" class="sr-only" role="status" aria-live="polite"></div>
 
 <script>
 const NAMES = { pins: "Stop pins", chute: "Chute tilt", door_r: "Right trapdoor", door_l: "Left trapdoor" };
@@ -173,6 +175,14 @@ let toastTimer;
 function toast(text) {
   const t = $("toast"); t.textContent = text; t.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3500);
+  speak(text);
+}
+// Screen readers read out what lands in #toastLive. Emptied first, so the same message
+// twice is read twice.
+function speak(text) {
+  const live = $("toastLive"); if (!live) return;
+  live.textContent = "";
+  requestAnimationFrame(() => { live.textContent = text; });
 }
 // The answer as JSON, or {error} when the sorter sent back something else (an error page).
 async function answerOf(res) {

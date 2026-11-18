@@ -206,8 +206,8 @@ def _clean_perms(raw, role=None) -> list[str]:
     return list(PERMS) if "admin" in perms else perms
 
 
-DAMAGED = ("data/users.json is damaged, so nobody can log in. On the Pi or server, copy users.json.bak "
-           "over it (or users.json from a backup), or delete it to turn accounts off.")
+DAMAGED = ("data/users.json is damaged (and so is its copy, users.json.bak), so nobody can log in. "
+           "On the Pi or server, put back users.json from a backup, or delete it to turn accounts off.")
 
 
 def _secret(password: str) -> tuple[str, str]:
