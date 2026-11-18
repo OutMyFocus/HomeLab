@@ -13,6 +13,7 @@ still shows the last news when the internet is down. A source older than REFRESH
 fetched again in the background; the Refresh button fetches everything now.
 """
 
+import codecs
 import html
 import json
 import re
@@ -154,8 +155,13 @@ def _first_img(raw: str) -> str:
 def parse_feed(xml_text: str, source: str) -> list[dict]:
     """RSS 2.0 or Atom to article dicts, newest first."""
     # No DOCTYPE/entities from the internet: the feeds we read never need them.
-    xml_text = re.sub(r"<!DOCTYPE[^>\[]*(\[.*?\])?\s*>", "", xml_text, flags=re.S | re.I)
-    root = ET.fromstring(xml_text.encode("utf-8") if isinstance(xml_text, str) else xml_text)
+    # Text is already decoded, so it goes in as it is (its <?xml encoding=...?> no longer
+    # applies); only bytes are decoded by the parser, by that declaration.
+    if isinstance(xml_text, bytes):
+        xml_text = re.sub(rb"<!DOCTYPE[^>\[]*(\[.*?\])?\s*>", b"", xml_text, flags=re.S | re.I)
+    else:
+        xml_text = re.sub(r"<!DOCTYPE[^>\[]*(\[.*?\])?\s*>", "", xml_text, flags=re.S | re.I)
+    root = ET.fromstring(xml_text)
     out = []
     if _local(root.tag) == "feed":       # Atom
         entries = _children(root, "entry")
@@ -200,6 +206,8 @@ def parse_feed(xml_text: str, source: str) -> list[dict]:
         out.append({"source": source, "title": title, "url": link, "summary": summary, "image": image,
                     "author": clean_text(author, 60), "section": cats[0] if cats and source != "reddit" else "",
                     "published": published, "tags": tags_for(title, " ".join(cats))})
+    if entries and not out:   # articles there, but none we can read: the feed changed
+        raise ValueError("none of the feed's articles could be read")
     out.sort(key=lambda a: -(a["published"] or 0))
     return out[:KEEP]
 
@@ -258,7 +266,7 @@ def parse_wizards_article(page: str) -> dict:
 
 def parse_sets(js: dict, today: date) -> dict:
     """Scryfall /sets to {"upcoming": [...soonest first], "recent": [...newest first]}."""
-    upcoming, recent = [], []
+    items = []
     for s in js.get("data", []):
         if s.get("digital") or s.get("set_type") not in SET_TYPES or not s.get("released_at"):
             continue
@@ -270,13 +278,35 @@ def parse_sets(js: dict, today: date) -> dict:
                 "released": s["released_at"], "days": (when - today).days, "cards": s.get("card_count") or 0,
                 "icon": safe_url(s.get("icon_svg_uri")), "url": safe_url(s.get("scryfall_uri")),
                 "parent": (s.get("parent_set_code") or "").upper()}
+        items.append(item)
+    return _split_sets(items, today)
+
+
+def _split_sets(items: list[dict], today: date) -> dict:
+    """Sets to {"upcoming", "recent"}, with "days" counted from today."""
+    upcoming, recent = [], []
+    for item in items:
+        try:
+            when = date.fromisoformat(item["released"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        item = dict(item, days=(when - today).days)
         if when > today:
             upcoming.append(item)
         elif (today - when).days <= JUST_OUT:
             recent.append(item)
-    upcoming.sort(key=lambda s: (s["released"], s["parent"] != "", s["name"]))
-    recent.sort(key=lambda s: (s["released"], s["parent"] == ""), reverse=True)
+    upcoming.sort(key=lambda s: (s["released"], bool(s.get("parent")), str(s.get("name", ""))))
+    recent.sort(key=lambda s: (s["released"], not s.get("parent")), reverse=True)
     return {"upcoming": upcoming[:16], "recent": recent[:10]}
+
+
+def current_sets(sets: dict, today: date) -> dict:
+    """Saved sets with their countdowns brought up to today, so a set that came out since
+    the last fetch (offline, or the fetch keeps failing) moves from Coming soon to Just out."""
+    if not isinstance(sets, dict):
+        return {"upcoming": [], "recent": []}
+    items = [i for k in ("upcoming", "recent") for i in sets.get(k) or [] if isinstance(i, dict)]
+    return _split_sets(items, today)
 
 
 PREVIEW_QUERY = "date>today not:reprint -is:digital -st:token -st:memorabilia"
@@ -311,7 +341,16 @@ def _get(url: str, accept: str = "*/*", timeout: float = 10) -> requests.Respons
 
 def fetch_text(url: str) -> str:
     resp = _get(url, "application/rss+xml, application/atom+xml, application/xml, text/html;q=0.9, */*;q=0.5")
-    resp.encoding = resp.encoding or "utf-8"
+    if "charset=" not in (resp.headers.get("Content-Type") or "").lower():
+        # No charset given: requests would guess ISO-8859-1 for any text/... answer and
+        # garble the accents. Use the feed's own <?xml encoding=...?>, else UTF-8.
+        m = re.match(rb"\s*<\?xml[^>]*?encoding=[\"']([A-Za-z0-9._-]{1,40})", resp.content[:300])
+        encoding = m.group(1).decode() if m else "utf-8"
+        try:
+            codecs.lookup(encoding)
+        except LookupError:
+            encoding = "utf-8"
+        resp.encoding = encoding
     return resp.text
 
 
@@ -395,10 +434,16 @@ class News:
         items = []
         for page in ("/en/news", "/en/news/archive"):
             try:
-                items += parse_wizards_list(self.fetch_text(WIZARDS + page))
+                found = parse_wizards_list(self.fetch_text(WIZARDS + page))
             except Exception:
                 if page == "/en/news":
                     raise
+                continue
+            # The news page always has articles. None means Wizards changed the page (or
+            # sent a bot check): show an error and keep the saved news, don't wipe it.
+            if page == "/en/news" and not found:
+                raise ValueError("no article cards on the page")
+            items += found
         unique, seen = [], set()
         for a in items:
             if a["url"] not in seen:
@@ -496,7 +541,7 @@ class News:
                         "updated": (cache.get(s["key"]) or {}).get("at") or None,
                         "error": (cache.get(s["key"]) or {}).get("error"),
                         "count": len((cache.get(s["key"]) or {}).get("items") or [])} for s in SOURCES]
-            sets = (cache.get("sets") or {}).get("items") or {"upcoming": [], "recent": []}
+            sets = current_sets((cache.get("sets") or {}).get("items") or {}, date.today())
             previews = (cache.get("previews") or {}).get("items") or []
             stamps = [(cache.get(k) or {}).get("at") or 0 for k in self.keys()]
             return {

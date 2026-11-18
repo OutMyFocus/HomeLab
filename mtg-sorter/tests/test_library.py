@@ -199,3 +199,50 @@ def test_color_groups():
     assert [library.color_group(c) for c in ["", "R", "R,G", None]] == ["C", "R", "M", ""]
     card = Card("x", "X", "s", "S", "1", "rare", "U", 1.0, None)
     assert card.colors == "U"
+
+
+def http_error(code, retry_after=None):
+    import requests
+    resp = requests.Response()
+    resp.status_code = code
+    if retry_after is not None:
+        resp.headers["Retry-After"] = str(retry_after)
+    return requests.HTTPError(str(code), response=resp)
+
+
+def test_a_busy_scryfall_is_asked_again(live):
+    calls, slept, busy = [], [], [True]
+
+    def fetch(url, body=None):
+        calls.append(url)
+        if busy[0]:
+            busy[0] = False
+            raise http_error(429, 1)
+        return {"data": [scryfall_card(i["id"], "x", usd="1.00") for i in body["identifiers"]]}
+    live.fetch, live.sleep = fetch, slept.append
+    assert live.fetch_many([f"c{i}" for i in range(160)]) == 160     # every card, despite the 429
+    assert len(calls) == 4 and 1.0 in slept
+    assert all(s >= 0 for s in slept)
+
+
+def test_refresh_says_when_scryfall_stopped_part_way(live):
+    calls = []
+
+    def fetch(url, body=None):
+        calls.append(url)
+        if len(calls) > 1:
+            raise ConnectionError(url)
+        return {"data": [scryfall_card(i["id"], "x", usd="1.00") for i in body["identifiers"]]}
+    live.fetch, live.sleep = fetch, lambda s: None
+    with pytest.raises(RuntimeError, match="Stopped after 75 of 300"):
+        live.fetch_many([f"c{i}" for i in range(300)])
+    assert len(calls) == 3                                            # gave up after two failed batches
+    assert live.fetch_many([f"c{i}" for i in range(75)]) == 0          # the first 75 are kept
+
+
+def test_searches_are_spaced_out(live):
+    slept = []
+    live.fetch, live.sleep = fake_fetch({"/cards/search": {"data": []}}), slept.append
+    live.printings("Card 1")
+    live.printings("Card 1")
+    assert slept and max(slept) > 0.3                                  # about 2 a second, as Scryfall asks

@@ -45,7 +45,9 @@ def info() -> dict:
         meta = {}
     return {"cards": meta.get("n"), "built": meta.get("built") or time.strftime(
         "%Y-%m-%dT%H:%M:%S", time.localtime(path.stat().st_mtime)), "bytes": gz_file().stat().st_size
-        if gz_file().exists() else path.stat().st_size}
+        if gz_file().exists() else path.stat().st_size,
+        # What the browser counts while downloading: it unpacks the gzip copy as it comes.
+        "raw_bytes": path.stat().st_size}
 
 
 def card_row(c: dict) -> dict | None:
