@@ -152,6 +152,7 @@ of them, with the room lights off.
 ![Scanning with a phone's camera](docs/devlog/w3_phone_scanning.png)
 ![Mechanism v2, side view](docs/devlog/w3_mechanism_v2.png)
 ![Scan bed v3 in the machine](docs/devlog/w3_scan_bed_v3.png)
+![Wanted cards bin settings](docs/devlog/w3_wanted_bin.png)
 
 ---
 
