@@ -65,6 +65,7 @@
     toast($("aBig").value ? `Valuable card! This is how a card over $${$("aBig").value} is announced` : "Set a price first");
   };
 
+  $("pin1").placeholder = "New PIN (6 to 8 digits is safer)";   // 4 digits are quick to guess
   async function loadPin() {
     const s = await api("/api/lock");
     $("pinState").innerHTML = s.enabled ? "<b>The PIN lock is on.</b>" : "The PIN lock is off: anyone who can reach the Pi can use the app.";

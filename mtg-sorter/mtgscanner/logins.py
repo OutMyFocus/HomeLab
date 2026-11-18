@@ -68,8 +68,15 @@ def install(app, web_dir):
         if not accounts.enabled():
             return None
         if server_allowed():     # the server driving this Pi's machine (remote_machine.py)
+            accounts.set_current(accounts.owner())   # its camera and focus are the owner's machine
             return None
         path = request.path
+        if accounts.damaged():   # users.json broke: only the Pi itself gets in until it's fixed
+            if security.is_local() or path == "/api/health":
+                return None
+            if path.startswith(("/api/", "/captures/")) or path.endswith(".mjpg"):
+                return jsonify({"error": accounts.DAMAGED, "locked": True}), 503
+            return make_response(accounts.DAMAGED, 503, {"Content-Type": "text/plain; charset=utf-8"})
         username = who()
         accounts.set_current(username)
         if path in OPEN_PATHS or path.startswith("/static/"):
@@ -104,7 +111,7 @@ def install(app, web_dir):
     def signed_in(username):
         resp = jsonify({"ok": True, "me": me_info(username)})
         resp.set_cookie(accounts.COOKIE, accounts.session_token(username), max_age=accounts.DAYS * 86400,
-                        httponly=True, samesite="Lax", secure=request.is_secure)
+                        httponly=True, samesite="Lax", secure=security.via_https())
         return resp
 
     def me_info(username):
@@ -127,15 +134,16 @@ def install(app, web_dir):
     def login():
         if not accounts.enabled():
             return jsonify({"ok": True, "me": None})
-        where = request.remote_addr or "?"
-        if accounts.too_many_tries(where):
-            return jsonify({"error": f"Too many wrong passwords. Wait {accounts.PAUSE} seconds and try again"}), 429
+        where = security.client_ip()
         js = body()
         username = str(js.get("username") or "").strip().lower()
-        ok = accounts.check_password(username, js.get("password"))
-        accounts.note_try(where, ok)
-        if not ok:
+        also = accounts.login_limit(username)
+        wait = accounts.take_try(where, also=also)   # counted before the slow check
+        if wait:
+            return jsonify({"error": f"Too many wrong passwords. Wait {accounts.wait_words(wait)} and try again"}), 429
+        if not accounts.check_password(username, js.get("password")):
             return jsonify({"error": "That username and password don't match"}), 403
+        accounts.clear_tries(where, also_key=also and also[0])
         return signed_in(username)
 
     @app.post("/api/logout")
@@ -201,9 +209,10 @@ def install(app, web_dir):
     def join():
         """{code} checks a link; {code, username, password, name} makes the account and
         logs it in."""
-        where = request.remote_addr or "?"
-        if accounts.too_many_tries(where):
-            return jsonify({"error": f"Too many tries. Wait {accounts.PAUSE} seconds and try again"}), 429
+        where = "join:" + security.client_ip()   # its own count, so wrong links don't stop logins
+        wait = accounts.too_many_tries(where)
+        if wait:
+            return jsonify({"error": f"Too many tries. Wait {accounts.wait_words(wait)} and try again"}), 429
         js = body()
         invite = accounts.check_invite(js.get("code"))
         if invite is None:
@@ -222,7 +231,7 @@ def install(app, web_dir):
         """Turn accounts on. Whoever does it becomes the owner and keeps every card already
         here. A backup of everything is saved first."""
         if accounts.enabled():
-            return jsonify({"error": "Accounts are on already"}), 400
+            return jsonify({"error": accounts.DAMAGED if accounts.damaged() else "Accounts are on already"}), 400
         js = body()
         try:
             accounts._clean_username(js.get("username"))
@@ -254,6 +263,8 @@ def install(app, web_dir):
         perms = js.get("perms")
         if js.get("role") in accounts.ROLES and perms is None:
             perms = accounts.ROLES[js["role"]]
+        if js.get("password") and username == accounts.owner() and accounts.current() != username:
+            return jsonify({"error": "Only the owner can change the owner's password"}), 403
         try:
             accounts.update(username, name=js.get("name"), perms=perms, password=js.get("password") or None)
         except ValueError as e:

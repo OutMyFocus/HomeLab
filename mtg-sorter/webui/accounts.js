@@ -77,7 +77,7 @@
           ${perms}
         </div>
         <div class="person-actions">
-          <button class="btn ghost" data-act="password">New password</button>
+          ${!u.owner || mine ? '<button class="btn ghost" data-act="password">New password</button>' : ""}
           ${u.owner || mine ? "" : '<button class="btn ghost danger" data-act="remove">Remove</button>'}
         </div>
       </div>`;
