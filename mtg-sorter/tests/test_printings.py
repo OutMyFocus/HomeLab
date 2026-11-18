@@ -226,12 +226,13 @@ def test_a_nudged_outline_only_counts_when_it_is_sure(db, monkeypatch):
     """Nudging toward a card flatters it, so a nudged outline that still isn't a sure
     match changes nothing."""
     photo = photograph(STOCK["other"])
-    hits = iter([Hit("other", 70, 6)] * 3 + [Hit("other", 62, 6)])       # three outline sizes, then the nudged one
-    monkeypatch.setattr(recognize, "_rank", lambda matcher, img: next(hits))
+    monkeypatch.setattr(recognize, "_rank_both_ways", lambda matcher, img: Hit("other", 70, 6))   # three outline sizes
+    hits = iter([Hit("other", 70, 6), Hit("other", 62, 6)])       # the closest one looked at again, then the nudged one
+    monkeypatch.setattr(recognize, "_rank", lambda matcher, img, plain=None: next(hits))
     monkeypatch.setattr(recognize, "refine_outline", lambda *a: PHOTO_CORNERS + 3)
     m = identify_outlines(db, photo, [PHOTO_CORNERS])
     assert m.distance == 70 and m.confidence == "likely"
-    hits = iter([Hit("other", 70, 6)] * 3 + [Hit("other", 30, 40)])
+    hits = iter([Hit("other", 70, 6), Hit("other", 30, 40)])
     m = identify_outlines(db, photo, [PHOTO_CORNERS])
     assert m.distance == 30 and m.confidence == "sure" and np.allclose(m.corners, PHOTO_CORNERS + 3)
 
@@ -242,9 +243,72 @@ def test_an_outline_that_leaves_the_picture_has_to_be_sure(db, monkeypatch):
     photo = photograph(STOCK["other"])
     outside = PHOTO_CORNERS + np.float32([500, 0])           # its right side is past the picture's edge
     monkeypatch.setattr(recognize, "refine_outline", lambda *a: None)
-    monkeypatch.setattr(recognize, "_rank", lambda matcher, img: Hit("other", 70, 6))
+    for look in ("_rank", "_rank_both_ways"):
+        monkeypatch.setattr(recognize, look, lambda matcher, img, plain=None: Hit("other", 70, 6))
     m = identify_outlines(db, photo, [outside])
     assert m.card is None and m.candidates[0][0].id == "other"
     assert identify_outlines(db, photo, [PHOTO_CORNERS]).card.id == "other"      # inside the picture: as before
-    monkeypatch.setattr(recognize, "_rank", lambda matcher, img: Hit("other", 30, 40))
+    for look in ("_rank", "_rank_both_ways"):
+        monkeypatch.setattr(recognize, look, lambda matcher, img, plain=None: Hit("other", 30, 40))
     assert identify_outlines(db, photo, [outside]).card.id == "other"            # sure: it counts
+
+
+def _camera(which: int, seed: int) -> np.ndarray:
+    """A photo of one printing under a light that leaves the same X-shaped glint over
+    the set symbol every time: next to the stock pictures, a disc with that glint looks
+    more like the cross."""
+    card = printing(which)
+    for a, b in (((410, 368), (440, 393)), ((410, 393), (440, 368))):
+        cv2.line(card, a, b, (235, 235, 235), 3)
+    photo = photograph(card)
+    noise = np.random.default_rng(seed).normal(0, 5, photo.shape)
+    return np.clip(photo + noise, 0, 255).astype(np.uint8)
+
+
+def _teach(db, monkeypatch, tmp_path, photo, card_id: str, upside_down: bool = False):
+    """Keep learning: the scan is kept in data/captures and learned as card_id."""
+    from mtgscanner import config
+    monkeypatch.setattr(config, "CAPTURES_DIR", tmp_path / "captures")
+    crop = recognize.warp_card(photo, PHOTO_CORNERS)
+    if upside_down:                                      # kept the way the card lay
+        crop = cv2.rotate(crop, cv2.ROTATE_180)
+    (tmp_path / "captures" / "day").mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(tmp_path / "captures" / "day" / f"{card_id}_card.jpg"), crop)
+    db.add_learned(f"day/{card_id}_card.jpg", card_id, fingerprint(crop))
+
+
+@pytest.mark.parametrize("upside_down", [False, True])
+def test_a_taught_printing_is_how_your_camera_sees_it(db, tmp_path, monkeypatch, upside_down):
+    """The stock pictures can pick the wrong printing for your camera (here a glint over
+    the set symbol). Once you have taught it the right one, your own scan of it counts
+    too: copies of that printing read right, and the other printing still reads as itself."""
+    db.pictures = stock_pictures(tmp_path)
+    assert identify_outlines(db, _camera(0, 1), [PHOTO_CORNERS]).card.id == "reprint"     # wrong, before teaching
+    _teach(db, monkeypatch, tmp_path, _camera(0, 2), "first", upside_down)
+    for seed in (3, 4):
+        assert identify_outlines(db, _camera(0, seed), [PHOTO_CORNERS]).card.id == "first"
+        assert identify_outlines(db, _camera(1, seed), [PHOTO_CORNERS]).card.id == "reprint"
+
+
+def test_a_taught_printing_does_not_take_over_the_other_one(db, tmp_path, monkeypatch):
+    """With a printing taught, the stock pictures still choose right where they did."""
+    db.pictures = stock_pictures(tmp_path)
+    _teach(db, monkeypatch, tmp_path, photograph(printing(0)), "first")
+    for which, card_id in ((0, "first"), (1, "reprint")):
+        m = identify_outlines(db, photograph(printing(which)), [PHOTO_CORNERS])
+        assert m.card.id == card_id and m.printing_lead > 0
+
+
+def test_a_stock_picture_cut_short_is_fetched_again(tmp_path):
+    """A power cut while a stock picture was being kept left half of it, grey below the
+    cut, and it was used for ever. Now it's fetched again, and kept whole."""
+    fetched = []
+    pictures = stock_pictures(tmp_path, fetched)
+    whole = cv2.imencode(".jpg", STOCK["first"])[1].tobytes()
+    (tmp_path / "stock").mkdir()
+    (tmp_path / "stock" / "first.jpg").write_bytes(whole[:len(whole) // 3])
+    assert pictures.get("first") is not None and fetched == ["first"]
+    assert (tmp_path / "stock" / "first.jpg").read_bytes() == whole
+    assert list((tmp_path / "stock").glob("*.tmp")) == []
+    again = stock_pictures(tmp_path, fetched)          # after a restart: the kept one is whole
+    assert again.get("first") is not None and fetched == ["first"]

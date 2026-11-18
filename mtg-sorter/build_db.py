@@ -24,7 +24,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterator, NamedTuple
 
 import requests
 from PIL import Image
@@ -176,6 +176,33 @@ def fetch_fingerprint(url: str) -> bytes | None:
         return None
 
 
+class _Todo(NamedTuple):
+    """One card still to fingerprint: only what its row needs, not the whole Scryfall
+    entry (all of them at once took about 1.6 GB on a full build)."""
+    id: str
+    name: str
+    set_code: str
+    set_name: str | None
+    collector_number: str | None
+    rarity: str | None
+    colors: str
+    price_usd: float | None
+    price_usd_foil: float | None
+    url: str
+    upgrade: bool           # in the database already, with an older fingerprint
+
+    def row(self, fp: bytes) -> tuple:
+        """The cards table row, in its column order."""
+        return (self.id, self.name, self.set_code, self.set_name, self.collector_number, self.rarity,
+                self.colors, self.price_usd, self.price_usd_foil, fp)
+
+
+def _todo(card: dict, url: str, upgrade: bool) -> _Todo:
+    return _Todo(card["id"], card["name"], card["set"], card.get("set_name"), card.get("collector_number"),
+                 card.get("rarity"), ",".join(card.get("colors") or card.get("color_identity") or []),
+                 price(card, "usd"), price(card, "usd_foil"), url, upgrade)
+
+
 def build(source: Iterator[dict], db_path: Path | None = None, progress: Callable[[str], None] = print,
           on_batch: Callable[[], None] | None = None, stop: threading.Event | None = None) -> dict:
     """Fingerprint every card from source that the database doesn't have yet (or has
@@ -198,7 +225,7 @@ def build(source: Iterator[dict], db_path: Path | None = None, progress: Callabl
                          (price(card, "usd"), price(card, "usd_foil"), card["id"]))
             refreshed += 1
         if (have is None or have < FINGERPRINT_BYTES) and (url := image_url(card)):
-            todo.append((card, url, have is not None))
+            todo.append(_todo(card, url, have is not None))
     conn.commit()
     progress(f"Refreshed prices for {refreshed:,} cards already in the database. "
              f"Fingerprinting {len(todo):,} cards.")
@@ -208,30 +235,22 @@ def build(source: Iterator[dict], db_path: Path | None = None, progress: Callabl
 
     def fingerprints():
         # A small window of downloads in flight, so a stop takes effect quickly and
-        # 100,000 cards never sit in memory at once.
+        # 100,000 card pictures never sit in memory at once.
         with ThreadPoolExecutor(max_workers=IMAGE_THREADS) as pool:
             for i in range(0, len(todo), 500):
                 if stop is not None and stop.is_set():
                     return
                 chunk = todo[i:i + 500]
-                yield from zip(chunk, pool.map(fetch_fingerprint, [u for _, u, _ in chunk]))
+                yield from zip(chunk, pool.map(fetch_fingerprint, [t.url for t in chunk]))
 
-    for n, ((card, _, upgrade), fp) in enumerate(fingerprints(), 1):
+    for n, (card, fp) in enumerate(fingerprints(), 1):
         if fp is None:
             skipped += 1
-        elif upgrade:
-            conn.execute("UPDATE cards SET fingerprint = ? WHERE id = ?", (fp, card["id"]))
+        elif card.upgrade:
+            conn.execute("UPDATE cards SET fingerprint = ? WHERE id = ?", (fp, card.id))
             upgraded += 1
         else:
-            conn.execute(
-                "INSERT OR REPLACE INTO cards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    card["id"], card["name"], card["set"], card.get("set_name"),
-                    card.get("collector_number"), card.get("rarity"),
-                    ",".join(card.get("colors") or card.get("color_identity") or []),
-                    price(card, "usd"), price(card, "usd_foil"), fp,
-                ),
-            )
+            conn.execute("INSERT OR REPLACE INTO cards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", card.row(fp))
             added += 1
         if n % 500 == 0 or n == len(todo):
             conn.commit()

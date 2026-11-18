@@ -16,6 +16,7 @@ look-alikes is seen, and are kept in data/stock. With no internet (or --offline)
 fingerprint's choice stands, as before.
 """
 
+import os
 import threading
 import time
 from collections import OrderedDict
@@ -43,6 +44,12 @@ SHIFT, SHIFT_STEP = 6, 2    # the scan may be this many pixels off the stock pic
 # 0.015 picked the right printing in 93% (the fingerprint alone: 80%) and overruled a
 # right choice in about 2%; lower overrules more, higher fixes less.
 BIT_COST = 0.015
+# Scans you taught (Keep learning, the Train tab) come from your own camera, so they show
+# a printing the way your camera sees it. They count as a second picture of their
+# printing, but only pull its likeness this share of the way toward theirs: a badly lined
+# up scan or one with glare must not outweigh the stock pictures.
+TAUGHT_PULL = 0.5
+TAUGHT_MOST = 3        # taught scans used per printing (the newest)
 
 FETCH_SECONDS = 3.0    # how long one stock picture may take
 LIVE_WAIT = 0.5        # how long the live camera waits for stock pictures it hasn't got yet
@@ -86,7 +93,7 @@ class StockPictures:
             if time.monotonic() - self._failed.get(card_id, -1e9) < FAIL_SECONDS:
                 return None
         path = self.folder / f"{card_id}.jpg"
-        picture = cv2.imread(str(path)) if path.exists() else None
+        picture = _read_whole(path)
         if picture is None:
             try:
                 data = self._fetch(card_id)
@@ -101,6 +108,23 @@ class StockPictures:
         ready = prepare(picture)
         with self._lock:
             self._ready[card_id] = ready
+            while len(self._ready) > KEEP_IN_MEMORY:
+                self._ready.popitem(last=False)
+        return ready
+
+    def taught(self, path: Path) -> np.ndarray | None:
+        """A scan you taught, prepared like a stock picture (None: it can't be read)."""
+        key = f"taught:{path}"
+        with self._lock:
+            if key in self._ready:
+                self._ready.move_to_end(key)
+                return self._ready[key]
+        picture = cv2.imread(str(path)) if Path(path).is_file() else None
+        if picture is None:
+            return None
+        ready = prepare(picture)
+        with self._lock:
+            self._ready[key] = ready
             while len(self._ready) > KEEP_IN_MEMORY:
                 self._ready.popitem(last=False)
         return ready
@@ -134,27 +158,56 @@ class StockPictures:
                 self._coming.pop(card_id, None)
 
     def _keep(self, path: Path, data: bytes):
+        # Written under another name, then renamed: a power cut or a full disk can't leave
+        # half a picture under the real name (it would be used for ever, grey below the cut).
+        tmp = path.with_suffix(".jpg.tmp")
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
+            tmp.write_bytes(data)
+            os.replace(tmp, path)
             self._saved += 1
             if self._saved % 200 == 1:      # now and then: don't let the folder grow for ever
                 files = sorted(self.folder.glob("*.jpg"), key=lambda f: f.stat().st_mtime)
                 for old in files[:max(0, len(files) - KEEP_ON_DISK)]:
                     old.unlink(missing_ok=True)
         except OSError:
-            pass    # a full or read-only disk: the picture still serves from memory
+            # A full or read-only disk: the picture still serves from memory.
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _read_whole(path: Path) -> np.ndarray | None:
+    """A kept stock picture, or None when there's none or it was cut short (it is then
+    removed, so it's fetched again)."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    picture = None
+    # A whole JPEG ends with its end marker (FF D9), give or take some padding.
+    if data.rstrip(b"\0 \r\n").endswith(b"\xff\xd9"):
+        picture = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if picture is None:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return picture
 
 
 def pick_printing(card_bgr: np.ndarray, lookalikes: list[tuple[str, int]],
-                  pictures: StockPictures, wait: float = FETCH_SECONDS) -> tuple[str, float] | None:
+                  pictures: StockPictures, wait: float = FETCH_SECONDS,
+                  taught: dict[str, list[np.ndarray]] | None = None) -> tuple[str, float] | None:
     """The look-alike the scan is most like, where the look-alikes differ.
 
     card_bgr is the straightened, upright card from the camera; lookalikes are
-    (card id, fingerprint distance), the fingerprint's own choice first. Returns
-    (card id, its lead over the runner-up), or None when there is nothing to go on
-    (pictures missing or not here within `wait` seconds, or the look-alikes' pictures
-    are the same)."""
+    (card id, fingerprint distance), the fingerprint's own choice first. taught holds
+    scans you taught for some of them (prepared, see StockPictures.taught), which weigh
+    in next to their stock picture (TAUGHT_PULL). Returns (card id, its lead over the
+    runner-up), or None when there is nothing to go on (pictures missing or not here
+    within `wait` seconds, or the look-alikes' pictures are the same)."""
     stock = pictures.get_all([card_id for card_id, _ in lookalikes], wait)
     if lookalikes[0][0] not in stock or len(stock) < 2:
         return None
@@ -180,11 +233,28 @@ def pick_printing(card_bgr: np.ndarray, lookalikes: list[tuple[str, int]],
             a = a - a.mean()
             shifted.append(a / (float(np.linalg.norm(a)) + 1e-6))
     shifted = np.stack(shifted)
+
+    def like(picture: np.ndarray) -> float:
+        b = picture[ys, xs].astype(np.float32)
+        b = b - b.mean()
+        return float((shifted @ (b / (float(np.linalg.norm(b)) + 1e-6))).max())
+
     scores = []
     for k, card_id in enumerate(ids):
-        b = stack[k][ys, xs]
-        b = b - b.mean()
-        likeness = float((shifted @ (b / (float(np.linalg.norm(b)) + 1e-6))).max())
+        likeness = like(stack[k])
+        own = [like(_upright(t, stack[k])) for t in (taught or {}).get(card_id, [])]
+        if own and max(own) > likeness:
+            likeness += TAUGHT_PULL * (max(own) - likeness)
         scores.append(likeness - BIT_COST * bits[card_id])
     order = np.argsort(scores)[::-1]
     return ids[int(order[0])], float(scores[order[0]] - scores[order[1]])
+
+
+def _upright(scan: np.ndarray, stock: np.ndarray) -> np.ndarray:
+    """A taught scan turned the way up its stock picture is (it may have been kept
+    upside down)."""
+    turned = cv2.rotate(scan, cv2.ROTATE_180)
+    small = [cv2.resize(p, (61, 85), interpolation=cv2.INTER_AREA).astype(np.float32).ravel()
+             for p in (scan, turned, stock)]
+    a, b, ref = (v - v.mean() for v in small)
+    return turned if float(b @ ref) > float(a @ ref) else scan
