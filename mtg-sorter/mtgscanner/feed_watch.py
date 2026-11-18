@@ -358,7 +358,7 @@ def add_feed_watch_routes(app, scanner, machine):
     hardware) the Pi does it, since the Pi has both the motor and the camera."""
     watcher = None if hasattr(machine, "feed_one") else FeedWatcher(scanner, machine)
     run = machine.feed_one if watcher is None else watcher.feed_one
-    LOST = "Lost touch with the sorter's servo board or motor ({e}). Check its power and wiring, then try again."
+    LOST = "Lost touch with the sorter's servo board or motor. Check its power and wiring, then try again."
 
     def guarded(action):
         """One card fed by hand: refused while a run drives the machine, and keeps a run
@@ -383,7 +383,8 @@ def add_feed_watch_routes(app, scanner, machine):
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
         except OSError as e:
-            return jsonify(error=LOST.format(e=e)), 503
+            print(f"Machine: {LOST} ({e})")
+            return jsonify(error=LOST), 503
         return jsonify(out | {"message": MESSAGES.get(out.get("result"), "")})
 
     @app.post("/api/machine/sort_one")
@@ -400,7 +401,8 @@ def add_feed_watch_routes(app, scanner, machine):
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
         except OSError as e:
-            return jsonify(error=LOST.format(e=e)), 503
+            print(f"Machine: {LOST} ({e})")
+            return jsonify(error=LOST), 503
         if out.get("result") in ("none", "stuck"):
             message = MESSAGES[out["result"]]
         elif out.get("dropped") is False:
@@ -430,7 +432,8 @@ def add_feed_watch_routes(app, scanner, machine):
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
         except OSError as e:
-            return jsonify(error=f"Couldn't save the zone ({e}). Is the data folder full or read-only?"), 503
+            print(f"Machine: couldn't save the feed zone ({e})")
+            return jsonify(error="Couldn't save the zone. Is the data folder full or read-only?"), 503
         return jsonify({"zone": clean_zone(body.get("zone"))})
 
     return watcher

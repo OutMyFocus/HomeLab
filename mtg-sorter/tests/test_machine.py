@@ -1062,7 +1062,7 @@ def test_a_lost_servo_board_gives_a_readable_answer(client, machine):
     for path, body in (("/api/machine/move", {"part": "pins", "position": "down"}),):
         r = client.post(path, json=body)
         assert r.status_code == 503 and r.is_json, r.data[:200]
-        assert "servo board" in r.get_json()["error"] and "Remote I/O" in r.get_json()["error"]
+        assert "servo board" in r.get_json()["error"]     # the raw error goes to the log only
     machine._kit = FakeKit()
     machine._kit.servo[config.SERVOS["pins"][0]] = Broken()
     r = client.post("/api/machine/home", json={})

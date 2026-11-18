@@ -185,7 +185,8 @@ def add_tuning_routes(app, watcher, machine):
         except RuntimeError as e:
             return jsonify(error=str(e)), timeout_error
         except OSError as e:     # saving the settings: a full or read-only disk
-            return jsonify(error=f"Couldn't save the settings ({e}). Is the data folder full or read-only?"), 503
+            print(f"Tuning: couldn't save the settings ({e})")
+            return jsonify(error="Couldn't save the settings. Is the data folder full or read-only?"), 503
 
     @app.post("/api/machine/tune")
     def tune_start():

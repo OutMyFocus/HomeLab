@@ -543,8 +543,9 @@ def add_machine_routes(app, machine: Machine, web_dir):
     def machine_page():
         return send_from_directory(web_dir, "machine.html")
 
-    HARDWARE = "Lost touch with the servo board ({e}). Check its power and wiring, then try again."
-    SAVING = "Couldn't save that ({e}). Is the data folder full or read-only?"
+    # the error itself goes to the log; the page gets the plain advice
+    HARDWARE = "Lost touch with the servo board. Check its power and wiring, then try again."
+    SAVING = "Couldn't save that. Is the data folder full or read-only?"
 
     def answer(action, oserror=HARDWARE, guard=None):
         """Run a page action. guard="check": refused (409) while a run drives the machine;
@@ -567,7 +568,8 @@ def add_machine_routes(app, machine: Machine, web_dir):
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
         except OSError as e:     # the servo board lost power, an I2C glitch, a full disk
-            return jsonify(error=oserror.format(e=e)), 503
+            print(f"Machine: {oserror} ({e})")
+            return jsonify(error=oserror), 503
         return jsonify(machine.state())
 
     @app.get("/api/machine")
@@ -594,7 +596,7 @@ def add_machine_routes(app, machine: Machine, web_dir):
         body = request.get_json(silent=True) or {}
         return answer(lambda: machine.feed(body.get("seconds"), body.get("speed"),
                                            bool(body.get("backward"))),
-                      "Lost touch with the feeder motor ({e}). Check its wiring, then try again.", guard="check")
+                      "Lost touch with the feeder motor. Check its wiring, then try again.", guard="check")
 
     @app.post("/api/machine/stop")
     def machine_stop():
