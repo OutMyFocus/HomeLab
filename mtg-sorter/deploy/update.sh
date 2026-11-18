@@ -17,6 +17,8 @@ APP=$REPO/mtg-sorter
 STATUS=$APP/data/update_status.json
 BAD=$APP/data/update_bad_commit
 FORCE=/run/mtg-sorter-force-update
+RETRY=/run/mtg-sorter-retry-update   # Update now (or mtg update): try a version that failed before
+PIP_BEFORE=$APP/data/pip-before.txt  # the packages that worked, to go back to on a rollback
 as_nic() { runuser -u nic -- "$@"; }
 
 # Records the result for the Maintenance page: status RESULT MESSAGE
@@ -51,8 +53,9 @@ main() {
     installed=$(bash "$APP/deploy/install.sh" || echo "install.sh failed")
     [ -n "$installed" ] && echo "$installed"
 
-    force=0
+    force=0 retry=0
     if [ -e "$FORCE" ]; then force=1; rm -f "$FORCE"; fi
+    if [ -e "$RETRY" ]; then retry=1; rm -f "$RETRY"; fi
 
     if ! as_nic git fetch -q origin main; then
         status failed "Couldn't reach GitHub to check for updates. Is the internet up?"
@@ -68,7 +71,7 @@ main() {
         status "up to date" "Up to date."
         exit 0
     fi
-    if [ "$force" = 0 ] && [ -e "$BAD" ] && [ "$(cat "$BAD")" = "$new" ]; then
+    if [ "$force" = 0 ] && [ "$retry" = 0 ] && [ -e "$BAD" ] && [ "$(cat "$BAD")" = "$new" ]; then
         exit 0   # this version already failed to start; wait for a newer one (or Update now)
     fi
 
@@ -95,6 +98,8 @@ main() {
     changed() { ! as_nic git diff --quiet "$old" "$new" -- "$@"; }
     if changed mtg-sorter/requirements.txt; then
         echo "requirements.txt changed, installing packages"
+        # --local: the venv also sees the system's packages (picamera2 from apt); leave those out.
+        as_nic "$APP/.venv/bin/pip" freeze --local | as_nic tee "$PIP_BEFORE" >/dev/null || true
         as_nic "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt" || echo "pip install failed" >&2
     fi
     bash "$APP/deploy/install.sh" || true   # the new version's system files
@@ -111,12 +116,22 @@ main() {
     journalctl -u mtg-sorter -n 30 --no-pager >&2 || true
     as_nic git reset -q --hard "$old"
     if changed mtg-sorter/requirements.txt; then
-        as_nic "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt" || true
+        # The exact versions that worked: "pip install -r requirements.txt" alone wouldn't
+        # take back an upgrade, since its ">=" is already met. Needs PyPI, so it may fail.
+        if [ -s "$PIP_BEFORE" ]; then
+            as_nic "$APP/.venv/bin/pip" install -q -r "$PIP_BEFORE" || echo "Couldn't put the old packages back" >&2
+        else
+            as_nic "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt" || true
+        fi
     fi
     bash "$APP/deploy/install.sh" >/dev/null || true
     echo "$new" | as_nic tee "$BAD" >/dev/null
     systemctl restart mtg-sorter
-    status "rolled back" "Version ${new:0:7} didn't start, so the Pi went back to ${old:0:7}. It tries again when there's a newer version."
+    if app_answers; then
+        status "rolled back" "Version ${new:0:7} didn't start, so the Pi went back to ${old:0:7}. It tries again when there's a newer version, or press Update now."
+    else
+        status failed "Version ${new:0:7} didn't start, and going back to ${old:0:7} didn't start either. See: mtg logs app"
+    fi
     exit 1
 }
 

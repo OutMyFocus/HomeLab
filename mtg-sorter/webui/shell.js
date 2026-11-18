@@ -97,6 +97,25 @@
       <div class="side-row"><a class="side-health" href="/maintenance" data-key="maintenance-status" hidden><i class="dot"></i><span><b>Checking…</b><small>SortR health</small></span></a><button type="button" class="side-btn" data-theme-toggle aria-label="Light or dark">${icon("auto")}</button><button type="button" class="side-btn" data-collapse aria-label="Smaller sidebar" title="Smaller sidebar">${icon("side")}</button></div>
     </div>`;
   document.body.prepend(side);
+  // "Skip to the page" for the keyboard: the first stop, before the sidebar's links.
+  const skip = document.createElement("a");
+  skip.className = "skip-link"; skip.href = "#page-content"; skip.textContent = "Skip to the page";
+  skip.onclick = e => {
+    // The page's content comes after this script, so it's looked up when the link is used.
+    // Machine and Maintenance have no <main>: their first block after the top bar is it.
+    const target = document.querySelector("main") || (() => {
+      for (let el = header?.nextElementSibling; el; el = el.nextElementSibling) {
+        if (!/^(SCRIPT|STYLE|ASIDE|NAV|SVG)$/i.test(el.tagName) && !el.hidden && !el.classList.contains("tab-bar")) return el;
+      }
+      return null;
+    })();
+    if (!target) return;
+    e.preventDefault();
+    if (!target.id) target.id = "page-content";
+    if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+    target.focus();
+  };
+  document.body.prepend(skip);
   try { if (localStorage.getItem("sortr-side") === "mini") root.classList.add("side-mini"); } catch (e) {}
   side.querySelector("[data-collapse]").onclick = () => {
     const mini = root.classList.toggle("side-mini");
@@ -187,13 +206,19 @@
     for (const b of document.querySelectorAll("[data-theme-toggle]")) {
       b.innerHTML = icon(THEME_ICON[t] || "auto");
       b.title = `Theme: ${THEME_NAME[t] || t}. Click to switch`;
+      b.setAttribute("aria-label", `Theme: ${THEME_NAME[t] || t}. Switch`);
     }
     const dark = t === "dark" || t === "oled" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? (t === "oled" ? "#000000" : "#0b0c12") : "#f4f5f9");
   }
   function cycleTheme() {
     const t = root.dataset.theme || "system";
-    const next = THEMES[(THEMES.indexOf(t === "oled" ? "dark" : t) + 1) % THEMES.length];
+    // From "Matches this device", the first press always shows a change: to the opposite of
+    // what the device shows now, then to the device's own, then back to matching it.
+    const deviceDark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const opposite = deviceDark ? "light" : "dark", own = deviceDark ? "dark" : "light";
+    const base = THEMES.includes(t === "oled" ? "dark" : t) ? (t === "oled" ? "dark" : t) : "system";
+    const next = base === "system" ? opposite : base === opposite ? own : "system";
     const look = readLook(); look.theme = next;
     try { localStorage.setItem(LOOK_KEY, JSON.stringify(look)); } catch (e) {}
     root.classList.add("theme-swap");
@@ -224,8 +249,9 @@
     const el = document.createElement("div");
     el.className = "cmdk"; el.hidden = true;
     el.innerHTML = `<div class="cmdk-scrim"></div><div class="cmdk-box" role="dialog" aria-modal="true" aria-label="Search SortR">
-      <label class="cmdk-input">${icon("search")}<input type="search" placeholder="Search your cards, pages and actions" autocomplete="off" spellcheck="false" aria-label="Search"><kbd>Esc</kbd></label>
-      <div class="cmdk-list" role="listbox"></div>
+      <div class="cmdk-input">${icon("search")}<input type="search" placeholder="Search your cards, pages and actions" autocomplete="off" spellcheck="false" aria-label="Search"
+        role="combobox" aria-expanded="true" aria-controls="cmdk-list" aria-autocomplete="list"><kbd>Esc</kbd><button type="button" class="cmdk-close">Close</button></div>
+      <div class="cmdk-list" id="cmdk-list" role="listbox" aria-label="Results"></div>
       <div class="cmdk-foot"><span><kbd>↑</kbd><kbd>↓</kbd> to move</span><span><kbd>Enter</kbd> to open</span><span class="cmdk-note"></span></div></div>`;
     document.body.append(el);
     const input = el.querySelector("input"), listEl = el.querySelector(".cmdk-list"), note = el.querySelector(".cmdk-note");
@@ -271,15 +297,28 @@
       listEl.innerHTML = items.length ? items.map((it, i) => {
         const h = it.kind !== kind ? `<h4>${it.kind}</h4>` : ""; kind = it.kind;
         const pic = it.image !== undefined ? `<span class="cmdk-thumb">${it.image ? `<img src="${esc(it.image)}" alt="" loading="lazy">` : ""}</span>` : `<span class="cmdk-ico">${icon(it.icon)}</span>`;
-        return `${h}<a class="cmdk-item" role="option" data-i="${i}" href="${esc(it.href || "#")}"${i === sel ? ' aria-selected="true"' : ""}>${pic}<span class="cmdk-txt"><b>${esc(it.label)}</b><small>${esc(it.desc || "")}</small></span>${it.end ? `<em>${esc(it.end)}</em>` : `<i class="cmdk-go">${icon("enter")}</i>`}</a>`;
+        return `${h}<a class="cmdk-item" role="option" id="cmdk-opt-${i}" data-i="${i}" href="${esc(it.href || "#")}"${i === sel ? ' aria-selected="true"' : ""}>${pic}<span class="cmdk-txt"><b>${esc(it.label)}</b><small>${esc(it.desc || "")}</small></span>${it.end ? `<em>${esc(it.end)}</em>` : `<i class="cmdk-go">${icon("enter")}</i>`}</a>`;
       }).join("") : `<p class="cmdk-empty">Nothing matches “${esc(input.value)}”.</p>`;
       listEl.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+      showSel();
+    }
+    // Screen readers follow the highlighted result through aria-activedescendant.
+    function showSel() {
+      if (items[sel] && listEl.querySelector("#cmdk-opt-" + sel)) input.setAttribute("aria-activedescendant", "cmdk-opt-" + sel);
+      else input.removeAttribute("aria-activedescendant");
     }
     function go(i) {
       const it = items[i]; if (!it) return;
       close();
       if (it.run) it.run();
-      else if (it.href) { location.href = it.href; if (it.href.startsWith(here + "#") || it.href === here + location.search) location.reload(); }
+      else if (it.href) {
+        // Only the part after # changing doesn't load the page, and the pages read it as they
+        // load (#add, #export, #photos): then reload. Any other change loads it by itself.
+        const u = new URL(it.href, location.href);
+        const same = u.pathname === location.pathname && u.search === location.search;
+        location.href = it.href;
+        if (same) location.reload();
+      }
     }
     function open() {
       if (!el.hidden) return;
@@ -295,14 +334,26 @@
         sel = (sel + (e.key === "ArrowDown" ? 1 : -1) + items.length) % Math.max(1, items.length);
         for (const a of listEl.querySelectorAll(".cmdk-item")) a.toggleAttribute("aria-selected", +a.dataset.i === sel);
         listEl.querySelector('[aria-selected]')?.scrollIntoView({ block: "nearest" });
+        showSel();
       } else if (e.key === "Enter") { e.preventDefault(); go(sel); }
     });
     listEl.addEventListener("click", e => { const a = e.target.closest(".cmdk-item"); if (a) { e.preventDefault(); go(+a.dataset.i); } });
     listEl.addEventListener("mousemove", e => {
       const a = e.target.closest(".cmdk-item"); if (!a || +a.dataset.i === sel) return;
       sel = +a.dataset.i; for (const x of listEl.querySelectorAll(".cmdk-item")) x.toggleAttribute("aria-selected", x === a);
+      showSel();
     });
     el.querySelector(".cmdk-scrim").onclick = close;
+    el.querySelector(".cmdk-close").onclick = e => { e.preventDefault(); close(); };
+    // Tab stays inside the box while it's open (it's a dialog over the page).
+    el.querySelector(".cmdk-box").addEventListener("keydown", e => {
+      if (e.key !== "Tab" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const stops = [...el.querySelectorAll("input, .cmdk-close, .cmdk-item")].filter(x => x.offsetParent !== null);
+      if (!stops.length) return;
+      const first = stops[0], lastStop = stops[stops.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); lastStop.focus(); }
+      else if (!e.shiftKey && document.activeElement === lastStop) { e.preventDefault(); first.focus(); }
+    });
     document.addEventListener("keydown", e => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); el.hidden ? open() : close(); return; }
       if (!el.hidden && e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); close(); }
@@ -352,6 +403,7 @@
       const r = await fetch("/api/health");
       if (!r.ok) return;
       const h = await r.json();
+      if (!Array.isArray(h.problems)) return;   // not allowed to see what's wrong
       markHealth(h);
       window.MTGHealth = h;
       window.dispatchEvent(new CustomEvent("mtg-health", { detail: h }));

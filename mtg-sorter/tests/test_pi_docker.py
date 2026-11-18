@@ -427,3 +427,99 @@ def test_a_locked_pi_lets_the_server_see_its_camera_and_lights(db, pi, data):  #
     with pi_client.application.test_request_context("/stream.mjpg", headers={"X-Machine-Key": "secret-key"}, environ_base=TOWER):
         assert server_allowed()                                # the live stream the server's camera watches
     assert pi_client.get("/api/collection", headers={"X-Machine-Key": "secret-key"}, environ_base=TOWER).status_code == 401
+
+
+# --- every RemoteMachine call reaches the Pi's route with the body it expects --------------
+
+class RecordingServo:
+    """A servo that remembers every angle it was sent, so a quick move and back still shows."""
+    def __init__(self):
+        self.sent = []
+
+    @property
+    def angle(self):
+        return self.sent[-1] if self.sent else None
+
+    @angle.setter
+    def angle(self, value):
+        self.sent.append(value)
+
+
+def _drop(remote, m):
+    pins = config.SERVOS["pins"][0]
+    m._kit.servo[pins] = RecordingServo()
+    remote.drop(1, 0.01, 0.01, 0.01)
+    assert config.SERVOS["pins"][1]["down"] in m._kit.servo[pins].sent
+
+
+def _save_sort(remote, m):
+    remote.save_sort(pins_seconds=0.3)
+    assert m.sort_defaults()["pins_seconds"] == 0.3
+    assert remote.sort_defaults()["pins_seconds"] == 0.3
+
+
+def _save_feeder(remote, m):
+    remote.save_feeder(0.8, 0.6, backoff=0.2, push=0.1)
+    d = m.state()["feeder_defaults"]
+    assert (d["seconds"], d["speed"], d["backoff"], d["push"]) == (0.8, 0.6, 0.2, 0.1)
+    assert remote.feeder_defaults() == d
+
+
+def _switches(remote, m):
+    remote.set_feeder_reverse(True)
+    remote.set_wide_travel(not config.SERVO_WIDE_TRAVEL)
+    remote.set_home_at_startup(False)
+    s = m.state()
+    assert s["feeder_defaults"]["reverse"] is True and s["wide_travel"] is (not config.SERVO_WIDE_TRAVEL)
+    assert s["home_at_startup"] is False
+
+
+def _feed_zone(remote, m):
+    remote.save_feed_zone([0.1, 0.2, 0.6, 0.7])
+    assert remote.feed_zone() == [0.1, 0.2, 0.6, 0.7]
+
+
+def _reset(remote, m):
+    remote.save_position("pins", "down", 61)
+    assert m.servos()["pins"][1]["down"] == 61
+    remote.reset_saved()
+    assert m.servos()["pins"][1]["down"] == config.SERVOS["pins"][1]["down"]
+
+
+def _self_test(remote, m):
+    report = remote.self_test()
+    assert report and all(t["ok"] for t in report), report
+
+
+def _statuses(remote, m):
+    assert remote.tune_status().get("running") is False
+    assert remote.sort_status().get("running") is False
+
+
+def _sort_decide(remote, m):
+    try:
+        answer = remote.sort_decide("stop")
+    except ValueError as e:       # nothing is waiting for a decision: the Pi says so in words
+        answer = {"error": str(e)}
+    assert isinstance(answer, dict) and answer
+    with pytest.raises(ValueError):   # a word the Pi doesn't know comes back as the Pi's own error
+        remote.sort_decide("skip")
+
+
+def _relax_and_angle(remote, m):
+    remote.set_angle(1, 77)
+    assert m._kit.servo[1].angle == 77
+    remote.relax_all()
+    remote.home()
+    assert remote.servos()["pins"] == m.servos()["pins"]
+
+
+@pytest.mark.parametrize("case", [_drop, _save_sort, _save_feeder, _switches, _feed_zone, _reset, _self_test,
+                                  _statuses, _sort_decide, _relax_and_angle], ids=lambda f: f.__name__.strip("_"))
+def test_each_remote_machine_call_works_on_the_pi(db, pi, monkeypatch, case):  # noqa: F811
+    """feed_one and sort_one are left out: they wait for the Pi's camera to see a card."""
+    m, pi_client = pi
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    remote = RemoteMachine("http://10.0.0.247:5000", key="")
+    remote.http = Wire(pi_client)
+    case(remote, m)

@@ -98,7 +98,8 @@
   // Dark text on light colors, white text on dark ones.
   function onColor(hex) {
     const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
-    return .2126 * r + .7152 * g + .0722 * b > .42 ? "#121417" : "#ffffff";
+    const L = .2126 * r + .7152 * g + .0722 * b;   // whichever ink reads better on it (WCAG contrast)
+    return 1.05 / (L + .05) >= (L + .05) / (.0069 + .05) ? "#ffffff" : "#121417";
   }
 
   function applyLook() {

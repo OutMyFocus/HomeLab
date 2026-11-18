@@ -16,7 +16,7 @@ You shouldn't need a terminal for normal use. When you do, everything is one wor
 | **Updates** | Which version is running and what the last update did. **Update now** checks GitHub straight away. **Fix updates** unsticks updates (see below). The switch turns automatic updates on or off. |
 | **Test the moving parts** | Moves every servo through its positions and back, then turns the feeder for a moment, and lists anything that didn't respond. |
 | **Wi-Fi** | The network it's on and the signal. Save another network (a second home, your phone's hotspot) before you move the sorter, and it joins that one by itself. |
-| **Backup** | **Download backup** saves your collection, card database, everything the scanner learned, and your settings in one zip. **Restore a backup** puts one back. It keeps a copy of what was there first, in `data/backups`. |
+| **Backup** | **Download backup** saves your collection, card database, everything the scanner learned, and your settings in one zip. **Restore a backup** puts one back. It keeps a copy of what was there first, in `data/backups`. For a zip made on the other machine (the server's on the Pi, or the Pi's on the server), keep **Cards and collection only** ticked so this one keeps its own camera, machine and login settings. |
 | **Logs** | What the app and the Pi wrote down. If something goes wrong, **Download** the log and share it. |
 
 **Servo angles** are set on the **Machine** page: move a part's slider until it sits right,
@@ -104,10 +104,13 @@ SSH in from PowerShell on your PC: `ssh nic@mtgsorter.local` (or `ssh nic@10.0.0
 |---|---|
 | `mtg` | lists these |
 | `mtg status` | the same check-up as the Maintenance page |
-| `mtg logs` | the app's messages as they happen (Ctrl+C to stop). `mtg logs updates` for updates |
+| `mtg logs` | the app's messages as they happen (Ctrl+C to stop). `mtg logs updates` for updates, and `mtg logs system` for the Pi's own warnings |
 | `mtg restart` | restarts the app |
-| `mtg update` | checks GitHub for a new version now |
+| `mtg update` | checks GitHub for a new version now (and tries again a version that didn't start) |
 | `mtg fix-updates` | unsticks updates (sets edits made on the Pi aside) |
+| `mtg autoupdate on` / `off` | turns automatic updates on or off |
+| `mtg docker on` / `off` | runs the same Docker image as the server, or goes back to the git copy (see [deploy/PI_DOCKER.md](deploy/PI_DOCKER.md)) |
+| `mtg machine-key` | the key a server needs to drive this machine while a PIN or accounts are on |
 | `mtg backup` | saves a backup zip in your home folder on the Pi |
 | `mtg repair` | runs the setup again: fixes missing packages, services and settings, never touches your cards |
 | `mtg camera` | lists the cameras the Pi can see |
@@ -120,12 +123,19 @@ SSH in from PowerShell on your PC: `ssh nic@mtgsorter.local` (or `ssh nic@10.0.0
 - `deploy/update.sh` runs every 5 minutes (`mtg-sorter-update.timer`). It installs the
   system files (`deploy/install.sh`), pulls `main`, restarts the app, and rolls back if the app
   doesn't come up. It writes what happened to `data/update_status.json`.
+- In Docker mode (`mtg docker on`), `deploy/update.sh` hands over to `deploy/update-docker.sh`,
+  which pulls the server's newest image instead of `main`. The app in the container can't use
+  sudo, so it asks the Pi for root jobs by leaving a file in `data/host/`. See
+  [deploy/PI_DOCKER.md](deploy/PI_DOCKER.md).
 - `deploy/mtg-sorter-admin` is the only thing the web app can run as root: restart, reboot,
   shut down, update, automatic updates on/off, logs, and saving Wi-Fi networks. The sudo rule in
   `deploy/mtg-sorter.sudoers` allows just that file.
 - Your data lives in `data/`, which git never touches: `collection.csv`, `cards.db` (with
   what the scanner learned), `app_settings.json`, `machine_settings.json` (servo angles),
   and `captures/` (saved scans).
-- The app has no login. Anyone on your Wi-Fi can open it, including the Restart and Shut down
-  buttons. Keep it off the open internet unless something like Cloudflare Access is in front
-  (see [deploy/REMOTE_ACCESS.md](deploy/REMOTE_ACCESS.md)).
+- Until you turn on Accounts (Settings, **Accounts**, Turn on accounts), the app has no login,
+  or only a shared PIN. Anyone who gets in can use everything, including the Restart and Shut
+  down buttons. With accounts on, each person logs in and only admins get Maintenance (see
+  [README.md, Accounts](README.md#accounts-everyone-has-their-own-cards)). Keep it off the open
+  internet unless accounts or something like Cloudflare Access is in front (see
+  [deploy/REMOTE_ACCESS.md](deploy/REMOTE_ACCESS.md)).
