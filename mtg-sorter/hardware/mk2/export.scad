@@ -25,7 +25,9 @@ if (part == "key") key();                                           // bowtie ke
 // sorting levels: the fascia (the machine's face) on the plate
 if (part == "lv1_frame") rotate([90, 0, 0]) lv1_frame();
 if (part == "lv2_frame") rotate([90, 0, 0]) lv2_frame();
-if (part == "door") rotate([0, 90, 0]) door();                    // on its edge (brim)
+if (part == "door_b") rotate([180, 0, 0]) door(false);             // flat, the floor face down
+if (part == "door_f") rotate([180, 0, 0]) door(true);
+if (part == "door_coupler") rotate([0, -90, 0]) door_coupler();      // standing on its spline end (brim)
 if (part == "carriage1") carriage(1);
 if (part == "carriage2") carriage(2);
 if (part == "lever") rotate([180, 0, 0]) lever();

@@ -80,30 +80,70 @@ module finger_groove(y, zt, xe) {
     translate([-pk_x - 1, y - 1.8, zt - finger_dz]) cube([2 * pk_x + 2, 3.6, finger_dz + 0.2]);
     for (m = [0, 1]) mirror([m, 0, 0]) translate([xe, y, zt - finger_dz]) rotate([0, 45, 0]) cube([1.414, 3.6, 1.414], center = true);
 }
-module door() {
+// The doors print flat, top face down, as a back and a front door (the front one is the back one
+// mirrored, so each has its servo end on the left once it's in). The servo's shaft no longer takes a
+// horn: a small printed coupler presses onto its spline, passes through the frame's shaft hole
+// (opened to 6.5 mm) and keys into a socket in the door's left end. The door's right end turns on a
+// 3 x 10 mm pin pressed into the frame's boss, 2.3 mm of it standing out.
+door_l = -31.0;                        // the door's servo end: 2.5 clear of the frame, so the door
+                                       // slides left off the pin to go in and out
+cp_hole = 6.5;                         // the frame's shaft hole, opened by hand (1/4 inch works too)
+cp_body = 6.2;  cp_collar = 5.2;  cp_bore = 4.7;   // the coupler: in the hole, in the gap, its spline bore
+cp_key = 3.6;  cp_fin = [2.0, 2.9];    // its key: a round with one fin (width, out to this radius)
+cp_fin_a = 45;                         // the fin, shut door: 45 degrees below the door's plate
+sk_d = cp_key + 0.4;  sk_fin = [cp_fin[0] + 0.4, cp_fin[1] + 0.3];  sk_depth = 3.6;
+module fin_2d(w, r) rotate(-180 + cp_fin_a) translate([0, -w / 2]) square([r, w]);   // in the door's (y, z), about the axis
+module door_b() {
+    len = knuckle_x - door_l;
     difference() {
         union() {
-            translate([-knuckle_x, door_gap, -door_t]) cube([2 * knuckle_x, hinge_y - door_gap, door_t]);
-            translate([-knuckle_x, hinge_y, hinge_z]) rotate([0, 90, 0]) cylinder(r = knuckle_r, h = 2 * knuckle_x);
-            translate([-knuckle_x, hinge_y - knuckle_r, hinge_z]) cube([2 * knuckle_x, knuckle_r, -hinge_z]);
+            translate([door_l, door_gap, -door_t]) cube([len, hinge_y - door_gap, door_t]);
+            intersection() {
+                translate([door_l, hinge_y, hinge_z]) rotate([0, 90, 0]) cylinder(r = knuckle_r, h = len, $fn = 48);
+                translate([door_l - 1, 0, -10]) cube([len + 2, 100, 10]);   // flat top: prints face down
+            }
+            translate([door_l, hinge_y - knuckle_r, hinge_z]) cube([len, knuckle_r, -hinge_z]);
+            // the socket's lobe, round the fin, below the plate
+            translate([door_l, hinge_y, hinge_z]) rotate([90, 0, 90]) linear_extrude(sk_depth + 1.2)
+                hull() { circle(r = 2.5, $fn = 32); rotate(-180 + cp_fin_a) translate([2.6, 0]) circle(r = 1.6, $fn = 24); }
         }
-        // fingers' grooves: 0.4 below the fingers, with a 45 degree lead-in where they come in
         finger_groove(finger_y, 0, knuckle_x);
-        // the servo's single-arm horn presses into the left end; the right end turns on a 3 mm pin
-        translate([-knuckle_x - 0.01, hinge_y, hinge_z]) rotate([0, 90, 0]) linear_extrude(1.8) { circle(d = horn1_hub); rotate(-90) translate([0, -horn1_w / 2]) square([horn1_len - 7, horn1_w]); }
-        translate([-knuckle_x - 0.01, hinge_y, hinge_z]) rotate([0, 90, 0]) cylinder(d = 2.4, h = 8);
+        // the coupler's socket (servo end)
+        translate([door_l - 0.01, hinge_y, hinge_z]) rotate([90, 0, 90]) linear_extrude(sk_depth + 0.01) {
+            circle(d = sk_d, $fn = 32); fin_2d(sk_fin[0], sk_fin[1]); }
+        // the pin's hole (right end)
         translate([knuckle_x - 8, hinge_y, hinge_z]) rotate([0, 90, 0]) cylinder(d = pin_free, h = 8.02, $fn = 32);
-        // the same horn pocket and pin hole at the other end, so one part is both doors
-        translate([knuckle_x + 0.01, hinge_y, hinge_z]) rotate([0, -90, 0]) linear_extrude(1.8) { circle(d = horn1_hub); rotate(90) translate([0, -horn1_w / 2]) square([horn1_len - 7, horn1_w]); }
-        translate([-knuckle_x - 0.01, hinge_y, hinge_z]) rotate([0, 90, 0]) cylinder(d = pin_free, h = 8.02, $fn = 32);
-        // the floor surface ends in a 0.4 chamfer at the push edges
-        for (m = [0, 1]) mirror([m, 0, 0]) translate([pk_x - 1, -1, -1]) rotate([-90, 0, 0]) difference() {
-            translate([0, -2, 0]) cube([2, 2, hinge_y + 2]); translate([0, 0, -1]) cylinder(r = 1, h = hinge_y + 4, $fn = 24); }
+        // round the top edges at both ends, where the cards are pushed off
+        for (e = [[door_l + 1, 1], [pk_x - 1, -1]]) translate([e[0], -1, -1]) rotate([-90, 0, 0]) difference() {
+            translate([e[1] > 0 ? -2 : 0, -2, 0]) cube([2, 2, hinge_y + 2]); translate([0, 0, -1]) cylinder(r = 1, h = hinge_y + 4, $fn = 24); }
+    }
+}
+module door(front = false) { if (front) mirror([1, 0, 0]) door_b(); else door_b(); }
+// The coupler, its axis along +x from the servo's top face (x = 0): the spline bore, the round that
+// turns in the frame's hole, a collar in the gap that keeps the door on its pin, then the key.
+cp_len = [0.2, 3.2, 3.5, 3.5 + 2.2, 3.5 + 2.2 + 2.6];   // body start, bore end, frame face, collar end, key end
+module door_coupler() {
+    difference() {
+        union() {
+            translate([cp_len[0], 0, 0]) rotate([0, 90, 0]) cylinder(d = cp_body, h = cp_len[2] - cp_len[0], $fn = 48);
+            translate([cp_len[2] - 0.01, 0, 0]) rotate([0, 90, 0]) cylinder(d = cp_collar, h = cp_len[3] - cp_len[2] + 0.01, $fn = 48);
+            translate([cp_len[3] - 0.01, 0, 0]) rotate([90, 0, 90]) linear_extrude(cp_len[4] - cp_len[3] + 0.01) {
+                circle(d = cp_key, $fn = 32); fin_2d(cp_fin[0], cp_fin[1]); }
+        }
+        translate([cp_len[0] - 0.01, 0, 0]) rotate([0, 90, 0]) cylinder(d = cp_bore, h = cp_len[1] - cp_len[0] + 0.01, $fn = 32);
+        translate([cp_len[0] - 0.01, 0, 0]) rotate([0, 90, 0]) cylinder(d1 = cp_bore + 0.6, d2 = cp_bore, h = 0.4, $fn = 32);   // lead-in
     }
 }
 module door_at(L, front, open = 0) {
     a = open * 90;
-    translate([0, 0, L]) rotate([0, 0, front ? 180 : 0]) translate([0, hinge_y, hinge_z]) rotate([a, 0, 0]) translate([0, -hinge_y, -hinge_z]) door();
+    translate([0, 0, L]) rotate([0, 0, front ? 180 : 0]) translate([0, hinge_y, hinge_z]) rotate([a, 0, 0]) translate([0, -hinge_y, -hinge_z]) door(front);
+}
+// the door servos' shafts, as cylinders of diameter d (for the checks)
+module door_shafts(d) for (f = [-1, 1]) translate([sv_door_x + sv_top - 0.01, f * hinge_y, lv1_z + hinge_z]) rotate([0, 90, 0]) cylinder(d = d, h = 4, $fn = 32);
+// the coupler on its servo, turned with the door (the front one mirrored like its door)
+module coupler_at(L, front, open = 0) {
+    a = open * 90;
+    translate([sv_door_x + sv_top, 0, L + hinge_z]) mirror([0, front ? 1 : 0, 0]) translate([0, hinge_y, 0]) rotate([a, 0, 0]) door_coupler();
 }
 
 // ---- pusher carriage ----------------------------------------------------------------------------
@@ -295,6 +335,9 @@ module lv1_frame() {
         // servo pockets (they slide in from the outside, -x)
         translate([sv_door_x, -hinge_y, L + hinge_z]) mirror([1, 0, 0]) servo_x_cut([0, 0, 1]);
         translate([sv_door_x, hinge_y, L + hinge_z]) mirror([1, 0, 0]) mirror([0, 0, 1]) servo_x_cut([0, 0, 1], -1);
+        // the door servos' shaft holes, wide enough for the door couplers. (The first frames came out
+        // with a 5.5 mm hole stopping 0.6 short of the inside: open it to 6.5 mm by hand.)
+        for (f = [-1, 1]) translate([sv_door_x + sv_top - 0.01, f * hinge_y, L + hinge_z]) rotate([0, 90, 0]) cylinder(d = cp_hole, h = 3.52, $fn = 40);
         // doors' pins (3 x 10 mm, pressed into the boss)
         for (f = [-1, 1]) translate([knuckle_x - 2, f * hinge_y, L + hinge_z]) rotate([0, 90, 0]) pin_press_cut(10);
         // the doors swing through here
