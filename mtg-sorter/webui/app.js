@@ -25,18 +25,41 @@
     const t = $("toast"); $("toastText").textContent = msg;
     t.hidden = true; void t.offsetWidth; t.hidden = false;   // restart the slide-in
     clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200);
+    speak(msg);
+  }
+  // Screen readers read out what lands in #toastLive (always in the page, never shown).
+  // Emptied first, so the same message twice is read twice.
+  function speak(msg) {
+    const live = $("toastLive"); if (!live) return;
+    live.textContent = "";
+    requestAnimationFrame(() => { live.textContent = msg; });
   }
 
   // Every request names this page's scanner (see "this device's camera" below). Until the
   // device scans, that name is unknown to the app and the machine's scanner answers.
   const scannerHeaders = () => ({ "X-Scanner": device.token });
+  // A failed request throws an Error with the app's own words (err.status: its HTTP status).
+  // A button whose request fails says why in a toast (see "unhandledrejection" below).
   async function api(path, body) {
-    const r = await fetch(path, body === undefined ? { headers: scannerHeaders() }
-      : { method: "POST", headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify(body) });
+    let r;
+    try {
+      r = await fetch(path, body === undefined ? { headers: scannerHeaders() }
+        : { method: "POST", headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify(body) });
+    } catch (e) {
+      const err = new Error("Can't reach the scanner. Check the connection and try again");
+      err.status = 0; err.fromApi = true; throw err;
+    }
     if (r.status === 401) { location.href = "/lock?next=/scan"; throw new Error("Locked"); }   // the PIN lock (Settings page)
-    if (!r.ok) throw new Error(r.status);
-    return r.json();
+    const js = await r.json().catch(() => null);
+    if (!r.ok) {
+      const err = new Error(js?.error || `Something went wrong (error ${r.status}). Try again`);
+      err.status = r.status; err.fromApi = true; throw err;
+    }
+    return js;
   }
+  window.addEventListener("unhandledrejection", ev => {
+    if (ev.reason?.fromApi) { ev.preventDefault(); toast(ev.reason.message); }
+  });
 
   // ---------- look (saved in this browser only) ----------
   const LOOK_KEY = "mtg-scanner-look";
@@ -75,7 +98,8 @@
   // Dark text on light colors, white text on dark ones.
   function onColor(hex) {
     const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
-    return .2126 * r + .7152 * g + .0722 * b > .42 ? "#121417" : "#ffffff";
+    const L = .2126 * r + .7152 * g + .0722 * b;   // whichever ink reads better on it (WCAG contrast)
+    return 1.05 / (L + .05) >= (L + .05) / (.0069 + .05) ? "#ffffff" : "#121417";
   }
 
   function applyLook() {
@@ -184,6 +208,7 @@
   }
 
   function render(s) {
+    const prevStatus = state?.status;
     state = s;
     if (s.bin_names) BIN_NAMES = s.bin_names;
     $("meta").classList.remove("down");
@@ -191,8 +216,12 @@
     const others = (s.scanners || []).map(o => o.owner || o.name);
     $("othersScanning").hidden = !others.length;
     $("othersScanning").textContent = others.length ? `Also scanning: ${others.join(", ")}` : "";
-    if (device.on && isPhone && s.status === "locked" && state?.status !== "locked") { try { navigator.vibrate?.(25); } catch (e) {} }
-    const st = $("camStatus"); st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status;
+    if (device.on && isPhone && s.status === "locked" && prevStatus !== "locked") { try { navigator.vibrate?.(25); } catch (e) {} }
+    const st = $("camStatus");
+    if (!device.on && s.camera?.pi && s.camera.error) {
+      // the sorter's Pi camera, over the network, isn't working: say why (it clears by itself)
+      st.textContent = `${s.camera.error} More on the Maintenance page.`; st.className = "camera-status unknown warn";
+    } else { st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status; }
     checkPaused(s);
     showCamera(s.status !== "waiting");
     $("noCamHint").textContent = s.on_pi
@@ -251,10 +280,12 @@
 
     const save = $("saveBtn");
     const unsaved = s.cards.filter(x => x.card && !x.saved).length, saved = s.cards.filter(x => x.saved).length;
-    save.disabled = !unsaved;
+    const ready = toSave(s), guess = ready ? null : guessToSave(s, sel);
+    save.disabled = !ready && !guess;
     save.classList.toggle("saved", !unsaved && saved > 0);
     save.innerHTML = !unsaved && saved ? '<svg><use href="#i-check"/></svg>All saved'
-      : unsaved > 1 ? `Save all ${unsaved} cards <kbd>Space</kbd>` : "Save card <kbd>Space</kbd>";
+      : guess ? "Save this guess <kbd>Space</kbd>"
+      : ready > 1 ? `Save all ${ready} cards <kbd>Space</kbd>` : "Save card <kbd>Space</kbd>";
     $("learnSwitch").checked = s.learn;
     showSorter(s);
     $("foilBtn").setAttribute("aria-pressed", s.foil);
@@ -287,13 +318,15 @@
   }
 
   // ---------- alerts: a valuable card or a wishlist card was just saved (Settings page) ----------
-  let lastSaved = null, bannerT;
+  // Each saved card has a number that only goes up (seq), so two cards saved in the same
+  // second are both seen.
+  let lastSeq = null, bannerT;
   function announce(s) {
-    const newest = s.session[0]?.scanned_at || "";
-    if (lastSaved === null) { lastSaved = newest; return; }      // the page just opened: nothing is new
-    if (!newest || newest === lastSaved) return;
-    const fresh = s.session.filter(r => r.scanned_at > lastSaved);
-    lastSaved = newest;
+    const newest = Math.max(0, ...s.session.map(r => r.seq || 0));
+    if (lastSeq === null) { lastSeq = newest; return; }      // the page just opened: nothing is new
+    if (newest <= lastSeq) return;
+    const fresh = s.session.filter(r => (r.seq || 0) > lastSeq);
+    lastSeq = newest;
     const a = s.alerts || {};
     const big = a.big_card != null ? fresh.filter(r => (r.price || 0) >= a.big_card).sort((x, y) => y.price - x.price)[0] : null;
     const wish = a.wishlist ? fresh.find(r => r.wanted) : null;
@@ -304,6 +337,7 @@
     b.innerHTML = `<img src="${esc(hit.image.replace("version=normal", "version=small"))}" alt=""><span>${hit === wish ? "On your wishlist!" : "Valuable card!"} ${esc(hit.name)}<small>${money(hit.price)} · ${esc(hit.set)} · bin ${hit.bin}</small></span>`;
     b.hidden = true; void b.offsetWidth; b.hidden = false;
     clearTimeout(bannerT); bannerT = setTimeout(() => b.hidden = true, 5000);
+    speak(`${hit === wish ? "On your wishlist!" : "Valuable card!"} ${hit.name}, ${money(hit.price)}, bin ${hit.bin}`);
     if (a.sound) window.mtgChime?.(hit === wish ? "wish" : "big");
   }
   $("alertBanner").onclick = () => $("alertBanner").hidden = true;
@@ -390,7 +424,7 @@
     try { localStorage.setItem("mtg-scanner-who", device.who); } catch (e) {}
     $("camStatus").textContent = "Handing the camera to the scanner…";
     try { render(await claimScanner()); }
-    catch (e) { stopDeviceCamera(false); toast("Couldn't hand the camera to the scanner. Check the connection and try again"); return false; }
+    catch (e) { stopDeviceCamera(false); toast(e.status === 403 ? e.message : "Couldn't hand the camera to the scanner. Check the connection and try again"); return false; }
     camsLoadedAt = Date.now(); loadCameras();   // the menu now shows this device as the camera
     sendFrame();
     toast(device.who ? `Scanning as ${device.who}` : `Scanning with this ${deviceWord}'s camera`);
@@ -424,7 +458,7 @@
     for (let tries = 0; ; tries++) {
       try { return await api("/api/camera", ask); }
       catch (e) {
-        if (e.message === "Locked" || e.message === "400" || tries >= 3 || !device.on) throw e;
+        if (e.message === "Locked" || e.status === 400 || e.status === 403 || tries >= 3 || !device.on) throw e;
         await new Promise(res => setTimeout(res, wait)); wait *= 2;
       }
     }
@@ -605,18 +639,34 @@
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); else nextPoll(); });
 
+  // Save (and Space) saves every recognized card not saved yet, as /api/save_all does: an
+  // unsure guess only when it's the card shown big and nothing else is waiting.
+  const toSave = s => s.cards.filter(x => x.status === "locked" && x.card && !x.saved).length;
+  const guessToSave = (s, sel) => sel && sel.status === "unsure" && sel.card && !sel.saved ? sel : null;
+  let saving = false;
   async function saveCurrent() {
-    const n = state ? state.cards.filter(x => x.card && !x.saved).length : 0;
-    if (!n) return;
-    render(await api("/api/save_all", { foil: state.foil }));
-    toast(n === 1 ? `Saved ${state.session[0].name}` : `Saved ${n} cards`);
+    if (!state || saving) return;
+    const guess = toSave(state) ? null : guessToSave(state, selectedCard(state));
+    if (!toSave(state) && !guess) return;
+    const before = state.totals.count;
+    saving = true;
+    try {
+      render(await (guess ? api("/api/add", { id: guess.card.id, foil: state.foil, track: guess.track })
+        : api("/api/save_all", { foil: state.foil })));
+    } finally { saving = false; }
+    const n = state.totals.count - before;
+    toast(n <= 0 ? "Nothing new to save" : n === 1 ? `Saved ${state.session[0]?.name || "1 card"}` : `Saved ${n} cards`);
   }
   $("cardList").onclick = async e => {
     const row = e.target.closest(".tcard"); if (!row) return;
     const b = e.target.closest("[data-save]");
     if (b) {
+      if (b.disabled) return;
       const x = state.cards.find(c => c.track === +b.dataset.save);
-      render(await api("/api/add", { id: x.card.id, foil: state.foil, track: x.track }));
+      if (!x?.card) return;
+      b.disabled = true;   // a double click saves it once
+      try { render(await api("/api/add", { id: x.card.id, foil: state.foil, track: x.track })); }
+      finally { b.disabled = false; }
       return toast(`Saved ${x.card.name}`);
     }
     pickCard(+row.dataset.track);
@@ -714,12 +764,24 @@
   $("straightBtn").onclick = () => straighten(true);
   $("unstraightBtn").onclick = () => straighten(false);
   function setCropping(on) { cropping = on; if (on) editing = false; drag = null; if (state) render(state); }
+  // A new crop turns Whole cards only off, and turning the picture forgets the bare bed
+  // (both were measured on the old picture): say what to do again.
+  function viewNote(before) {
+    const v = state?.view || {};
+    if (before?.min_card != null && v.min_card == null) return " Turn on Whole cards only again.";
+    if (before?.empty_bed && !v.empty_bed) return " Press Bed is empty again, with the bed bare.";
+    return "";
+  }
   $("cropBtn").onclick = () => setCropping(!cropping);
-  $("uncropBtn").onclick = async () => { render(await api("/api/settings", { crop: null })); toast("Showing the whole picture"); };
+  $("uncropBtn").onclick = async () => {
+    const before = state?.view;
+    render(await api("/api/settings", { crop: null }));
+    toast("Showing the whole picture." + viewNote(before));
+  };
   $("rotateBtn").onclick = async () => {
-    const r = ((state?.view?.rotate || 0) + 90) % 360;
+    const r = ((state?.view?.rotate || 0) + 90) % 360, before = state?.view;
     render(await api("/api/settings", { rotate: r }));
-    toast(r ? `Turned ${r}°` : "Not turned");
+    toast((r ? `Turned ${r}°.` : "Not turned.") + viewNote(before));
   };
 
   // ---------- slots: boxes you draw on the picture, one per card position ----------
@@ -754,8 +816,9 @@
     if (cropping) {
       if (slot[2] - slot[0] < 0.05 || slot[3] - slot[1] < 0.05) return drawOutlines(state);   // a click, not a box
       cropping = false;
+      const before = state.view;
       render(await api("/api/settings", { crop: slot }));
-      return toast("Cropped. Full view brings back the whole picture");
+      return toast("Cropped. Full view brings back the whole picture." + viewNote(before));
     }
     if (slot[2] - slot[0] < 0.02 || slot[3] - slot[1] < 0.02) return drawOutlines(state);   // a click, not a box
     render(await api("/api/settings", { slots: [...state.slots, slot] }));
@@ -829,7 +892,11 @@
   $("wrongBtn").onclick = markWrong;
   $("printBtn").onclick = otherPrinting;
   $("whichBtn").onclick = () => openPicker({ live: true, track: selected });
-  $("undoBtn").onclick = async () => { const name = state.session[0]?.name; render(await api("/api/undo", {})); if (name) toast(`Removed ${name}`); };
+  $("undoBtn").onclick = async () => {
+    const s = await api("/api/undo", {}); render(s);
+    if (s.undo?.undone) toast(`Removed ${s.undo.name}`);
+    else if (s.undo) toast(`${s.undo.name} was already taken out of the collection`);
+  };
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && !$("pick").hidden) return closePicker();
@@ -1023,15 +1090,32 @@
   // ---------- photos ----------
   let photoResults = [];
   async function scanPhotos(files) {
+    files = [...files];
     if (!files.length) return;
     $("photoBar").hidden = false; $("photoSummary").textContent = `Scanning ${files.length} photo${files.length > 1 ? "s" : ""}…`;
     $("addAllBtn").disabled = true;
     const fd = new FormData(); for (const f of files) fd.append("photos", f);
-    const urls = new Map([...files].map(f => [f.name, URL.createObjectURL(f)]));
-    const r = await fetch("/api/photos", { method: "POST", body: fd });
-    const results = (await r.json()).map(x => ({ ...x, preview: urls.get(x.file), added: false, foil: false }));
-    photoResults = [...results, ...photoResults];
-    renderPhotos();
+    // The pictures shown for photos that weren't recognized, by their place in the upload
+    // (a phone names every photo image.jpg).
+    const urls = files.map(f => URL.createObjectURL(f)), kept = new Set();
+    try {
+      const r = await fetch("/api/photos", { method: "POST", body: fd });
+      if (r.status === 401) { location.href = "/lock?next=" + encodeURIComponent("/scan#photos"); return; }
+      const js = await r.json().catch(() => null);
+      if (!r.ok || !Array.isArray(js)) { toast(js?.error || "Couldn't scan the photos. Try again"); return; }
+      const results = js.map(x => {
+        const preview = x.card ? undefined : urls[x.index];
+        if (preview) kept.add(x.index);
+        return { ...x, preview, added: false, foil: false };
+      });
+      photoResults = [...results, ...photoResults];
+    } catch (e) {
+      toast("Couldn't reach the scanner. Check the connection and try again");
+    } finally {
+      urls.forEach((u, i) => { if (!kept.has(i)) URL.revokeObjectURL(u); });
+      $("photoBar").hidden = !photoResults.length;
+      renderPhotos();
+    }
   }
 
   function renderPhotos() {

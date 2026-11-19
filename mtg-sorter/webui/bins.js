@@ -50,13 +50,24 @@
     catch (err) { toast(err.message); }
   };
 
-  // ---------- the four bins ----------
+  // ---------- the bins ----------
+  const trays = () => info.trays || info.bins;
+  // A bin with no tray on this sorter (bin 0 on the Mk1): say where its cards really drop.
+  const noTray = b => trays().includes(b) ? ""
+    : `No tray on this sorter yet: these cards drop into bin ${info.fallback_tray} (${draft.names[info.fallback_tray] || ""}).`;
+  function trayIntro() {
+    const t = trays(), list = t.length > 1 ? `${t.slice(0, -1).join(", ")} and ${t[t.length - 1]}` : `${t[0]}`;
+    $("trayNote").textContent = `The sorter has ${t.length} tray${t.length === 1 ? "" : "s"}: bin${t.length === 1 ? "" : "s"} ${list}. `;
+  }
   function renderBins() {
     const p = info.preview, total = Math.max(1, Object.values(p).reduce((n, b) => n + b.cards, 0));
     const box = $("binCards");
+    trayIntro();
     if (box.children.length) {   // update in place, so typing a bin's name isn't interrupted
       for (const b of info.bins) {
         const card = box.querySelector(`[data-name="${b}"]`).closest(".bin-card"), v = p[b];
+        const note = card.querySelector(".no-tray");
+        note.textContent = noTray(b); note.hidden = !note.textContent;
         card.querySelector(".count").innerHTML = `${v.cards.toLocaleString()} <span class="sub">cards · ${money(v.value)}</span>`;
         card.querySelector(".share span").style.width = (100 * v.cards / total).toFixed(1) + "%";
         card.querySelector(".ex").textContent = v.examples.length ? "Like " + v.examples.join(", ") : "Nothing from your collection";
@@ -72,6 +83,7 @@
         <div class="count">${v.cards.toLocaleString()} <span class="sub">cards · ${money(v.value)}</span></div>
         <div class="share"><span style="width:${(100 * v.cards / total).toFixed(1)}%"></span></div>
         <div class="ex">${v.examples.length ? "Like " + v.examples.map(esc).join(", ") : "Nothing from your collection"}</div>
+        <div class="sub no-tray"${noTray(b) ? "" : " hidden"}>${esc(noTray(b))}</div>
       </div>`;
     }).join("");
   }

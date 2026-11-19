@@ -55,8 +55,12 @@
       $("refreshBtn").classList.remove("spin"); $("refreshBtn").disabled = false;
     }
   }
-  async function quiet() {
-    try { data = await api("/api/news"); render(); } catch (e) {}
+  // Look again every few seconds while the server is still fetching (up to 10 times).
+  async function quiet(n = 1) {
+    try {
+      if (!document.hidden) { data = await api("/api/news"); render(); }
+      if ((document.hidden || data.refreshing) && n < 10) setTimeout(() => quiet(n + 1), 6000);
+    } catch (e) {}
   }
   $("refreshBtn").onclick = () => load(true);
 

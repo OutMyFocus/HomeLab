@@ -92,8 +92,14 @@ _POPCOUNT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint16)
 
 
 def _popcount(x: np.ndarray) -> np.ndarray:
+    """The 1-bits in each row of 64-bit numbers."""
     if hasattr(np, "bitwise_count"):
-        return np.bitwise_count(x).sum(axis=1, dtype=np.uint32)
+        # Column by column: a sum along each short row is about twice as slow over 100k rows.
+        counts = np.bitwise_count(x)
+        total = counts[:, 0].astype(np.uint16)
+        for k in range(1, counts.shape[1]):
+            total += counts[:, k]
+        return total
     return _POPCOUNT[x.view(np.uint8)].sum(axis=1)
 
 
@@ -190,6 +196,22 @@ class Matcher:
             self._table = (ids + [card_id], hashes, np.append(names, np.int32(number)))
             self.learned_count += 1
 
+    def learned_scans(self, card_ids: list[str], most: int) -> dict[str, list[str]]:
+        """The scans taught to each of these cards (pictures in data/captures), newest
+        first, at most `most` each."""
+        if not card_ids:
+            return {}
+        marks = ",".join("?" * len(card_ids))
+        with self._lock:
+            rows = self.conn.execute(f"SELECT card_id, scan FROM learned WHERE card_id IN ({marks}) "
+                                     "ORDER BY added DESC, rowid DESC", list(card_ids)).fetchall()
+        found: dict[str, list[str]] = {}
+        for card_id, scan in rows:
+            scans = found.setdefault(card_id, [])
+            if len(scans) < most:
+                scans.append(scan)
+        return found
+
     def _closest(self, dists: np.ndarray) -> int:
         # On a tie, the last one wins: learned scans come after the cards, and what
         # you taught it beats the stock picture.
@@ -281,6 +303,15 @@ class Matcher:
         with self._lock:
             return self.conn.execute("SELECT upper(set_code), max(set_name), count(*) FROM cards "
                                      "GROUP BY upper(set_code)").fetchall()
+
+    def set_numbers(self) -> dict[str, set[str]]:
+        """{SET: every collector number the database has for it}, in one query."""
+        out: dict[str, set[str]] = {}
+        with self._lock:
+            rows = self.conn.execute("SELECT upper(set_code), collector_number FROM cards").fetchall()
+        for code, number in rows:
+            out.setdefault(code, set()).add(number)
+        return out
 
     def set_cards(self, set_code: str) -> list[Card]:
         """Every card of one set in the database."""

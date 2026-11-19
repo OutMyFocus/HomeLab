@@ -4,11 +4,21 @@ window.MTG = (() => {
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = v => v == null ? "No price" : "$" + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   let toastT;
+  // What the toasts say, read out by screen readers (never shown). It is in the page from
+  // the start: a live region added at the same time as its words is often not read.
+  let live = $("toastLive");
+  if (!live && document.body) {
+    live = document.createElement("div");
+    live.id = "toastLive"; live.className = "sr-only";
+    live.setAttribute("role", "status"); live.setAttribute("aria-live", "polite");
+    document.body.appendChild(live);
+  }
   function toast(msg) {
     const t = $("toast"); if (!t) return;
     $("toastText").textContent = msg;
     t.hidden = true; void t.offsetWidth; t.hidden = false;
     clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2600);
+    if (live) { live.textContent = ""; requestAnimationFrame(() => { live.textContent = msg; }); }
   }
   // A locked app answers 401: go to the PIN screen, then come back here.
   function toLock() { location.href = "/lock?next=" + encodeURIComponent(location.pathname + location.search); }

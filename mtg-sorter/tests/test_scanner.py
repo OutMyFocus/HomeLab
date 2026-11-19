@@ -543,3 +543,146 @@ def test_scanner_holds_a_read_card_through_pictures_with_only_a_piece(db, monkey
         scanner.tracks[0].checked_time -= 10
         scanner.process(blank)
     assert scanner.tracks[0].card is None
+
+
+# --- Cards lying close together -------------------------------------------------------
+
+def _table_of(cards: list[np.ndarray], gap: int, bg: int = 170) -> np.ndarray:
+    """Cards in a row on a plain table, gap pixels apart (a card is 300 px wide, 63 mm)."""
+    table = np.full((800, 1100, 3), bg, np.uint8)
+    w, h = 300, 419
+    for k, card in enumerate(cards):
+        x = 200 + k * (w + gap)
+        table[150:150 + h, x:x + w] = cv2.resize(card, (w, h))
+    noise = np.random.default_rng(gap).normal(0, 4, table.shape)
+    return np.clip(cv2.GaussianBlur(table, (3, 3), 0) + noise, 0, 255).astype(np.uint8)
+
+
+@pytest.mark.parametrize("gap", [10, 14])
+def test_two_cards_a_few_mm_apart_are_two_cards(db, gap):
+    """Two cards 2-3 mm apart came out as one outline around both (two cards side by side
+    are nearly card-shaped), and neither was read."""
+    from mtgscanner.recognize import find_cards, identify_card
+    photo = _table_of([fake_card(2), fake_card(3)], gap)
+    found = [m for outlines in find_cards(photo) for _, m in identify_card(db, photo, outlines)]
+    assert sorted(m.card.id for m in found if m.card) == ["id2", "id3"]
+
+
+def test_a_photo_of_two_cards_a_few_mm_apart_lists_both(db, monkeypatch, tmp_path):
+    """Photos (Scan page, Upload photos) read each card of an outline around two."""
+    import io
+    import app as app_module
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    client = app_module.create_app(app_module.Scanner(db, None, source=None)).test_client()
+    photo = cv2.imencode(".jpg", _table_of([fake_card(2), fake_card(3)], 10), [cv2.IMWRITE_JPEG_QUALITY, 95])[1]
+    res = client.post("/api/photos", data={"photos": [(io.BytesIO(photo.tobytes()), "image.jpg")]},
+                      content_type="multipart/form-data").get_json()
+    assert sorted(r["card"]["id"] for r in res if "card" in r) == ["id2", "id3"]
+
+
+def _split_card() -> np.ndarray:
+    """A split card: two halves, each with its own frame, on one card."""
+    img = np.zeros((CARD_H, CARD_W, 3), np.uint8)
+    for (y0, y1), colour in (((24, 333), (40, 60, 190)), ((347, 656), (190, 120, 40))):
+        cv2.rectangle(img, (24, y0), (464, y1), colour, -1)
+        cv2.rectangle(img, (24, y0), (464, y1), (20, 20, 20), 3)
+        cv2.rectangle(img, (49, y0 + 30), (293, y0 + 180), (120, 210, 200), -1)
+    rng = np.random.default_rng(9)
+    for _ in range(14):
+        p = (int(rng.integers(80, CARD_W - 80)), int(rng.integers(60, CARD_H - 60)))
+        cv2.circle(img, p, int(rng.integers(8, 30)), tuple(int(v) for v in rng.integers(0, 255, 3)), -1)
+    return img
+
+
+@pytest.mark.parametrize("landscape", [False, True])
+def test_a_split_card_on_a_dark_table_stays_one_card(db, landscape):
+    """On a dark table a split card's two halves look like two cards side by side. It is
+    read as the one card it is."""
+    from mtgscanner.recognize import find_cards, identify_card
+    split = _split_card()
+    db.conn.execute("INSERT INTO cards VALUES ('split', 'Fire // Ice', 'tst', 'Test Set', '9', 'rare', '', 1.0, NULL, ?)",
+                    (fingerprint(split),))
+    db.conn.commit()
+    db.reload()
+    card = cv2.rotate(split, cv2.ROTATE_90_CLOCKWISE) if landscape else split
+    table = np.full((800, 1100, 3), 8, np.uint8)
+    h, w = card.shape[:2]
+    card = cv2.resize(card, (w * 420 // max(h, w), h * 420 // max(h, w)))
+    table[150:150 + card.shape[0], 250:250 + card.shape[1]] = card
+    photo = np.clip(cv2.GaussianBlur(table, (3, 3), 0) + np.random.default_rng(1).normal(0, 4, table.shape),
+                    0, 255).astype(np.uint8)
+    found = [m for outlines in find_cards(photo) for _, m in identify_card(db, photo, outlines)]
+    assert [m.card.id for m in found if m.card] == ["split"]
+    assert [m.card for m in found if not m.card] == []
+
+
+def test_corners_are_put_in_order_at_any_angle(db):
+    """A card at 45° gave one corner twice (top left and top right tie there), and the
+    straightened card was nonsense."""
+    from mtgscanner.recognize import identify_frame
+    from mtgscanner.vision import _order_corners
+    diamond = _order_corners(np.float32([[50, 100], [0, 50], [100, 50], [50, 0]]))
+    assert len({tuple(p) for p in diamond.tolist()}) == 4
+    assert diamond.tolist() == [[50, 0], [100, 50], [50, 100], [0, 50]]     # clockwise from the top
+    upright = np.float32([[10, 10], [90, 12], [88, 120], [12, 118]])
+    assert np.array_equal(_order_corners(upright[[2, 0, 3, 1]]), upright)
+    for angle in (45, 135):
+        m = cv2.getRotationMatrix2D((CARD_W / 2, CARD_H / 2), angle, 0.7)
+        m[:, 2] += (480 - CARD_W / 2, 400 - CARD_H / 2)
+        photo = cv2.warpAffine(fake_card(1), m, (960, 800), borderValue=(170, 170, 170))
+        corners = np.float32([[0, 0], [CARD_W, 0], [CARD_W, CARD_H], [0, CARD_H]])
+        turned = cv2.transform(corners.reshape(1, 4, 2), m).reshape(4, 2)
+        assert len({tuple(p) for p in np.round(_order_corners(turned)).tolist()}) == 4
+        _, card, _ = identify_frame(db, photo)
+        assert card is not None and card.id == "id1", angle
+
+
+def test_an_unknown_card_gets_its_glare_painted_over_once_or_twice(db, monkeypatch):
+    """A card the scanner doesn't know cost about 1.3 s a look: the slow second looks
+    (contrast, glare) ran on every outline tried. Now only on the closest one."""
+    from mtgscanner import recognize
+    from mtgscanner.recognize import find_cards, identify_outlines
+    calls = []
+    real = recognize.tame_glare
+    monkeypatch.setattr(recognize, "tame_glare", lambda img: calls.append(1) or real(img))
+    photo = photograph(fake_card(99))
+    outlines = find_cards(photo)[0]
+    m = identify_outlines(db, photo, outlines)
+    assert m.card is None and len(calls) <= 2
+
+
+def test_fingerprint_distances_count_every_bit(monkeypatch):
+    """The fast bit count gives the same as counting bits one by one, for whole-card
+    only (older) and two-part fingerprints, with or without np.bitwise_count."""
+    from mtgscanner import database
+    rng = np.random.default_rng(4)
+    fps = [rng.bytes(64 if i % 3 else 32) for i in range(40)]
+    scan = rng.bytes(64)
+
+    def by_hand(fp):
+        bits = lambda a, b: sum(bin(x ^ y).count("1") for x, y in zip(a, b))
+        whole = bits(fp[:32], scan[:32])
+        return (whole + bits(fp[32:], scan[32:])) // 2 if len(fp) == 64 else whole
+
+    want = [by_hand(fp) for fp in fps]
+    assert database._distances(database._split(fps), scan).tolist() == want
+    monkeypatch.delattr(np, "bitwise_count", raising=False)      # NumPy older than 2.0
+    assert database._distances(database._split(fps), scan).tolist() == want
+
+
+def test_build_db_keeps_each_card_as_its_row(tmp_path, monkeypatch):
+    """A full build used to keep every card's whole Scryfall entry until the end (about
+    1.6 GB). Only its row is kept now, and the row is the same as before."""
+    import build_db
+    card = {"id": "x1", "name": "Card X", "set": "tst", "set_name": "Test Set", "collector_number": "7",
+            "rarity": "mythic", "color_identity": ["U", "R"], "prices": {"usd": "2.50", "usd_foil": "9.00"},
+            "legalities": {"modern": "legal"}, "oracle_text": "Draw a card.",
+            "image_uris": {"small": "https://cards.scryfall.io/small/x1.jpg"}}
+    monkeypatch.setattr(build_db, "fetch_fingerprint", lambda url: b"\1" * 64)
+    path = tmp_path / "cards.db"
+    build_db.build(iter([card]), path, progress=lambda s: None)
+    conn = connect(path)
+    row = conn.execute("SELECT * FROM cards").fetchone()
+    assert row == ("x1", "Card X", "tst", "Test Set", "7", "mythic", "U,R", 2.5, 9.0, b"\1" * 64)
+    todo = build_db._todo(card, "u", False)
+    assert todo.row(b"f") == row[:9] + (b"f",)

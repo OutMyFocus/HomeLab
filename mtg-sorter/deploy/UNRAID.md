@@ -72,8 +72,8 @@ Tailscale, at home or away, with no port opened on your router.
 2. **Docker → mtg-sorter → Edit**. Turn on **Use Tailscale**.
 3. **Tailscale hostname:** `mtg` (or anything unique on your tailnet).
 4. Leave exit node, userspace networking and SSH alone.
-5. **Serve:** on. (Not Funnel: that would put the app, which has no login unless you set a PIN
-   in Settings, on the public internet.) Leave the port on auto-detect; it uses the WebUI port.
+5. **Serve:** on. (Not Funnel: that would put the app, which has no login unless you turn on
+   Accounts or set a PIN in Settings, on the public internet.) Leave the port on auto-detect; it uses the WebUI port.
 6. **Apply**, then open the container's log and click the **To authenticate, visit...** link
    to approve it on your tailnet.
 7. The log (or the Tailscale admin console) shows the address, like
@@ -100,16 +100,21 @@ move in one zip:
 1. On the Pi's app (`http://mtgsorter.local:5000`): **Maintenance → Backup → Download** (the
    zip holds the card database with everything it learned, your collection, decks, bins,
    wishlist and settings).
-2. On the server's app: **Maintenance → Restore a backup…**, pick that zip. The app restarts
-   with your cards in it.
+2. On the server's app: **Maintenance → Restore a backup…**, pick that zip. The page sees it
+   was made on the Pi and ticks **Cards and collection only**, so the server keeps its own
+   camera and login settings. Press **Restore**. The app restarts with your cards in it.
 
 From then on, scan on the server. The Pi keeps its own copy for the sorter; do the same
 backup-and-restore the other way whenever the sorter should know about cards you added on
-the server (merging the two automatically is a later step).
+the server (merging the two automatically is a later step). On that return trip, keep
+**Cards and collection only** ticked: otherwise the server's backup would replace the Pi's
+camera and scan-bed set-up, its servo angles and its logins.
 
 To make the server know every card: **Maintenance → Card database → Download every card**
 (30-60 minutes; scanning keeps working). From the server's terminal it's
-`docker exec mtg-sorter python build_db.py --all` (stop and resume it any time).
+`docker exec mtg-sorter python build_db.py --all` (stop and resume it any time). When it
+finishes, restart the app (**Maintenance → Restart app**, or `docker restart mtg-sorter`) so
+the scanner picks up the new cards. The button does that by itself as it goes.
 
 ## The sorter's own camera and machine, from the server
 
@@ -142,8 +147,10 @@ background pauses and picks up again when it comes back. Everything else on the 
 **Away from home:** the Tailscale address works anywhere your phone has Tailscale on.
 **Friends:** they need a way in first. Cloudflare Tunnel with Cloudflare Access (an emailed
 code; see [REMOTE_ACCESS.md](REMOTE_ACCESS.md), step 3) is the easy one, since they install
-nothing. Set a PIN in Settings before sharing any link: without one, anyone with the link can
-scan into, delete from and download your collection.
+nothing. Before sharing any link, turn on Accounts (Settings, **Accounts**, Turn on accounts)
+and give each friend their own login, or an invite link, as a member or viewer. They get their
+own cards and can't reach Maintenance. Don't use a PIN for this: it's one shared code that
+unlocks everything, Restart, Restore and Wi-Fi included.
 
 ## The sorter machine
 

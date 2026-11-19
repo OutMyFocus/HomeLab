@@ -1,5 +1,7 @@
 """Montreal store prices: Face to Face Games first, then Card Brawlers and L'Univers de la Carte."""
 
+import time
+
 from mtgscanner import ca_prices, config, montreal
 from mtgscanner.vault_prices import VaultPrices
 from test_scanner import db  # noqa: F401  (db is a fixture)
@@ -104,3 +106,107 @@ def test_montreal_endpoint_checks_the_stores_live(db):  # noqa: F811
     assert d["checked"] == "today"
     assert [s["store"] for s in d["stores"]] == ["Face to Face Games", "Card Brawlers", "L'Univers de la Carte"]
     assert d["stores"][0]["exact"] and d["stores"][0]["price"] == 3.99
+
+
+def test_a_store_that_failed_is_asked_again_soon():
+    shop = stores()
+    get, broken = shop._get, {"f2f": True}
+
+    def flaky(url):
+        if url.startswith(F2F) and broken["f2f"]:
+            raise ConnectionError(url)
+        return get(url)
+    shop._get = flaky
+    m = montreal.Montreal(shop=shop)
+    missed = []
+    found, fresh = m.lookup("Sol Ring", "C21", "Commander 2021", "263", missed=missed)
+    assert fresh and [s["key"] for s in found] == ["cb", "udc"] and missed == ["f2f"]
+    broken["f2f"] = False
+    found, fresh = m.lookup("Sol Ring", "C21", "Commander 2021", "263")
+    assert not fresh                                     # within the couple of minutes: not yet
+    key = next(iter(m.cache))
+    stamp, cached, failed = m.cache[key]
+    m.cache[key] = (stamp - montreal.RETRY_SECONDS - 1, cached, failed)
+    found, fresh = m.lookup("Sol Ring", "C21", "Commander 2021", "263")
+    assert fresh and [s["key"] for s in found] == ["f2f", "cb", "udc"]   # Face to Face is back
+    stamp, _, failed = next(iter(m.cache.values()))
+    assert failed == () and time.time() - stamp < 5    # a full answer is kept the usual 12 hours
+
+
+def test_a_slow_store_doesnt_hold_up_the_scanner():
+    import threading
+    shop, release = stores(), threading.Event()
+    get = shop._get
+    shop._get = lambda url: (release.wait(5), get(url))[1] if url.startswith(F2F) else get(url)
+    m = montreal.Montreal(shop=shop, deadline=0.3)
+    start = time.time()
+    missed = []
+    found, _ = m.lookup("Sol Ring", "C21", "Commander 2021", "263", missed=missed)
+    release.set()
+    assert time.time() - start < 3
+    assert [s["key"] for s in found] == ["cb", "udc"] and missed == ["f2f"]
+
+
+def test_missing_store_shows_its_weekly_price(db):  # noqa: F811
+    ca_prices.save({"date": "Nov 1, 2026", "prices": {"Sol Ring": {"f2f": [2.49, 1, 6.0], "cb": [2.0, 1, None]}}})
+    scanner, client = make(db)
+    scanner.vault = VaultPrices.load(config.VAULT_PRICES)
+    m = client.application.config["montreal"]
+    shop = stores()
+    get = shop._get
+    shop._get = lambda url: (_ for _ in ()).throw(ConnectionError(url)) if url.startswith(F2F) else get(url)
+    m.offline, m.shop = False, shop
+    d = client.get("/api/montreal?name=Sol+Ring&set=C21&set_name=Commander+2021&number=263").get_json()
+    assert d["checked"] == "today"
+    assert [(s["key"], s.get("checked")) for s in d["stores"]] == [("f2f", "weekly"), ("cb", None), ("udc", None)]
+    assert d["stores"][0]["price"] == 2.49
+
+
+# --- The USD to CAD rate ------------------------------------------------------------------------
+
+class Rate:
+    def __init__(self, rate="1.3900", fail=False):
+        self.rate, self.fail, self.calls = rate, fail, 0
+
+    def __call__(self, url, **kw):
+        import requests
+        self.calls += 1
+        if self.fail:
+            raise requests.ConnectionError("offline")
+        rate = self.rate
+
+        class R:
+            def json(self):
+                return {"observations": [{"d": "2026-11-17", "FXUSDCAD": {"v": rate}}]}
+        return R()
+
+
+def test_exchange_rate_is_kept_for_a_day(tmp_path, monkeypatch):
+    import json
+    from mtgscanner import exchange
+    monkeypatch.setattr(exchange, "CACHE", tmp_path / "usd_cad.json")
+    monkeypatch.setattr(config, "USD_TO_CAD", 1.35)
+    fake = Rate()
+    monkeypatch.setattr(exchange.requests, "get", fake)
+    assert exchange.load_rate() == (1.39, "2026-11-17") and config.USD_TO_CAD == 1.39
+    assert exchange.load_rate() == (1.39, "2026-11-17") and fake.calls == 1        # fresh: not fetched again
+    saved = json.loads(exchange.CACHE.read_text())
+    exchange.CACHE.write_text(json.dumps(saved | {"fetched": saved["fetched"] - 3 * 86400}))
+    fake.rate = "1.4100"
+    assert exchange.load_rate()[0] == 1.41 and fake.calls == 2                       # a day old: fetched again
+    exchange.CACHE.write_text(json.dumps(saved | {"fetched": 0}))
+    fake.fail = True
+    assert exchange.load_rate()[0] == 1.39                                           # offline: the saved rate
+
+
+def test_a_damaged_rate_file_never_stops_the_app(tmp_path, monkeypatch):
+    from mtgscanner import exchange
+    monkeypatch.setattr(exchange, "CACHE", tmp_path / "usd_cad.json")
+    monkeypatch.setattr(config, "USD_TO_CAD", 1.35)
+    monkeypatch.setattr(exchange.requests, "get", Rate(fail=True))
+    for junk in ("null", "[]", '{"fetched": "x"}', '{"fetched": 1}', '{"rate": "x", "fetched": 1}', "{bad"):
+        exchange.CACHE.write_text(junk)
+        assert exchange.load_rate() == (1.35, ""), junk
+    monkeypatch.setattr(exchange.requests, "get", Rate())
+    exchange.CACHE.write_text("null")
+    assert exchange.load_rate()[0] == 1.39 and exchange.CACHE.read_text().startswith("{")

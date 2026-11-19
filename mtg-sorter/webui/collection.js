@@ -234,16 +234,30 @@
     const step = e.target.closest("[data-step]"), row = e.target.closest("[data-key]");
     if (!row) return;
     if (step) {
-      const c = byKey(row.dataset.key), n = c.qty + +step.dataset.step;
-      if (n < 1 && !confirm(`Delete ${c.name} (${c.set}) from the collection?`)) return;
-      return edit({ key: c.key, qty: Math.max(0, n) }, n < 1 ? `Deleted ${c.name}` : null);
+      // Sends one more or one fewer, not a count: the server counts what's there now, so
+      // copies saved since the page loaded are kept.
+      const c = byKey(row.dataset.key), s = +step.dataset.step;
+      if (c.qty + s < 1 && !confirm(`Delete ${c.name} (${c.set}) from the collection?`)) return;
+      return edit({ key: c.key, step: s }, s < 0 ? js => gone(js, c) : null);
     }
     openDetail(row.dataset.key);
   };
 
+  // message: the toast text, or a function of the answer that returns it.
   async function edit(change, message) {
-    try { setData(await api("/api/collection/edit", change)); if (message) toast(message); }
+    try {
+      const js = await api("/api/collection/edit", change);
+      setData(js);
+      const text = typeof message === "function" ? message(js) : message;
+      if (text) toast(text);
+    }
     catch (e) { toast(e.message); load(); }
+  }
+  // After one fewer: say "Deleted" only if the card really is gone.
+  function gone(js, c) {
+    const now = js.cards.find(x => x.key === c.key);
+    if (!now) return `Deleted ${c.name}`;
+    return now.qty >= c.qty ? `More were saved since. You have ${now.qty} now.` : null;
   }
 
   // ---------- one card ----------
@@ -297,11 +311,11 @@
     } catch (e) { toast(e.message); }
   };
   window.COLLECTION = { reload: () => load() };
-  $("dPlus").onclick = () => { const c = byKey(detailKey); edit({ key: c.key, qty: c.qty + 1 }); };
+  $("dPlus").onclick = () => { const c = byKey(detailKey); edit({ key: c.key, step: 1 }); };
   $("dMinus").onclick = () => {
     const c = byKey(detailKey);
     if (c.qty <= 1) return $("dDelete").click();
-    edit({ key: c.key, qty: c.qty - 1 });
+    edit({ key: c.key, step: -1 });
   };
   $("dFoil").onclick = () => {
     const c = byKey(detailKey);
@@ -311,7 +325,8 @@
   $("dDelete").onclick = () => {
     const c = byKey(detailKey);
     if (!confirm(`Delete all ${c.qty} of ${c.name} (${c.set}${c.foil ? " foil" : ""}) from the collection?`)) return;
-    closeModal("detail"); edit({ key: c.key, delete: true }, `Deleted ${c.name}`);
+    // seen: the server refuses if more were saved since, so none are deleted unseen.
+    closeModal("detail"); edit({ key: c.key, delete: true, seen: c.qty }, `Deleted ${c.name}`);
   };
   $("dPrintings").onclick = async () => {
     const c = byKey(detailKey), list = $("dPrintList");

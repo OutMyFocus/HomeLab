@@ -83,9 +83,12 @@ def fingerprint(card_bgr: np.ndarray) -> bytes:
 def _order_corners(pts: np.ndarray) -> np.ndarray:
     """Sort 4 points into: top-left, top-right, bottom-right, bottom-left."""
     pts = pts.reshape(4, 2).astype("float32")
-    s = pts.sum(axis=1)
-    d = np.diff(pts, axis=1).ravel()
-    return np.array([pts[s.argmin()], pts[d.argmin()], pts[s.argmax()], pts[d.argmax()]], dtype="float32")
+    # Around the centre, clockwise on the picture, starting at the corner nearest the top
+    # left. (Picking each corner by x+y and y-x gave one corner twice for a card at 45°,
+    # where those tie.)
+    c = pts.mean(axis=0)
+    pts = pts[np.argsort(np.arctan2(pts[:, 1] - c[1], pts[:, 0] - c[0]), kind="stable")]
+    return np.roll(pts, -int(pts.sum(axis=1).argmin()), axis=0)
 
 
 def _masks(small_bgr: np.ndarray):

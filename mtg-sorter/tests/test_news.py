@@ -1,6 +1,6 @@
 """The News page: feeds, the Wizards news page, Scryfall sets and previews, caching."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 import requests
@@ -224,3 +224,64 @@ def test_page_follows_the_shared_layout(client):
     assert html.count('class="brand"') == 1
     ids = re.findall(r'\sid="([^"]+)"', html)
     assert len(ids) == len(set(ids))
+
+
+def test_a_changed_wizards_page_keeps_the_saved_news(web):
+    first = News(online=True, fetch_text=web.text, fetch_json=web.json)
+    first.refresh(wait=True)
+    saved = [a for a in first.snapshot()["articles"] if a["source"] == "wizards"]
+    count = next(s["count"] for s in first.snapshot()["sources"] if s["key"] == "wizards")
+    assert saved
+    # Wizards redesigns the page (or sends a bot check): a 200 page with no article cards.
+    page = web.text
+    web.text = lambda url: "<html><body>Just a moment...</body></html>" if url.endswith("/en/news") else page(url)
+    again = News(online=True, fetch_text=web.text, fetch_json=web.json, clock=lambda: 4e9)
+    again.refresh(now=True)
+    d = again.snapshot()
+    assert [a for a in d["articles"] if a["source"] == "wizards"] == saved
+    wiz = next(s for s in d["sources"] if s["key"] == "wizards")
+    assert wiz["error"] == "Couldn't read the news there" and wiz["count"] == count
+
+
+def test_a_feed_whose_articles_cant_be_read_is_an_error():
+    with pytest.raises(ValueError):
+        parse_feed("<rss><channel><item><title>No link</title></item></channel></rss>", "edhrec")
+    assert parse_feed("<rss><channel><title>Quiet week</title></channel></rss>", "edhrec") == []   # really empty
+
+
+def test_set_countdowns_move_on_while_offline(web):
+    today = date.today()
+    soon = (today - timedelta(days=4)).isoformat()      # was 3 days away when it was fetched a week ago
+    later = (today + timedelta(days=20)).isoformat()
+    gone = (today - timedelta(days=60)).isoformat()
+    item = {"code": "TST", "name": "Test Set", "type": "expansion", "cards": 1, "icon": "", "url": "", "parent": ""}
+    import json
+    (config.DATA_DIR / "news_cache.json").write_text(json.dumps({"sets": {"at": 1, "error": None, "items": {
+        "upcoming": [item | {"released": soon, "days": 3}, item | {"code": "LTR", "released": later, "days": 27}],
+        "recent": [item | {"code": "OLD", "released": gone, "days": -53}]}}}))
+    sets = News(online=False, fetch_text=web.text, fetch_json=web.json).snapshot()["sets"]
+    assert [(s["code"], s["days"]) for s in sets["upcoming"]] == [("LTR", 20)]
+    assert [(s["code"], s["days"]) for s in sets["recent"]] == [("TST", -4)]   # now under Just out
+    assert web.calls == []
+
+
+def test_feed_text_keeps_its_accents():
+    latin = ('<?xml version="1.0" encoding="ISO-8859-1"?><rss><channel><item><title>Jace’s Lûmen préview</title>'
+             '<link>https://example.com/a</link></item></channel></rss>')
+    assert parse_feed(latin, "edhrec")[0]["title"] == "Jace’s Lûmen préview"     # already-decoded text
+    raw = latin.replace("’", "'").encode("iso-8859-1")
+    assert parse_feed(raw, "edhrec")[0]["title"] == "Jace's Lûmen préview"     # bytes: by the declaration
+
+
+def test_fetch_text_reads_utf8_when_no_charset_is_given(monkeypatch):
+    from mtgscanner import news as news_mod
+    body = '<?xml version="1.0"?><rss><channel><item><title>Lûmen préview</title></item></channel></rss>'
+
+    def fake_get(url, accept="*/*", timeout=10, ctype="text/xml"):
+        r = requests.Response()
+        r.status_code, r._content = 200, body.encode("utf-8")
+        r.headers["Content-Type"] = ctype
+        r.encoding = requests.utils.get_encoding_from_headers(r.headers)   # what requests does: ISO-8859-1
+        return r
+    monkeypatch.setattr(news_mod, "_get", fake_get)
+    assert "Lûmen préview" in news_mod.fetch_text("https://example.com/feed")

@@ -36,6 +36,45 @@ def load_saved() -> dict:
         return {}
 
 
+class Busy(RuntimeError):
+    """Something else is driving the machine right now (a sort run, a tuning run, a card
+    being fed): the Machine page's buttons wait until it has stopped."""
+
+
+def busy_message(who: str) -> str:
+    return f"The {who} is using the machine: wait for it to stop, then try again."
+
+
+def claim(machine, who: str):
+    """Mark the machine as driven by `who` ("sort run", "tuning run", ...) until release().
+    Raises Busy when something else drives it. Only the Flask routes and the runs' start
+    call this, never the moves themselves, since a run's own thread makes those moves.
+    A machine without the guard (RemoteMachine on the server: the Pi checks) is let through."""
+    lock = getattr(machine, "run_lock", None)
+    if lock is None:
+        return
+    with lock:
+        if machine.run is not None:
+            raise Busy(busy_message(machine.run))
+        machine.run = who
+
+
+def release(machine, who: str):
+    lock = getattr(machine, "run_lock", None)
+    if lock is None:
+        return
+    with lock:
+        if machine.run == who:
+            machine.run = None
+
+
+def check_free(machine):
+    """Raises Busy while a run (or a card being fed) is driving the machine."""
+    who = getattr(machine, "run", None)
+    if isinstance(who, str):
+        raise Busy(busy_message(who))
+
+
 class Machine:
     def __init__(self):
         self.lock = threading.Lock()
@@ -48,6 +87,8 @@ class Machine:
         self._stop_timer = None
         self._relax_timers = {}   # channel -> timer that lets that servo go after a move
         self.pins_up_at = None    # when the stop pins were last sent up from somewhere else
+        self.run_lock = threading.Lock()
+        self.run = None           # what drives the machine on its own right now (see claim)
 
     # --- connecting ---------------------------------------------------------
 
@@ -502,13 +543,33 @@ def add_machine_routes(app, machine: Machine, web_dir):
     def machine_page():
         return send_from_directory(web_dir, "machine.html")
 
-    def answer(action):
+    # the error itself goes to the log; the page gets the plain advice
+    HARDWARE = "Lost touch with the servo board. Check its power and wiring, then try again."
+    SAVING = "Couldn't save that. Is the data folder full or read-only?"
+
+    def answer(action, oserror=HARDWARE, guard=None):
+        """Run a page action. guard="check": refused (409) while a run drives the machine;
+        guard="claim": also keeps runs out until this action is done (Home, Bin drops)."""
         try:
-            action()
+            if guard == "claim":
+                claim(machine, "move you started")
+                try:
+                    action()
+                finally:
+                    release(machine, "move you started")
+            else:
+                if guard:
+                    check_free(machine)
+                action()
+        except Busy as e:
+            return jsonify(error=str(e)), 409
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
+        except OSError as e:     # the servo board lost power, an I2C glitch, a full disk
+            print(f"Machine: {oserror} ({e})")
+            return jsonify(error=oserror), 503
         return jsonify(machine.state())
 
     @app.get("/api/machine")
@@ -519,12 +580,12 @@ def add_machine_routes(app, machine: Machine, web_dir):
     def machine_move():
         body = request.get_json(silent=True) or {}
         if "angle" in body:
-            return answer(lambda: machine.set_angle(int(body.get("channel", -1)), body["angle"]))
-        return answer(lambda: machine.move(str(body.get("part")), str(body.get("position"))))
+            return answer(lambda: machine.set_angle(int(body.get("channel", -1)), body["angle"]), guard="check")
+        return answer(lambda: machine.move(str(body.get("part")), str(body.get("position"))), guard="check")
 
     @app.post("/api/machine/home")
     def machine_home():
-        return answer(machine.home)
+        return answer(machine.home, guard="claim")
 
     @app.post("/api/machine/relax")
     def machine_relax():
@@ -534,7 +595,8 @@ def add_machine_routes(app, machine: Machine, web_dir):
     def machine_feed():
         body = request.get_json(silent=True) or {}
         return answer(lambda: machine.feed(body.get("seconds"), body.get("speed"),
-                                           bool(body.get("backward"))))
+                                           bool(body.get("backward"))),
+                      "Lost touch with the feeder motor. Check its wiring, then try again.", guard="check")
 
     @app.post("/api/machine/stop")
     def machine_stop():
@@ -545,7 +607,7 @@ def add_machine_routes(app, machine: Machine, web_dir):
         """Send the card on the bed to a bin (no feeding, no camera)."""
         body = request.get_json(silent=True) or {}
         return answer(lambda: machine.drop(body.get("bin"), body.get("pins_seconds"),
-                                           body.get("doors_seconds"), body.get("tilt_seconds")))
+                                           body.get("doors_seconds"), body.get("tilt_seconds")), guard="claim")
 
     @app.post("/api/machine/save")
     def machine_save():
@@ -553,25 +615,32 @@ def add_machine_routes(app, machine: Machine, web_dir):
         body = request.get_json(silent=True) or {}
         if "part" in body:
             return answer(lambda: machine.save_position(str(body["part"]), str(body.get("position")),
-                                                        body.get("angle")))
+                                                        body.get("angle")), SAVING)
         if "home_at_startup" in body:
-            return answer(lambda: machine.set_home_at_startup(bool(body["home_at_startup"])))
+            return answer(lambda: machine.set_home_at_startup(bool(body["home_at_startup"])), SAVING)
         if "wide_travel" in body:
-            return answer(lambda: machine.set_wide_travel(bool(body["wide_travel"])))
+            return answer(lambda: machine.set_wide_travel(bool(body["wide_travel"])), SAVING)
         if "sort" in body:
-            return answer(lambda: machine.save_sort(**(body["sort"] if isinstance(body["sort"], dict) else {})))
+            return answer(lambda: machine.save_sort(**(body["sort"] if isinstance(body["sort"], dict) else {})), SAVING)
         if "reverse" in body and "seconds" not in body:
-            return answer(lambda: machine.set_feeder_reverse(bool(body["reverse"])))
+            return answer(lambda: machine.set_feeder_reverse(bool(body["reverse"])), SAVING)
         return answer(lambda: machine.save_feeder(body.get("seconds"), body.get("speed"),
-                                                  body.get("backoff"), body.get("push")))
+                                                  body.get("backoff"), body.get("push")), SAVING)
 
     @app.post("/api/machine/reset")
     def machine_reset():
-        return answer(machine.reset_saved)
+        return answer(machine.reset_saved, SAVING)
 
     @app.post("/api/machine/test")
     def machine_test():
-        report = machine.self_test()
+        try:
+            claim(machine, "self-test")
+        except Busy as e:
+            return jsonify(error=str(e)), 409
+        try:
+            report = machine.self_test()
+        finally:
+            release(machine, "self-test")
         return jsonify(machine.state() | {"test": report})
 
 

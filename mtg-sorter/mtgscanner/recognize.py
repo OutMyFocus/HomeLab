@@ -49,13 +49,19 @@ def identify_frame(matcher: Matcher, frame):
     """
     best = (None, None, 10**9)
     for outlines in find_cards(frame):
-        m = identify_outlines(matcher, frame, outlines)
-        if m.distance < best[2]:
-            best = (m.corners, m.card, m.distance)
+        for _, m in identify_card(matcher, frame, outlines):
+            if m.distance < best[2]:
+                best = (m.corners, m.card, m.distance)
     return best
 
 
-def find_cards(frame, min_area: float | None = None, rebuild: bool = True) -> list[list[np.ndarray]]:
+class Outlines(list):
+    """The outlines of one card (find_cards), best first. When its main outline may really
+    be two or more cards lying close together, parts holds each of those cards' outlines."""
+    parts: list[list[np.ndarray]] = []
+
+
+def find_cards(frame, min_area: float | None = None, rebuild: bool = True) -> list[Outlines]:
     """Every card in the picture, as a list of outlines per card.
 
     The detector often outlines the same card more than once (each of its methods
@@ -65,9 +71,26 @@ def find_cards(frame, min_area: float | None = None, rebuild: bool = True) -> li
 
     A card whose outline is broken (a thumb over one edge, a card sticking out of the
     picture) is put back together from the sides that show, unless rebuild is off.
+
+    Cards a few mm apart can come out as one card-shaped outline around them all (two
+    cards side by side are nearly card-shaped). Such a group also carries the outlines
+    of the cards inside it (Outlines.parts); the shape alone can't tell them from a split
+    or Room card, so identify_card reads the whole first and the parts only if that fails.
+    With rebuild off (the machine's bed, one card at a time) there are no parts.
     """
     scored = find_scored_candidates(frame, config.MIN_CARD_AREA if min_area is None else min_area, rebuild)
-    scored.sort(key=lambda s: cv2.contourArea(s[1]), reverse=True)
+    cards = []
+    for group in _group(scored):
+        outlines = Outlines(c for _, c in group)
+        if rebuild:
+            outlines.parts = _parts(group)
+        cards.append(outlines)
+    return cards
+
+
+def _group(scored: list[tuple[float, np.ndarray]]) -> list[list[tuple[float, np.ndarray]]]:
+    """Outlines whose centers sit inside each other, grouped, each group best first."""
+    scored = sorted(scored, key=lambda s: cv2.contourArea(s[1]), reverse=True)
     groups: list[list[tuple[float, np.ndarray]]] = []
     for fit, c in scored:
         center = tuple(map(float, c.mean(axis=0)))
@@ -84,7 +107,66 @@ def find_cards(frame, min_area: float | None = None, rebuild: bool = True) -> li
         fit = scored_outline[0]
         return 0.0 if fit >= SIDES_GOOD_FIT else 1.0 - fit
 
-    return [[c for _, c in sorted(group, key=guesses_last)] for group in groups]
+    return [sorted(group, key=guesses_last) for group in groups]
+
+
+# An outline is likely several cards when cards inside it, each at least PART_LEAST of
+# it and hardly overlapping each other (PART_OVERLAP of the smaller), cover PART_COVER of it.
+PART_LEAST = 0.2           # two cards side by side are half each, four in a square a quarter
+PART_COVER = 0.85
+PART_OVERLAP = 0.1
+
+
+def _area(outline: np.ndarray) -> float:
+    return abs(float(cv2.contourArea(np.asarray(outline, np.float32))))
+
+
+def _shared(a: np.ndarray, b: np.ndarray) -> float:
+    """The area two (convex) outlines have in common."""
+    return float(cv2.intersectConvexConvex(np.asarray(a, np.float32), np.asarray(b, np.float32))[0])
+
+
+def _parts(group: list[tuple[float, np.ndarray]]) -> list[list[np.ndarray]]:
+    """The cards inside a group's main outline, when it looks like several cards lying
+    close together (each as a list of outlines, best first), else []."""
+    main = group[0][1]
+    whole = _area(main) or 1.0
+    inside = [(fit, c) for fit, c in group[1:] if _area(c) < 0.9 * whole]
+    big = sorted((c for _, c in inside if _shared(main, c) >= PART_LEAST * whole), key=_area, reverse=True)
+    for i, first in enumerate(big):
+        chosen = [first]
+        for c in big[i + 1:]:
+            if all(_shared(c, k) <= PART_OVERLAP * min(_area(c), _area(k)) for k in chosen):
+                chosen.append(c)
+        if len(chosen) >= 2 and sum(_shared(main, k) for k in chosen) >= PART_COVER * whole:
+            break
+    else:
+        return []
+    # Each card inside, with the other outlines of it (the masks often agree).
+    parts = []
+    for group in _group(inside):
+        center = tuple(map(float, group[0][1].mean(axis=0)))
+        if any(cv2.pointPolygonTest(k, center, False) >= 0 for k in chosen):
+            parts.append([c for _, c in group])
+    return parts if len(parts) >= 2 else []
+
+
+def identify_card(matcher: Matcher, frame, outlines: list[np.ndarray],
+                  **kw) -> list[tuple[list[np.ndarray], Match]]:
+    """Recognize one card from find_cards, as [(outlines, match)]: one card, or, when its
+    main outline doesn't read and the cards inside it (Outlines.parts) do, each of those.
+    kw is passed on to identify_outlines."""
+    match = identify_outlines(matcher, frame, outlines, **kw)
+    parts = getattr(outlines, "parts", None)
+    if not parts:
+        return [(outlines, match)]
+    if match.card is not None and _area(match.corners) >= 0.9 * _area(outlines[0]):
+        return [(outlines, match)]      # it reads as one card (a split or Room card, say)
+    # Nothing read, or only one of the cards inside did: each of them on its own.
+    found = [(part, identify_outlines(matcher, frame, part, **kw)) for part in parts]
+    if any(m.card is not None for _, m in found):
+        return found
+    return [(outlines, match)]
 
 
 def find_card_in_slot(frame, slot: list[float]) -> list[np.ndarray] | None:
@@ -191,10 +273,13 @@ def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray], refin
     them by the details that differ (see printings.py; `wait` is how long that may wait
     for stock pictures it hasn't got yet)."""
     best: tuple[np.ndarray, Hit | None] = (outlines[0], None)
+    # The outlines are compared plainly first; the slower second looks (more contrast,
+    # glare painted over) are only for the one that came closest. Running them on every
+    # outline cost a card the scanner doesn't know about 1.3 s of work per look.
     for found in _distinct(outlines):
         for factor in config.OUTLINE_FACTORS:
             corners = grow(found, factor)
-            hit = _rank(matcher, warp_card(frame, corners))
+            hit = _rank_both_ways(matcher, warp_card(frame, corners))
             if best[1] is None or hit.distance < best[1].distance:
                 best = (corners, hit)
             if hit.distance <= GOOD_ENOUGH:
@@ -202,6 +287,16 @@ def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray], refin
         if best[1].distance <= GOOD_ENOUGH:
             break
     corners, hit = best
+    if hit.distance > config.SURE_DISTANCE:
+        again = _rank(matcher, warp_card(frame, corners), hit)
+        if again.distance < hit.distance:
+            hit = again
+        if hit.distance > config.MAX_MATCH_DISTANCE and not np.allclose(corners, outlines[0], atol=0.5):
+            # Still nothing: the card's main outline, glare repair and all, in case the
+            # glare is what put the others ahead of it.
+            main = _rank(matcher, warp_card(frame, outlines[0]))
+            if main.distance < hit.distance:
+                corners, hit = outlines[0], main
     if refine and hit.id and hit.distance <= config.CANDIDATE_DISTANCE and confidence_of(hit.distance, hit.margin) != "sure":
         better = refine_outline(matcher, frame, corners, hit.id)
         if better is not None:
@@ -238,8 +333,9 @@ def _choose_printing(matcher: Matcher, frame, match: Match, wait: float):
     match.lookalikes = tuple(card_id for card_id, _ in alike)
     if matcher.pictures is None:
         return
+    taught = _taught(matcher, match.lookalikes)
     try:
-        chosen = printings.pick_printing(card_img, alike, matcher.pictures, wait)
+        chosen = printings.pick_printing(card_img, alike, matcher.pictures, wait, taught)
     except Exception as e:      # never let this stop a card being read
         print(f"Printing check skipped after an error: {e!r}")
         return
@@ -248,6 +344,21 @@ def _choose_printing(matcher: Matcher, frame, match: Match, wait: float):
     card_id, match.printing_lead = chosen
     if card_id != match.card.id:
         match.card = matcher.get_card(card_id)
+
+
+def _taught(matcher: Matcher, card_ids) -> dict[str, list[np.ndarray]]:
+    """The scans you taught for these printings, prepared for printings.pick_printing
+    (none when they can't be had: the stock pictures then choose on their own)."""
+    found = {}
+    try:
+        for card_id, scans in matcher.learned_scans(list(card_ids), printings.TAUGHT_MOST).items():
+            pictures = [p for p in (matcher.pictures.taught(config.CAPTURES_DIR / scan) for scan in scans)
+                        if p is not None]
+            if pictures:
+                found[card_id] = pictures
+    except Exception as e:
+        print(f"Taught scans left out of the printing check after an error: {e!r}")
+    return found
 
 
 def _sticks_out(corners: np.ndarray, shape, slack: float = 0.01) -> bool:
@@ -282,9 +393,11 @@ def identify(matcher: Matcher, card_img) -> tuple[Card | None, int]:
     return matcher.get_card(hit.id), hit.distance
 
 
-def _rank(matcher: Matcher, card_img) -> Hit:
+def _rank(matcher: Matcher, card_img, plain: Hit | None = None) -> Hit:
+    """The closest card to a card picture, looking again with more contrast and without
+    glare when it isn't sure. plain: the plain look (_rank_both_ways), if already done."""
     # The card might be upside down, so try both ways and keep the better match.
-    best = _rank_both_ways(matcher, card_img)
+    best = plain if plain is not None else _rank_both_ways(matcher, card_img)
     if best.distance > config.SURE_DISTANCE:
         # Not sure yet: a dim or foil card often comes closer with its contrast evened out.
         boosted = _rank_both_ways(matcher, boost_contrast(card_img))

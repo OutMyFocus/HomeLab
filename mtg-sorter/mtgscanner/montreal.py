@@ -22,7 +22,7 @@ check. The page shows a link to search each of those in your own browser instead
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from urllib.parse import quote_plus
 
 from flask import jsonify, request
@@ -37,7 +37,10 @@ LINKS = [                                 # Montreal stores you check yourself, 
     ("Le Valet d'Coeur", "https://www.levalet.com/"),
 ]
 CACHE_HOURS = 12
+RETRY_SECONDS = 120                       # a store that didn't answer is asked again after this
+DEADLINE = 15                             # seconds the scanner waits for the stores
 MAX_PRODUCTS = 4                          # product pages read per store per card
+FAILED = object()                         # store_lookup: the store didn't answer (not "doesn't list it")
 
 
 def _num(n) -> str:
@@ -78,10 +81,13 @@ def same_printing(info: dict, set_code: str, set_name: str, number: str) -> bool
 def store_lookup(shop: Shop, store: str, name: str, set_code: str = "", set_name: str = "",
                  number: str = "", foil: bool = False) -> dict | None:
     """The Near Mint price of a card at one store: that printing if the store has it,
-    otherwise its cheapest printing (in stock first). None if the store doesn't list it."""
+    otherwise its cheapest printing (in stock first). None if the store doesn't list it,
+    FAILED if the store didn't answer."""
     label, host = STORES[store]
     front = name.split(" // ")[0]
-    products = shop.search(host, front) or []
+    products = shop.search(host, front)
+    if products is None:
+        return FAILED
     # A store's search only gives its top 10, so also search for this exact printing.
     extra = {"f2f": _num(number), "udc": set_code.upper(), "cb": set_name}.get(store) if (number or set_code) else ""
     if extra:
@@ -102,6 +108,8 @@ def store_lookup(shop: Shop, store: str, name: str, set_code: str = "", set_name
             low = float(p.get("price_min") or p.get("price"))
         except (TypeError, ValueError):
             low = 1e9
+        if not p.get("handle"):
+            continue
         exact = same_printing(printing_of(store, title), set_code, set_name, number)
         cands.append((not exact, low, p["handle"], title, exact))
     if not cands:
@@ -155,34 +163,53 @@ def links(name: str) -> list[dict]:
 class Montreal:
     """Checks the Montreal stores for one card at a time, and remembers the answers."""
 
-    def __init__(self, shop: Shop | None = None, offline: bool = False):
-        self.shop = shop or Shop(pause=0.15)
+    def __init__(self, shop: Shop | None = None, offline: bool = False, deadline: float = DEADLINE):
+        # One quick try per request: the scanner is waiting, and the weekly prices fill in.
+        self.shop = shop or Shop(pause=0.15, tries=1, timeout=8)
         self.offline = offline
-        self.cache: dict[tuple, tuple[float, list]] = {}
+        self.deadline = deadline
+        self.cache: dict[tuple, tuple[float, list, tuple]] = {}
         self.lock = threading.Lock()
         self.pool = ThreadPoolExecutor(len(MONTREAL))
 
     def lookup(self, name: str, set_code: str = "", set_name: str = "", number: str = "",
-               foil: bool = False) -> tuple[list[dict], bool]:
-        """([store prices in Montreal order], whether they were fetched just now or cached)."""
+               foil: bool = False, missed: list | None = None) -> tuple[list[dict], bool]:
+        """([store prices in Montreal order], whether they were fetched just now or cached).
+        The stores that didn't answer in time are added to `missed`, when given."""
         key = (name, set_code.upper(), norm(set_name), _num(number), foil)
         with self.lock:
             hit = self.cache.get(key)
         if hit and time.time() - hit[0] < CACHE_HOURS * 3600:
-            return hit[1], False
-        jobs = [self.pool.submit(store_lookup, self.shop, s, name, set_code, set_name, number, foil) for s in MONTREAL]
-        found = []
-        for job in jobs:
+            if missed is not None:
+                missed.extend(hit[2])
+            return list(hit[1]), False
+        jobs = {self.pool.submit(store_lookup, self.shop, s, name, set_code, set_name, number, foil): s
+                for s in MONTREAL}
+        done, late = wait(jobs, timeout=self.deadline)
+        for job in late:
+            job.cancel()   # one still running finishes on its own; nobody waits for it
+        found, failed = [], [jobs[job] for job in late]
+        for job in done:
             try:
-                if got := job.result(timeout=60):
-                    found.append(got)
+                got = job.result()
             except Exception:
-                pass
+                got = FAILED
+            if got is FAILED:
+                failed.append(jobs[job])
+            elif got:
+                found.append(got)
+        found.sort(key=lambda s: MONTREAL.index(s["key"]))
+        failed.sort(key=MONTREAL.index)
+        # A full answer is kept for 12 hours. One with a store missing is kept only a
+        # couple of minutes, so that store is asked again once it's back.
+        stamp = time.time() - (CACHE_HOURS * 3600 - RETRY_SECONDS if failed else 0)
         with self.lock:
             if len(self.cache) > 800:
                 self.cache.clear()
-            self.cache[key] = (time.time(), found)
-        return found, True
+            self.cache[key] = (stamp, found, tuple(failed))
+        if missed is not None:
+            missed.extend(failed)
+        return list(found), True
 
 
 def add_montreal_routes(app, scanner, montreal: Montreal | None = None):
@@ -201,9 +228,13 @@ def add_montreal_routes(app, scanner, montreal: Montreal | None = None):
         out = {"name": name, "foil": foil, "links": links(name), "date": getattr(vault, "date", "") if vault else ""}
         if montreal.offline:
             return jsonify(out | {"stores": weekly(vault, name, foil), "checked": "weekly"})
-        stores, _ = montreal.lookup(name, a.get("set", ""), a.get("set_name", ""), a.get("number", ""), foil)
+        missed = []
+        stores, _ = montreal.lookup(name, a.get("set", ""), a.get("set_name", ""), a.get("number", ""), foil,
+                                    missed=missed)
         if not stores:   # the stores didn't answer: fall back to this week's prices
             return jsonify(out | {"stores": weekly(vault, name, foil), "checked": "weekly"})
+        # A store that didn't answer just now shows its price from the weekly check, marked so.
+        stores += [s | {"checked": "weekly"} for s in weekly(vault, name, foil) if s["key"] in missed]
         # Keep Face to Face first, whatever order the stores answered in.
         stores.sort(key=lambda s: MONTREAL.index(s["key"]))
         return jsonify(out | {"stores": stores, "checked": "today"})

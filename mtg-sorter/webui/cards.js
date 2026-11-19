@@ -48,7 +48,7 @@
     const tx = norm($("kText").value), ty = norm($("kType").value), mv = num("kMv"), mvMin = num("kMvMin"), pmax = num("kPmax"), pow = num("kPow");
     const own = $("kOwn").value, kind = $("kKind").value, rar = $("kRar").value, stock = $("kStock").value;
     let allow = null; const fd = $("kFor").value;
-    if (fd) { const d = S.decks.find(x => x.id === fd); const c = d && V.lookup(d.commander); if (c) allow = new Set(c.ci); }
+    if (fd) { const d = S.decks.find(x => x.id === fd); const ci = d && V.cmdCI(d); if (ci) allow = ci; }
     else if (k.colors.size) allow = new Set([...k.colors].filter(x => x !== "C"));
     const role = k.role && V.ROLEF[k.role]; const out = [];
     for (const c of S.cards) {
@@ -148,7 +148,7 @@
     return out.sort((a, b) => (a.e || 1e6) - (b.e || 1e6)).slice(0, 8);
   }
   function fits(c) {
-    return S.decks.filter(d => { const cm = V.lookup(d.commander); return cm && [...c.ci].every(x => cm.ci.includes(x)) && !d.list.some(x => norm(x[0]) === c._k) && norm(d.commander) !== c._k; });
+    return S.decks.filter(d => { const ci = V.cmdCI(d); return ci && [...c.ci].every(x => ci.has(x)) && !d.list.some(x => norm(x[0]) === c._k) && !V.cmds(d).some(n => norm(n) === c._k); });
   }
   function show(name) {
     const c = V.lookup(name); const el = $("kDetail");
@@ -186,14 +186,19 @@
         : '<span class="sub">Couldn\'t reach Scryfall.</span>';
     };
   }
+  // Adds one line to the deck's latest saved list (fetched again, so edits made since this
+  // page opened aren't lost), and leaves the rest of the list as it was.
   async function addToDeck(id, name) {
-    const d = S.decks.find(x => x.id === id); if (!d) return;
-    const c = V.lookup(name), nm = c ? c.n : name;
-    const ex = d.list.find(x => norm(x[0]) === norm(nm));
-    if (ex && !V.BASICS.has(norm(nm)) && !(c && /any number of cards named/i.test(c.o))) return toast(`${nm} is already in ${d.name}`);
-    if (ex) ex[1]++; else d.list.push([nm, 1]);
-    try { await api("/api/decks/save", { id: d.id, name: d.name, text: V.deckToText(d) }); toast(`Added ${nm} to ${d.name}`); if (k.sel) show(k.sel); }
-    catch (e) { toast(e.message); }
+    try {
+      await V.loadDecks();
+      const d = S.decks.find(x => x.id === id); if (!d) return toast("That deck isn't saved any more");
+      const c = V.lookup(name), nm = c ? c.n : name;
+      const ex = d.list.find(x => norm(x[0]) === norm(nm));
+      if ((ex || V.cmds(d).some(n => norm(n) === norm(nm))) && !V.BASICS.has(norm(nm)) && !(c && /any number of cards named/i.test(c.o))) return toast(`${nm} is already in ${d.name}`);
+      await api("/api/decks/save", { id: d.id, name: d.name, text: V.editDeckText(d.text, [{ add: ex ? ex[0] : nm }]) });
+      await V.loadDecks().catch(() => null);
+      toast(`Added ${nm} to ${d.name}`); if (k.sel) show(k.sel);
+    } catch (e) { toast(e.message); }
   }
 
   // ---------- events ----------

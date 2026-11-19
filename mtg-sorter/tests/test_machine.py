@@ -35,13 +35,21 @@ class FakeMotor:
 @pytest.fixture(autouse=True)
 def data(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)   # saved angles go here, not in data/
+    monkeypatch.setattr(config, "COLLECTION_CSV", tmp_path / "collection.csv")   # sort runs save cards
     return tmp_path
 
 
 @pytest.fixture
-def machine():
+def machine(monkeypatch):
+    # Short waits for the fake hardware (tests that set their own value after this still win):
+    # a fake card lands after about 0.06 s, and nothing here needs the real pins or lights wait.
+    monkeypatch.setattr(config, "FEED_MAX_SECONDS", 0.6)
+    monkeypatch.setattr(config, "FEED_PINS_UP_SECONDS", 0.05)
+    monkeypatch.setattr(config, "SORT_LIGHTS_SETTLE", 0.1)
     m = Machine()
     m._kit, m._motor = FakeKit(), FakeMotor()
+    real = m.home
+    m.home = lambda pause=0, speed=None: real(pause=pause, speed=speed)   # no 0.4 s per part
     return m
 
 
@@ -933,3 +941,130 @@ def test_feed_gives_the_pins_a_full_second_to_rise():
     """Nic (2026-11-09): "sometimes the feeder feeds the cards before the pins are fully
     up". The stop pins share the 5 V supply with the motor, so they get a full second."""
     assert config.FEED_PINS_UP_SECONDS >= 1.0
+
+
+# --- One thing drives the machine at a time; errors say what happened -----------------
+
+def test_buttons_that_move_the_machine_wait_while_a_sort_run_drives_it(watched, quick_sort, db, monkeypatch):
+    """A card waiting on the bed during a run: Timed push, Home, a Bin drop or the tuning
+    run used to move the machine under the run (a second card fed onto the waiting one)."""
+    monkeypatch.setattr(config, "SORT_RECOGNIZE_SECONDS", 0.3)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    cams.append(FakeRecognizer(scanner, None, status="unknown"))
+    client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
+    _wait_for(client, lambda d: d.get("waiting"))
+    pins = config.SERVOS["pins"]
+    forward = sum(1 for c in machine._motor.calls if c[0] == "forward")
+    for path, body in (("/api/machine/feed", {"seconds": 0.5, "speed": 0.5}),
+                       ("/api/machine/move", {"part": "pins", "position": "down"}),
+                       ("/api/machine/move", {"channel": pins[0], "angle": 30}),
+                       ("/api/machine/home", {}), ("/api/machine/drop", {"bin": 2}),
+                       ("/api/machine/feed_one", {}), ("/api/machine/sort_one", {"bin": 1}),
+                       ("/api/machine/test", {}), ("/api/machine/tune", {"cycles": 1})):
+        r = client.post(path, json=body)
+        assert r.status_code == 409, (path, r.get_json())
+        assert "wait for it to stop" in r.get_json()["error"] and "sort run" in r.get_json()["error"]
+    assert sum(1 for c in machine._motor.calls if c[0] == "forward") == forward    # the motor stayed off
+    assert machine.angles.get(pins[0]) == pins[1]["up"]                            # the pins stayed up
+    assert client.get("/api/machine/tune").get_json()["running"] is False
+    # Relax all (a jammed servo must be able to let go) and Stop still work
+    assert client.post("/api/machine/relax", json={}).status_code == 200
+    assert client.post("/api/machine/stop", json={}).status_code == 200
+    client.post("/api/machine/sort/decide", json={"action": "stop"})
+    wait_sort(client)
+    assert machine.run is None
+    assert client.post("/api/machine/move", json={"part": "pins", "position": "up"}).status_code == 200
+
+
+def test_a_run_cannot_start_while_something_else_drives_the_machine(watched):
+    from mtgscanner.machine import claim, release
+    client, scanner, machine, cams = watched
+    claim(machine, "one-card feed")             # as while Feed one card is running
+    try:
+        r = client.post("/api/machine/sort", json={"max_cards": 1})
+        assert r.status_code == 409 and "one-card feed" in r.get_json()["error"]
+        assert client.post("/api/machine/tune", json={"cycles": 1}).status_code == 409
+        assert client.get("/api/machine/sort").get_json()["running"] is False
+    finally:
+        release(machine, "one-card feed")
+    assert machine.run is None
+
+
+def test_a_run_that_cannot_start_the_servos_says_error_not_finished(watched, quick_sort):
+    """No servo board (or an I2C error): the run used to end as "Done: finished. 0 cards"."""
+    client, scanner, machine, cams = watched
+
+    def no_board(*a, **k):
+        raise RuntimeError("Servo board not found")
+    machine.home = no_board
+    client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
+    d = wait_sort(client)
+    assert d["done"].startswith("error:") and "Servo board not found" in d["done"], d
+    assert machine.run is None and machine._motor.calls[-1] == ("stop",)
+
+    def lost(*a, **k):
+        raise OSError(121, "Remote I/O error")
+    machine.home = lost
+    client.post("/api/machine/tune", json={"cycles": 1})
+    d = wait_tune(client)
+    assert d["done"].startswith("error:") and "Remote I/O" in d["done"], d
+    assert machine.run is None
+    assert client.post("/api/machine/sort", json={"max_cards": 1}).status_code == 200   # free again
+    wait_sort(client)
+
+
+def test_unread_cards_never_drop_into_the_wanted_only_bin():
+    """Wanted cards in bin 1 with "Only wanted cards in that bin", anything else bin 0 (no
+    tray: it falls to SORT_FALLBACK_BIN, bin 1): unread cards go where bin 1's others go."""
+    from mtgscanner import sort_rules
+    from mtgscanner.sort_run import SortRun
+    rules = sort_rules.clean({**sort_rules.default_rules(), "fallback": 0,
+                              "wanted": {"on": True, "bin": 1, "only": True, "others": 2, "text": "1 Card 1"}})
+    assert config.SORT_FALLBACK_BIN == 1
+    assert SortRun.unread_tray(rules) == 2
+    assert SortRun.tray_for(rules, 0) == 2 and SortRun.tray_for(rules, 3) == 3
+    plain = sort_rules.clean({**sort_rules.default_rules(), "fallback": 0})
+    assert SortRun.unread_tray(plain) == config.SORT_FALLBACK_BIN     # no wanted list: as before
+
+
+def test_unread_bin_press_skips_the_wanted_only_bin(watched, quick_sort, db, monkeypatch):
+    from mtgscanner import sort_rules
+    monkeypatch.setattr(config, "SORT_DROP_UNREAD", True)
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    cams.append(FakeRecognizer(scanner, db.get_card("id2"), status="unsure"))
+    rules = {**sort_rules.default_rules(), "fallback": 0,
+             "wanted": {"on": True, "bin": 1, "only": True, "others": 2, "text": "1 Card 1"}}
+    client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8, "rules": rules})
+    d = wait_sort(client)
+    assert d["cards"][0]["status"] == "unsure" and d["cards"][0]["bin"] == 2, d
+
+
+def test_bins_page_says_which_bins_have_a_tray(client):
+    from mtgscanner import sort_rules
+    d = client.get("/api/bins").get_json()
+    assert d["trays"] == sorted(config.SORT_BINS) and 0 not in d["trays"]
+    assert d["fallback_tray"] == config.SORT_FALLBACK_BIN
+    d = client.post("/api/bins/preview", json={**sort_rules.default_rules(), "fallback": 0, "wanted": {
+        "on": True, "bin": 1, "only": True, "others": 3, "text": "1 Card 1"}}).get_json()
+    assert d["fallback_tray"] == 3
+
+
+def test_a_lost_servo_board_gives_a_readable_answer(client, machine):
+    """An I2C error used to give an HTML error page, so the Machine page showed nothing."""
+    class Broken:
+        @property
+        def angle(self): return None
+        @angle.setter
+        def angle(self, v): raise OSError(121, "Remote I/O error")
+    machine._kit.servo[config.SERVOS["pins"][0]] = Broken()
+    for path, body in (("/api/machine/move", {"part": "pins", "position": "down"}),):
+        r = client.post(path, json=body)
+        assert r.status_code == 503 and r.is_json, r.data[:200]
+        assert "servo board" in r.get_json()["error"]     # the raw error goes to the log only
+    machine._kit = FakeKit()
+    machine._kit.servo[config.SERVOS["pins"][0]] = Broken()
+    r = client.post("/api/machine/home", json={})
+    assert r.status_code == 503 and "servo board" in r.get_json()["error"]
+    assert machine.run is None                  # the Home press let go of the machine

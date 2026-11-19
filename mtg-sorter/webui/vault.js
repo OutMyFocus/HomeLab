@@ -15,8 +15,11 @@ window.VAULT = (() => {
   const IDB = {
     open() { return new Promise((res, rej) => { try { const r = indexedDB.open("mtg-sorter", 1); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }); },
     async get(k) { try { const d = await this.open(); return await new Promise(res => { const q = d.transaction("kv").objectStore("kv").get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); } catch (e) { return null; } },
-    async set(k, v) { try { const d = await this.open(); await new Promise(res => { const t = d.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k); t.oncomplete = res; t.onerror = res; }); } catch (e) { } },
+    async set(k, v) { try { const d = await this.open(); return await new Promise(res => { const t = d.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k); t.oncomplete = () => res(true); t.onerror = () => res(false); t.onabort = () => res(false); }); } catch (e) { return false; } },
+    // Delete every key that starts with prefix (older copies of the card database).
+    async prune(prefix) { try { const d = await this.open(); await new Promise(res => { const t = d.transaction("kv", "readwrite"), q = t.objectStore("kv").openCursor(); q.onsuccess = () => { const c = q.result; if (!c) return; if (String(c.key).startsWith(prefix)) c.delete(); c.continue(); }; t.oncomplete = res; t.onerror = res; t.onabort = res; }); } catch (e) { } },
   };
+  const CARDDB_KEY = "carddb";   // one copy: {built, text}, replaced when the Pi builds a new one
   let cardLoad = null;
   // onStatus(text, percent) while downloading. Resolves to the card list, or null when the Pi has none yet.
   function loadCards(onStatus = () => { }) {
@@ -25,16 +28,20 @@ window.VAULT = (() => {
       const st = await api("/api/vault");
       S.status = st;
       if (!st.carddb || !st.carddb.cards) { onStatus(st.job === "carddb" ? "The Pi is building the card database. Try again in a minute." : "The card database isn't on the Pi yet. Settings, Prices and card data, Update now."); return null; }
-      const key = "carddb:" + st.carddb.built;
-      let data = await IDB.get(key);
+      const saved = await IDB.get(CARDDB_KEY);
+      let data = null;
+      if (saved && saved.built === st.carddb.built && typeof saved.text === "string") { try { data = JSON.parse(saved.text); } catch (e) { data = null; } }
       if (!data) {
         onStatus("Downloading the card database", 0);
         const r = await fetch("/api/carddb");
         if (!r.ok) throw new Error("HTTP " + r.status);
-        const total = st.carddb.bytes || 0, reader = r.body.getReader(), parts = []; let got = 0;
+        // The browser unpacks the gzip copy as it arrives, so count against the unpacked size.
+        const total = st.carddb.raw_bytes || st.carddb.bytes || 0, reader = r.body.getReader(), parts = []; let got = 0;
         for (; ;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; if (total) onStatus("Downloading the card database", Math.min(99, Math.round(got / total * 100))); }
-        data = JSON.parse(await new Blob(parts).text());
-        IDB.set(key, data);
+        const text = await new Blob(parts).text();
+        data = JSON.parse(text);
+        // Saved as text, so the extra field added below isn't stored; then last week's copies go.
+        IDB.set(CARDDB_KEY, { built: st.carddb.built, text }).then(ok => { if (ok) IDB.prune("carddb:"); });
       }
       S.cards = data.cards; S.built = st.carddb.built; S.byName = new Map();
       for (const c of S.cards) { const k = norm(c.n); c._k = k; S.byName.set(k, c); if (k.includes(" // ") && !S.byName.has(front(k))) S.byName.set(front(k), c); }
@@ -100,35 +107,115 @@ window.VAULT = (() => {
   const ownedQty = name => { const k = norm(name); return S.owned.get(k) || S.owned.get(front(k)) || 0; };
   const copiesOf = name => { const k = norm(name); return S.copies.get(k) || S.copies.get(front(k)) || []; };
 
-  // A decklist's text as {commander, list: [[name, qty]]}. The Commander section holds the commander.
+  // A decklist's text as {commander, partner, list: [[name, qty]], side}. The Commander
+  // section holds the commander, and a second one (Partner, a Background) as the partner.
   const SECTIONS = /^(\/\/\s*)?(deck|main|maindeck|mainboard|sideboard|side|sb|commanders?|companion|maybeboard|maybe|considering|tokens)\s*:?$/i;
+  const SIDE = /^(sideboard|side|sb|maybeboard|maybe|considering|tokens|companion)$/;
+  // The same clean-up, in the same order, as the Pi's parser (mtgscanner/decks.py _TAIL):
+  // Moxfield's *F*, #tags, Archidekt's ^tags^ and [categories], "(SET) 123", <labels>.
+  const TAIL = [/\s+\*[A-Za-z]+\*/g, /\s+#\S.*$/, /\s+\^[^^]*\^/g, /\s+\[[^\]]*\]/g, /\s+\([A-Za-z0-9]{2,6}\)(\s+\S+)?\s*$/, /\s+<[^>]*>/g];
+  // One line of a decklist: null for blank lines and comments, {section} for a section
+  // line, else {sec, name, q} (sec "commander", "side" or "list").
+  function readLine(raw, section) {
+    let line = String(raw || "").trim(); if (!line) return null;
+    const sm = line.match(SECTIONS); if (sm) return { section: sm[2].toLowerCase() };
+    if (/^(\/\/|#)/.test(line)) return null;
+    let sec = section; if (/^sb:/i.test(line)) { line = line.slice(3).trim(); sec = "sideboard"; }
+    const m = line.match(/^(\d{1,3})\s*[xX]?\s+(.+)$/); let name = m ? m[2] : line; const q = m ? +m[1] : 1;
+    for (const re of TAIL) name = name.replace(re, "");
+    name = name.trim(); if (!name || q < 1) return null;
+    return { sec: /^commanders?$/.test(sec) ? "commander" : SIDE.test(sec) ? "side" : "list", name, q };
+  }
   function parseDeck(text) {
-    let section = "deck"; const out = { commander: "", list: [], side: [] };
-    for (let line of String(text || "").split(/\r?\n/)) {
-      line = line.trim(); if (!line) continue;
-      const sm = line.match(SECTIONS); if (sm) { section = sm[2].toLowerCase(); continue; }
-      if (/^(\/\/|#)/.test(line)) continue;
-      let sec = section; if (/^sb:/i.test(line)) { line = line.slice(3).trim(); sec = "sideboard"; }
-      line = line.replace(/\s+\*[A-Za-z]+\*/g, "").replace(/\s+\([A-Za-z0-9]{2,6}\)(\s+\S+)?\s*$/, "").replace(/\s+\[[^\]]*\]/g, "").replace(/\s+#\S.*$/, "").trim();
-      const m = line.match(/^(\d{1,3})\s*[xX]?\s+(.+)$/); const name = (m ? m[2] : line).trim(); const q = m ? +m[1] : 1;
-      if (!name) continue;
-      if (/^commanders?$/.test(sec) && !out.commander) { out.commander = name; if (q > 1) out.list.push([name, q - 1]); continue; }
-      const target = /^(sideboard|side|sb|maybeboard|maybe|considering|tokens|companion)$/.test(sec) ? out.side : out.list;
+    let section = "deck"; const out = { commander: "", partner: "", list: [], side: [] };
+    for (const raw of String(text || "").split(/\r?\n/)) {
+      const r = readLine(raw, section); if (!r) continue;
+      if (r.section) { section = r.section; continue; }
+      const { name, q } = r;
+      if (r.sec === "commander") {
+        if (!out.commander) { out.commander = name; if (q > 1) out.list.push([name, q - 1]); continue; }
+        if (!out.partner && norm(name) !== norm(out.commander)) { out.partner = name; if (q > 1) out.list.push([name, q - 1]); continue; }
+      }
+      const target = r.sec === "side" ? out.side : out.list;
       const ex = target.find(x => norm(x[0]) === norm(name)); if (ex) ex[1] += q; else target.push([name, q]);
     }
     return out;
   }
+  // The deck's commanders (one, or two with a partner) and their colors together.
+  const cmds = d => [d.commander, d.partner].filter(Boolean);
+  function cmdCI(d) {
+    const found = cmds(d).map(lookup).filter(Boolean);
+    return found.length ? new Set(found.flatMap(c => [...c.ci])) : null;
+  }
+  // True when two commanders say they can lead a deck together.
+  function canPair(a, b) {
+    const partner = c => /\bPartner\b|Friends forever/i.test(c.o);
+    const bg = c => /Background/.test(c.t.split(" // ")[0]);
+    return (partner(a) && partner(b)) || (/Choose a Background/i.test(a.o) && bg(b)) || (/Choose a Background/i.test(b.o) && bg(a))
+      || /Doctor's companion/i.test(a.o + b.o);
+  }
   function deckToText(d) {
     const lines = [];
-    if (d.commander) lines.push("Commander", `1 ${d.commander}`, "", "Deck");
+    if (d.commander) lines.push("Commander", ...cmds(d).map(n => `1 ${n}`), "", "Deck");
     for (const [n, q] of d.list) lines.push(`${q} ${n}`);
     if (d.side && d.side.length) { lines.push("", "Sideboard"); for (const [n, q] of d.side) lines.push(`${q} ${n}`); }
+    return lines.join("\n");
+  }
+  // Change a decklist's text one line at a time, leaving everything else as it was typed or
+  // pasted (other sections, set codes and foil marks, comments). ops, in order:
+  //   {add: name, n}     n more copies in the deck (a new line at the end of the deck part)
+  //   {remove: name, n}  n fewer (the line goes at 0)
+  //   {commander: name}  make it the commander; the old ones (and a partner) go into the deck
+  function editDeckText(text, ops) {
+    let lines = String(text || "").split(/\r?\n/);
+    const same = (a, b) => { const x = norm(a), y = norm(b); return x === y || front(x) === front(y); };
+    const scan = () => { let section = "deck"; return lines.map(raw => { const r = readLine(raw, section); if (r && r.section) section = r.section; return r; }); };
+    const setQty = (raw, q) => { const m = raw.match(/^(\s*(?:SB:\s*)?)(\d{1,3})(\s*[xX]?\s+)/i); return m ? m[1] + q + m[3] + raw.slice(m[0].length) : raw.replace(/^(\s*(?:SB:\s*)?)/i, `$1${q} `); };
+    function add(name, n) {
+      const info = scan(), i = info.findIndex(r => r && r.sec === "list" && same(r.name, name));
+      if (i >= 0) { lines[i] = setQty(lines[i], info[i].q + n); return; }
+      let at = -1; info.forEach((r, j) => { if (r && r.sec === "list") at = j; });
+      if (at >= 0) { lines.splice(at + 1, 0, `${n} ${name}`); return; }
+      // No deck cards yet: add after a Deck line, or start a Deck part at the end.
+      let end = "deck"; for (const r of info) if (r && r.section) end = r.section;
+      while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+      const deckPart = !/^commanders?$/.test(end) && !SIDE.test(end);
+      lines.push(...(deckPart ? [] : ["", "Deck"]), `${n} ${name}`);
+    }
+    function remove(name, n) {
+      const info = scan(), i = info.findIndex(r => r && r.sec === "list" && same(r.name, name));
+      if (i < 0) return;
+      if (info[i].q > n) lines[i] = setQty(lines[i], info[i].q - n); else lines.splice(i, 1);
+    }
+    function commander(name) {
+      let info = scan(); const moved = [];   // (bottom up, so the line numbers stay right)
+      for (let i = info.length - 1; i >= 0; i--) {
+        const r = info[i];
+        if (r && r.sec === "commander") { if (!same(r.name, name)) moved.unshift([r.name, r.q]); lines.splice(i, 1); }
+        else if (r && r.sec === "list" && same(r.name, name)) lines.splice(i, 1);
+      }
+      info = scan();
+      const head = lines.findIndex(raw => { const m = raw.trim().match(SECTIONS); return m && /^commanders?$/i.test(m[2]); });
+      if (head >= 0) lines.splice(head + 1, 0, `1 ${name}`);
+      else {
+        const first = info.findIndex(r => r);   // the first card or section line
+        const top = ["Commander", `1 ${name}`, ""];
+        if (first < 0 || !info[first].section) top.push("Deck");
+        lines.splice(0, 0, ...top);
+      }
+      for (const [n, q] of moved) add(n, q);
+    }
+    for (const op of ops || []) {
+      if (op.add) add(op.add, op.n || 1);
+      else if (op.remove) remove(op.remove, op.n || 1);
+      else if (op.commander) commander(op.commander);
+    }
     return lines.join("\n");
   }
   async function loadDecks() { const js = await api("/api/decks"); S.decks = (js.decks || []).map(d => ({ ...d, ...parseDeck(d.text) })); return S.decks; }
   function deckIndex() {
     const m = new Map();
-    for (const d of S.decks) for (const n of [d.commander, ...d.list.map(x => x[0])].filter(Boolean)) { const k = norm(n); if (!m.has(k)) m.set(k, new Set()); m.get(k).add(d.name); }
+    for (const d of S.decks) for (const n of [...cmds(d), ...d.list.map(x => x[0])].filter(Boolean)) { const k = norm(n); if (!m.has(k)) m.set(k, new Set()); m.get(k).add(d.name); }
     return m;
   }
 
@@ -158,12 +245,17 @@ window.VAULT = (() => {
 
   // The Commander checks for a deck: count, commander, colors, duplicates, banned, Game Changers.
   function deckChecks(d) {
-    const checks = [], bad = new Set(), cmd = lookup(d.commander), ci = cmd ? new Set(cmd.ci) : null;
-    const count = d.list.reduce((s, x) => s + x[1], 0) + (d.commander ? 1 : 0);
-    checks.push(count === 100 ? ["ok", "100 cards, commander included."] : ["bad", `${count} cards. A Commander deck is exactly 100 with the commander.`]);
+    const checks = [], bad = new Set(), names = cmds(d), found = names.map(lookup), ci = cmdCI(d);
+    const who = names.join(" and ");
+    const count = d.list.reduce((s, x) => s + x[1], 0) + names.length;
+    checks.push(count === 100 ? ["ok", `100 cards, ${names.length > 1 ? "commanders" : "commander"} included.`] : ["bad", `${count} cards. A Commander deck is exactly 100 with the commander.`]);
     if (!d.commander) checks.push(["bad", "No commander set. Put it under a Commander line, or press Set commander."]);
-    else if (cmd && !isCommander(cmd)) checks.push(["warn", `${d.commander} isn't a legendary creature. Check that it can be a commander.`]);
-    else if (S.cards && !cmd) checks.push(["warn", `${d.commander} isn't in the card database. Check the spelling.`]);
+    names.forEach((n, i) => {
+      const c = found[i];
+      if (c && !isCommander(c) && !/Background/.test(c.t)) checks.push(["warn", `${n} isn't a legendary creature. Check that it can be a commander.`]);
+      else if (S.cards && !c) checks.push(["warn", `${n} isn't in the card database. Check the spelling.`]);
+    });
+    if (found.length === 2 && found[0] && found[1] && !canPair(found[0], found[1])) checks.push(["warn", `${who} don't say they can lead a deck together (Partner or Choose a Background). Check that they can.`]);
     const off = [], banned = [], unknown = [], gcs = [], dupes = [], seen = new Map();
     for (const [n, q] of d.list) {
       const c = lookup(n); if (S.cards && !c) unknown.push(n);
@@ -172,11 +264,10 @@ window.VAULT = (() => {
       if (c && c.b) { banned.push(c.n); bad.add(norm(n)); }
       if (c && c.gc) gcs.push(c.n);
     }
-    if (cmd && cmd.gc) gcs.unshift(cmd.n);
-    if (cmd && cmd.b) banned.unshift(cmd.n);
+    for (const c of [...found].reverse()) { if (c && c.gc) gcs.unshift(c.n); if (c && c.b) banned.unshift(c.n); }
     for (const [k, q] of seen) { const c = S.byName && S.byName.get(k); if (q > 1 && !BASICS.has(k) && !(c && /any number of cards named/i.test(c.o))) { dupes.push(c ? c.n : k); bad.add(k); } }
     if (S.cards) {
-      checks.push(off.length ? ["bad", `Outside ${d.commander || "the commander"}'s colors: ${off.join(", ")}.`] : ["ok", "Every card fits the commander's colors."]);
+      checks.push(off.length ? ["bad", `Outside ${who || "the commander"}'s colors: ${off.join(", ")}.`] : ["ok", `Every card fits the ${names.length > 1 ? "commanders'" : "commander's"} colors.`]);
       checks.push(dupes.length ? ["bad", `More than one copy: ${dupes.join(", ")}. Only basic lands can repeat.`] : ["ok", "No duplicates."]);
       if (banned.length) checks.push(["bad", `Banned in Commander: ${banned.join(", ")}.`]);
       checks.push(gcs.length === 0 ? ["ok", "No Game Changers, so Bracket 1 or 2 is possible."] : gcs.length <= 3 ? ["warn", `${gcs.length} Game Changer${gcs.length > 1 ? "s" : ""} (${gcs.join(", ")}): Bracket 3 at least.`] : ["warn", `${gcs.length} Game Changers (${gcs.join(", ")}): Bracket 4.`]);
@@ -185,7 +276,7 @@ window.VAULT = (() => {
     return { checks, bad, count, gcs, bracket: gcs.length === 0 ? "1 to 2" : gcs.length <= 3 ? "3" : "4+" };
   }
   function deckStats(d) {
-    const all = [...(d.commander ? [[d.commander, 1]] : []), ...d.list];
+    const all = [...cmds(d).map(n => [n, 1]), ...d.list];
     let count = 0, own = 0, cost = 0, value = 0; const need = [];
     for (const [n, q] of all) {
       count += q; const have = d.proxied ? q : Math.min(q, ownedQty(n)); own += have;
@@ -195,5 +286,5 @@ window.VAULT = (() => {
     return { count, own, cost, value, need };
   }
 
-  return { S, norm, BASICS, STORES, cad, loadCards, lookup, loadPrices, caRec, priceInfo, priceOf, money, trend, storeTable, loadOwned, ownedQty, copiesOf, parseDeck, deckToText, loadDecks, deckIndex, TYPES, typeOf, isCommander, pips, mana, ROLES, ROLEF, deckChecks, deckStats };
+  return { S, norm, BASICS, STORES, cad, loadCards, lookup, loadPrices, caRec, priceInfo, priceOf, money, trend, storeTable, loadOwned, ownedQty, copiesOf, parseDeck, deckToText, editDeckText, cmds, cmdCI, loadDecks, deckIndex, TYPES, typeOf, isCommander, pips, mana, ROLES, ROLEF, deckChecks, deckStats };
 })();

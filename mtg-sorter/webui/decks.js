@@ -32,23 +32,42 @@
       : '<p class="none">Decks you save show up here.</p>';
     $("deleteDeck").hidden = !currentId;
   }
+  // True when the list in the box has changes that aren't saved (a saved deck that was
+  // edited, or a new list typed or pasted in).
+  function unsaved() {
+    const d = decks.find(x => x.id === currentId), t = $("deckText").value;
+    if (!d) return !!t.trim();
+    const name = ($("deckName").value.trim() || "Untitled deck").slice(0, 80);   // as the Pi saves it
+    return t !== d.text || name !== d.name;
+  }
+  const discardOk = () => !unsaved() || confirm("Discard your unsaved changes to this list?");
   $("savedDecks").onclick = e => {
     const b = e.target.closest(".deck-item"); if (!b) return;
-    const d = decks.find(x => x.id === b.dataset.id);
+    const d = decks.find(x => x.id === b.dataset.id); if (!d) return;
+    if (d.id !== currentId && !discardOk()) return;
     currentId = d.id; $("deckName").value = d.name; $("deckText").value = d.text;
     renderDecks(); countLines(); checkDeck();
     document.dispatchEvent(new CustomEvent("deck-opened"));
   };
   $("newDeck").onclick = () => {
+    if (!discardOk()) return;
     currentId = null; $("deckName").value = ""; $("deckText").value = ""; $("result").hidden = true;
     renderDecks(); countLines(); $("deckText").focus();
     document.dispatchEvent(new CustomEvent("deck-opened"));
   };
+  // One save at a time, each sending the list as it is when its turn comes, so an older
+  // save can never land after a newer one (the builder saves after every change).
+  let saving = Promise.resolve();
+  function queueSave(extra = {}) {
+    const run = saving.then(() => api("/api/decks/save", { id: currentId, name: $("deckName").value, text: $("deckText").value, ...extra }));
+    saving = run.catch(() => { });
+    return run;
+  }
   $("saveDeck").onclick = async () => {
     if (!$("deckText").value.trim()) return toast("Paste a decklist first");
     try {
-      const js = await api("/api/decks/save", { id: currentId, name: $("deckName").value, text: $("deckText").value });
-      decks = js.decks; currentId = js.deck.id; $("deckName").value = js.deck.name; renderDecks();
+      const js = await queueSave();
+      decks = js.decks; currentId = js.deck.id; $("deckName").value = js.deck.name; renderDecks(); countLines();
       toast(`Saved ${js.deck.name}`);
     } catch (e) { toast(e.message); }
   };
@@ -103,10 +122,10 @@
     for (const b of $("showSeg").children) b.setAttribute("aria-pressed", b.dataset.v === show);
     const rows = r.lines.filter(x => show === "all" || (show === "missing" ? x.missing : x.have));
     $("rRows").innerHTML = rows.length ? rows.map(x => {
-      const cls = !x.found ? "unknown" : x.missing ? "short" : "ok";
+      const cls = x.extra ? "" : !x.found ? "unknown" : x.missing ? "short" : "ok";
       const where = x.where.map(w => `<span class="pill bin-${w.bin}" title="${esc(w.sorted_into || "")}">${esc(w.set)} #${esc(w.number)}${w.foil ? " foil" : ""} ×${w.qty}</span>`).join("");
       const img = x.image ? `<img class="thumb" src="${esc(x.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">` : '<span class="thumb"></span>';
-      return `<tr class="${cls}"><td class="card-cell">${img}<span><span class="nm">${esc(x.name)}</span><span class="sec">${esc(x.section)}</span></span></td>
+      return `<tr class="${cls}"><td class="card-cell">${img}<span><span class="nm">${esc(x.name)}</span><span class="sec">${esc(x.section)}${x.extra ? " · not counted" : ""}</span></span></td>
         <td class="num">${x.need}</td><td class="num">${x.have}</td>
         <td class="hide-sm"><span class="where">${where || '<span class="sub">Not in your collection</span>'}</span></td>
         <td class="num">${x.missing ? money(x.price) : ""}</td>
@@ -116,7 +135,7 @@
   $("showSeg").onclick = e => { const b = e.target.closest("button"); if (b && result) { show = b.dataset.v; renderResult(); } };
 
   function missingList() {
-    const rows = (result?.lines || []).filter(x => x.missing && x.found);
+    const rows = (result?.lines || []).filter(x => x.missing && x.found && !x.extra);
     return rows.map(x => `${x.missing} ${x.name}`).join("\n") + (rows.length ? "\n" : "");
   }
   $("copyMissing").onclick = () => {
@@ -125,7 +144,7 @@
   };
 
   $("wishMissing").onclick = async () => {
-    const cards = (result?.lines || []).filter(x => x.missing && x.found).map(x => ({ name: x.name }));
+    const cards = (result?.lines || []).filter(x => x.missing && x.found && !x.extra).map(x => ({ name: x.name }));
     if (!cards.length) return toast("Nothing missing");
     try { await api("/api/wishlist/add", { cards }); toast(`Added ${cards.length} cards to your wishlist`); }
     catch (e) { toast(e.message); }
@@ -136,7 +155,7 @@
     current: () => decks.find(x => x.id === currentId) || null,
     async save(extra = {}) {
       if (!currentId) return null;
-      const js = await api("/api/decks/save", { id: currentId, name: $("deckName").value, text: $("deckText").value, ...extra });
+      const js = await queueSave(extra);
       decks = js.decks; renderDecks(); return js.deck;
     },
     changed() { countLines(); },

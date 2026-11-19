@@ -23,8 +23,8 @@ from pathlib import Path
 
 from flask import jsonify, request, send_from_directory
 
-from . import accounts, ca_prices, carddb, config, decks, play, wishlist
-from .collection import append_rows, ensure_columns
+from . import accounts, ca_prices, carddb, config, decks, exchange, play, wishlist
+from .collection import COLLECTION_LOCK, append_rows, ensure_columns
 from .library import read_rows, write_rows
 from .live import API, card_from_scryfall
 from .montreal import add_montreal_routes
@@ -47,10 +47,10 @@ def _read(path: Path, default):
 
 
 def _write(path: Path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
-    tmp.replace(path)
+    decks.write_json(path, data)
+
+
+_status_lock = threading.Lock()   # vault_status.json: one change at a time
 
 
 # --- Cards to add: turning Vault and ManaBox rows into collection.csv rows ------------------
@@ -215,14 +215,22 @@ def import_vault(scanner, data: dict) -> dict:
         raise ValueError("This isn't a Commander Vault export")
     did = {"sources": 0, "cards": 0, "decks": 0, "wishlist": 0, "trade": 0, "games": 0, "prices": 0, "guides": 0}
 
+    # The store prices are shared by every account and the sorter, so only an admin's
+    # import brings them in (always true when accounts are off).
     prices = data.get("prices") or {}
-    if prices.get("prices"):
-        have = ca_prices.load()
-        if have.get("date") != prices.get("date") and (not have.get("prices") or not have.get("checked")
-                                                       or _age(have["checked"]) > WEEK):
-            ca_prices.save({**prices, "checked": prices.get("checked") or "", "imported": True})
-            scanner.vault = VaultPrices.load(config.VAULT_PRICES)
-            did["prices"] = len(prices["prices"])
+    if isinstance(prices, dict) and isinstance(prices.get("prices"), dict) and prices["prices"]:
+        if not accounts.can("admin"):
+            did["prices_note"] = "Store prices are shared, so only an admin's import brings them in"
+        else:
+            have = ca_prices.load()
+            if have.get("date") != prices.get("date") and (not have.get("prices") or not have.get("checked")
+                                                           or _age(have["checked"]) > WEEK):
+                checked = str(prices.get("checked") or "")
+                if checked and _age(checked) < 0:   # a date in the future: say it was checked now
+                    checked = time.strftime("%Y-%m-%dT%H:%M:%S")
+                ca_prices.save({**prices, "checked": checked, "imported": True})
+                scanner.vault = VaultPrices.load(config.VAULT_PRICES)
+                did["prices"] = len(prices["prices"])
 
     with scanner.lock:
         rows = read_rows(accounts.collection_csv())
@@ -336,13 +344,16 @@ class Weekly:
             self.message = f"Checking Canadian prices: {done} of {total}"
         data = ca_prices.check(names, keys, progress=progress)
         self.scanner.vault = VaultPrices.load(config.VAULT_PRICES)
-        self._note("prices_checked", f"{len(data['prices'])} cards")
+        failed = data.get("failed") or 0
+        self._note("prices_checked", f"{len(data['prices'])} cards"
+                   + (f", {failed} hit an error and kept last week's price" if failed else ""))
 
     def _note(self, key, value):
-        st = _read(status_file(), {})
-        st[key] = value
-        st[key + "_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-        _write(status_file(), st)
+        with _status_lock:
+            st = _read(status_file(), {})
+            st[key] = value
+            st[key + "_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            _write(status_file(), st)
 
     def due(self) -> str | None:
         """The job that's due, if any: the card database first, then prices."""
@@ -352,15 +363,22 @@ class Weekly:
                 return "carddb"
         prices = ca_prices.load()
         checked = prices.get("checked") or ""
-        if not prices.get("prices") or not checked or _age(checked) > WEEK:
+        age = _age(checked)
+        # A "checked" date over a day in the future can't be right: check again.
+        if not prices.get("prices") or not checked or age > WEEK or age < -24 * 3600:
             if not _recent(st.get("prices_error_at")):
                 return "prices"
         return None
 
     def loop(self, first_wait: float = 120):
-        """Check every hour whether a job is due (started by app.py, not in tests)."""
+        """Check every hour whether a job is due (started by app.py, not in tests). The
+        USD to CAD rate is kept up to date here too (it's fetched again once a day)."""
         time.sleep(first_wait)
         while not self.offline:
+            try:
+                exchange.load_rate()
+            except Exception:
+                pass
             try:
                 if (job := self.due()) and not self.job:
                     self.start(job)
@@ -418,7 +436,12 @@ def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
 
     @app.get("/guides/<name>")
     def guide(name):
-        return send_from_directory(accounts.user_file("guides"), name)
+        resp = send_from_directory(accounts.user_file("guides"), name)
+        # Guides come from Commander Vault exports, maybe someone else's. Their scripts may
+        # draw the deck and charts, but in a sandbox: they can't use your login or the API.
+        resp.headers["Content-Security-Policy"] = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox"
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        return resp
 
     @app.get("/api/vault")
     def vault_status():
@@ -471,7 +494,7 @@ def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
             rows = read_rows(accounts.collection_csv())
         name = unique_source(rows, js.get("name"))
         new = to_rows(scanner, cards, name, "")
-        with scanner.lock:
+        with scanner.lock, COLLECTION_LOCK:
             append_rows(accounts.collection_csv(), new)
             rows = read_rows(accounts.collection_csv())
         return jsonify({"source": name, "cards": sum(c["q"] for c in cards), "sources": sources(rows)})
@@ -481,7 +504,7 @@ def add_vault_routes(app, scanner, web_dir, weekly: Weekly | None = None):
         name = str(body().get("name") or "").strip()
         if not name or name == SCANNED:
             return jsonify({"error": "Pick an imported source. Scanned cards are removed on the History page"}), 400
-        with scanner.lock:
+        with scanner.lock, COLLECTION_LOCK:   # a card saved meanwhile (a phone's scan) isn't lost
             ensure_columns(accounts.collection_csv())
             rows = read_rows(accounts.collection_csv())
             keep = [r for r in rows if (r.get("Source") or "").strip() != name]

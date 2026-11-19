@@ -802,7 +802,9 @@
     <div class="toast" id="toast" hidden>
       <svg><use href="#i-check" /></svg><span id="toastText"></span>
     </div>
-    <div class="alert-banner" id="alertBanner" hidden role="status"></div>
+    <div class="alert-banner" id="alertBanner" hidden></div>
+    <!-- what the toast and the alert say, read out by screen readers (never shown) -->
+    <div id="toastLive" class="sr-only" role="status" aria-live="polite"></div>
     <script src="/static/chime.js"></script>
     <script src="/static/montreal.js"></script>
     <script src="/static/app.js"></script>

@@ -42,7 +42,17 @@
     (() => {
       const pin = document.getElementById("pin"), err = document.getElementById("err");
       const next = new URLSearchParams(location.search).get("next");
-      const go = () => location.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : (location.pathname === "/lock" ? "/" : location.href));
+      // Only a page of this app: a "next" like /\evil.com would leave for another website.
+      const safeNext = n => {
+        if (!n) return null;
+        try {
+          const u = new URL(n, location.origin + "/");
+          if (u.origin !== location.origin) return null;
+          const p = u.pathname + u.search + u.hash;
+          return p.startsWith("/login") ? null : p;
+        } catch { return null; }
+      };
+      const go = () => location.replace(safeNext(next) || (location.pathname === "/lock" ? "/" : location.href));
       fetch("/api/lock").then(r => r.json()).then(s => {
         if (s.accounts) return location.replace("/login" + location.search);   // accounts are on: log in instead
         if (s.unlocked) go();

@@ -44,17 +44,19 @@ The wall tiles are 250 mm long and use the A1's whole bed. There's no prime towe
 
 Nothing is screwed or glued. Steel pins press into their holes, magnets press into their pockets, and everything else slides or clicks.
 
+Mk2 takes 54 magnets (two 50-packs): 20 in the walls, 3 in the base, 2 in the level 2 shelves, 2 in each bin, 2 in each of level 1, level 2, the scan carrier and the feeder, 4 in the electronics tray's back plate, 4 in each lid half and 1 in the drawer. To get the poles right, press the frame's magnet in first, let its partner snap onto it, dot the partner's top face with a marker, and press the partner into its part dot side first. Do all four bin seats the same way up and all eight bin magnets the same way, so any bin fits any spot. If a bin doesn't show as seated, flip the magnet over its hall sensor (the bin's magnet with no partner).
+
 The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG_Sorter_Mk2_Picture_Assembly.html) (rebuild it with `python3 guide/build_guide.py`).
 
 1. **Base:**
    - Lay the four base tiles on the table.
    - Press a bowtie key into each socket across the seams (5 keys).
    - Push 3 x 16 mm pins into the seam holes.
-   - Press the magnets in: the drawer's, and each bin's two.
+   - Press 3 magnets in: 1 for the drawer and 1 under each of bins 3 and 4 (each bin carries 2 more in its own floor).
 2. **Walls:**
    - Each wall is 2 x 3 tiles, joined the same way (9 keys per wall, plus pins).
    - Slide each wall onto the base from the front. The dovetail along the base's edge runs in the groove under the wall, so the walls and base stay locked together even if you lift the machine by its walls.
-   - Press the rail magnets in near the closed end of each rail, and the lid magnets in the top ledge.
+   - Press 10 magnets into each wall: 1 near the closed end of each rail, 2 low at the back for the electronics tray, and 4 in the top ledge for the lid.
 3. **Level 2** (do this on the bench, before it goes in):
    - Press the lever's horn into its pocket and a 3 x 16 mm pin through the lever's end, so 5 mm stands out of its flat face.
    - Lay the carriage on the frame's guide, slide it to the middle, and lower the lever in from above so its pin drops into the fork at the top of the crossbar.

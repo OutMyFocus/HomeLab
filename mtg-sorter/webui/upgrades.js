@@ -30,9 +30,10 @@ window.UPGRADES = (() => {
 
   // Every card that could go in, with a score: how many decks play it (and how much more
   // than usual), or, with no EDHREC list, how popular it is in Commander overall.
-  function pool(info, cmd, inDeck) {
-    const ci = new Set(cmd.ci), out = [];
-    const ok = c => c && !c.b && [...c.ci].every(x => ci.has(x)) && !inDeck.has(norm(c.n)) && norm(c.n) !== norm(cmd.n) && !V.BASICS.has(norm(c.n));
+  // ci: the commanders' colors together; inDeck holds the commanders too, so they never come up.
+  function pool(info, ci, inDeck) {
+    const out = [];
+    const ok = c => c && !c.b && [...c.ci].every(x => ci.has(x)) && !inDeck.has(norm(c.n)) && !V.BASICS.has(norm(c.n));
     if (info.source === "edhrec") {
       for (const r of info.cards || []) { const c = V.lookup(r.n); if (ok(c)) out.push({ c, score: r.inc + 0.8 * Math.max(0, r.syn), inc: r.inc, syn: r.syn, p: r.p }); }
     } else {
@@ -57,8 +58,8 @@ window.UPGRADES = (() => {
   // the land count stays the same; everything else swaps with a nonland card.
   function plan(d, info, opts) {
     const cmd = V.lookup(d.commander); if (!cmd) return null;
-    const ci = new Set(cmd.ci), byName = new Map((info.cards || []).map(r => [norm(r.n), r]));
-    const inDeck = new Set(d.list.map(([n]) => norm(V.lookup(n)?.n || n)));
+    const ci = V.cmdCI(d), byName = new Map((info.cards || []).map(r => [norm(r.n), r]));
+    const inDeck = new Set([...V.cmds(d), ...d.list.map(([n]) => n)].map(n => norm(V.lookup(n)?.n || n)));
     const counts = Object.fromEntries(Object.keys(TARGET).map(k => [k, 0]));
     const cutsN = [], cutsL = []; const basics = new Map(); let lands = 0;
     for (const [n, q] of d.list) {
@@ -70,8 +71,8 @@ window.UPGRADES = (() => {
       (c && isLand(c) ? cutsL : cutsN).push({ n, c, ...s, roles: c && !isLand(c) ? roles(c) : [] });
     }
     const base = cutsN.concat(cutsL).reduce((s, x) => s + Math.max(0, x.score), 0);
-    const gcs = d.list.some(([n]) => V.lookup(n)?.gc) || cmd.gc;
-    const adds = pool(info, cmd, inDeck).filter(a => {
+    const gcs = d.list.some(([n]) => V.lookup(n)?.gc) || V.cmds(d).some(n => V.lookup(n)?.gc);
+    const adds = pool(info, ci, inDeck).filter(a => {
       if (opts.noGc && a.c.gc) return false;
       a.own = V.ownedQty(a.c.n) > 0;
       a.price = a.own ? 0 : (V.priceOf(a.c.n) ?? a.p ?? null);

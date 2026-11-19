@@ -46,13 +46,16 @@ def _price(card, vault, live):
 def progress(matcher, rows: list[dict], vault=None, live=None) -> list[dict]:
     """Every set in the database: how many of its cards you have, sets you've started first."""
     owned = owned_by_set(rows)
+    numbers = matcher.set_numbers()
     out = []
     for code, name, total in matcher.sets():
         have = owned.get(code, {})
-        n = len(have)
-        out.append({"set": code, "name": name or code, "total": total, "owned": min(n, total),
+        # Only numbers the database has for the set count, the same as the set's own page
+        # (a variant or promo number it doesn't know would make a set look complete).
+        n = len(have.keys() & numbers.get(code, set()))
+        out.append({"set": code, "name": name or code, "total": total, "owned": n,
                     "copies": sum(o["qty"] for o in have.values()),
-                    "percent": round(100 * min(n, total) / total, 1) if total else 0})
+                    "percent": round(100 * n / total, 1) if total else 0})
     out.sort(key=lambda s: (-(s["owned"] > 0), -s["percent"], -s["owned"], s["name"]))
     return out
 

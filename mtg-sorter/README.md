@@ -59,7 +59,7 @@ pip install -r requirements.txt
 The scanner can only recognize cards that are in its database, so get every card. The
 easiest way is the **Download every card** button on the Maintenance page (it runs in the
 background, scanning keeps working, and new cards are recognized as they arrive). From a
-terminal it's:
+terminal it's this, but then the app needs a restart to see the new cards (see below):
 
 ```bash
 python build_db.py --all       # every card: an 80 MB list, then 108,000 small pictures, 30-60 minutes
@@ -71,6 +71,9 @@ To try it out quickly, fetch a few sets, or just the sets of the cards in your c
 python build_db.py --sets dmu,one
 python build_db.py --mine
 ```
+
+When one of these finishes, restart the app (Maintenance → **Restart app**, or `mtg restart`
+on the Pi) so the scanner picks up the new cards. The button does that by itself as it goes.
 
 Set codes are the 3-letter codes on Scryfall (for example `mkm`, `blb`, `fdn`, `cmm`). You
 can stop any of these and run it again to resume. Run it again later to add new sets and
@@ -191,8 +194,10 @@ Then open **http://localhost:5000** in your browser. You get:
   **Prices and card data** shows when the weekly Canadian price check and card database update
   last ran, with buttons to run them now. **Bring in Commander Vault** imports everything from
   a Commander Vault export file (see below).
-- **Bins**: choose what goes into each of the sorter's 4 bins, by price, color,
-  rarity, set and foil, without editing any code. Pick a ready-made setup (by price, by rarity,
+- **Bins**: choose what goes into each bin (0 to 3), by price, color,
+  rarity, set and foil, without editing any code. Bins without a tray on your sorter (bin 0
+  on the Mk1, which has trays for bins 1, 2 and 3) drop their cards into another bin; the
+  page says which. Pick a ready-made setup (by price, by rarity,
   by color, keep the good stuff, pull valuable then by color) or write your own rules. The
   counts show how your collection would be split before you save. Saved in
   `data/sort_rules.json`; **Back to the original price bins** undoes it.
@@ -287,7 +292,10 @@ and scans from their phone land in their own collection. Pick a role or tick per
 Member = Scan + Edit, Viewer = look only. The card database, prices, bins and the machine
 are shared. Requests from the Pi or server itself always count as the owner. Locked out?
 Delete `data/users.json` and the login is gone (everyone's cards stay; turn accounts on
-again to get them back).
+again to get them back). `data/users.json.bak` next to it is a copy from the last save,
+which the app uses by itself if `users.json` gets damaged. If neither can be read, the pages
+say "users.json is damaged, so nobody can log in" and only the Pi or server itself gets in:
+put back `users.json` from a backup, or delete it to turn accounts off.
 
 ## Commander Vault is part of the app now
 
@@ -361,19 +369,15 @@ pytest
 
 ---
 
-## Hardware roadmap
+## Hardware
 
-### Shopping list (about $150–200 CAD to start)
+The parts list is [SHOPPING.md](SHOPPING.md): a Raspberry Pi 5 with Camera Module 3, four
+MG90S servos on a PCA9685 servo board (with its own 5 V supply, apart from the Pi's), and the
+feeder motor and its driver. The Mk2 build is in [`hardware/mk2/MK2.md`](hardware/mk2/MK2.md).
 
-| Part | Why | Approx. |
-|---|---|---|
-| Raspberry Pi 5 (4 GB) + power supply + 32 GB microSD | The brain. Runs this exact code | $110 |
-| Raspberry Pi Camera Module 3 + Pi 5 camera cable (300 mm) | Sharp, autofocus. The Pi 5 needs its own cable | $40 |
-| Small LED strip or ring light (5 V) | Even lighting is the #1 factor in accuracy | $10 |
-| 2× SG90 / MG90S servos | Bin selector + card pusher | $10 |
-| 1× N20 gear motor + rubber wheel, or a 28BYJ-48 stepper + ULN2003 board | Feeder that pulls one card off the stack | $8 |
-| Jumper wires, small breadboard | Connections | $10 |
-| PLA filament | Printed frame, hopper, bins | (you have a printer) |
+Sorting already works: **Machine → Start sorting** feeds each card, scans it, and drops it
+into its bin ([`mtgscanner/machine.py`](mtgscanner/machine.py) moves the parts,
+[`mtgscanner/sort_run.py`](mtgscanner/sort_run.py) runs the sort).
 
 ### Phase 2: camera rig
 
@@ -381,21 +385,6 @@ pytest
   card pocket, with LED light from the sides. The card always lands in the same spot, which makes
   recognition very reliable.
 - Install Raspberry Pi OS, copy this folder over, and run `scan.py` as-is.
-
-### Phase 3: feeder and sorter
-
-The usual design people build:
-
-1. **Hopper.** Cards stack face-up in a printed tray.
-2. **Feeder.** A rubber wheel touches the top card and spins briefly to push one card out
-   through a slot that's only one card thick, so only one gets through.
-3. **Camera bay.** The card stops under the camera and the scanner recognizes it.
-4. **Sorter.** A servo turns a printed chute, or a "gate" arm, toward bin 0–3, then a
-   second wheel or a tilt drops the card in.
-
-When you get there, the code change is small. Where `scan.py` saves a card, it will also
-call a `send_to_bin(bin_number)` function that moves the servos with the
-[`gpiozero`](https://gpiozero.readthedocs.io) library.
 
 ### RGB light bars (optional)
 

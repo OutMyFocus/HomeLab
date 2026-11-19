@@ -46,8 +46,18 @@
     (() => {
       const $ = id => document.getElementById(id), err = $("err");
       const next = new URLSearchParams(location.search).get("next");
-      const safeNext = next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : "/";
-      const go = () => location.replace(location.pathname === "/login" ? safeNext : location.href);
+      // Only a page of this app: a "next" like /\evil.com would leave for another website.
+      const safeNext = n => {
+        if (!n) return null;
+        try {
+          const u = new URL(n, location.origin + "/");
+          if (u.origin !== location.origin) return null;
+          const p = u.pathname + u.search + u.hash;
+          return p.startsWith("/login") ? null : p;
+        } catch { return null; }
+      };
+      const target = safeNext(next) || "/";
+      const go = () => location.replace(location.pathname === "/login" ? target : location.href);
       const show = msg => { err.textContent = msg; err.hidden = false; };
       // Opened on a page this account can't use (the app answers with this page and a 403).
       const denied = location.pathname !== "/login";

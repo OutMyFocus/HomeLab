@@ -10,10 +10,11 @@
 
   const text = () => $("deckText").value;
   function read() { deck = V.parseDeck(text()); const saved = window.DECKS?.current(); deck.proxied = !!saved?.proxied; deck.guide = saved?.guide || ""; return deck; }
-  async function write(msg) {
+  // Make changes (V.editDeckText ops) to the list in the box. Only the lines that change
+  // are touched, so set codes, foil marks, other sections and comments stay as they were.
+  async function write(ops, msg) {
     const saved = window.DECKS?.current();
-    const side = deck.side;
-    $("deckText").value = V.deckToText({ ...deck, side });
+    $("deckText").value = V.editDeckText(text(), ops);
     window.DECKS?.changed();
     if (saved) { try { await window.DECKS.save(); } catch (e) { toast(e.message); return; } }
     if (msg) toast(msg + (saved ? "" : ". Press Save deck to keep it"));
@@ -25,13 +26,13 @@
     const looksCommander = !!deck.commander || deck.list.reduce((s, x) => s + x[1], 0) >= 90;
     $("builder").hidden = !looksCommander;
     if (!looksCommander) return;
-    const cmd = V.lookup(deck.commander), ch = V.deckChecks(deck), st = V.deckStats(deck);
+    const ci = V.cmdCI(deck), ch = V.deckChecks(deck), st = V.deckStats(deck);
     $("bTitle").textContent = "Commander checks";
-    $("bCmd").innerHTML = deck.commander ? `${cmd ? V.pips(cmd.ci) : ""} ${esc(deck.commander)}` : "";
+    $("bCmd").innerHTML = deck.commander ? `${ci ? V.pips([...ci].join("")) : ""} ${esc(V.cmds(deck).join(" and "))}` : "";
     $("bChecks").innerHTML = ch.checks.map(([c, msg]) => `<div class="check-row ${c}"><span class="ic">${c === "ok" ? "✓" : c === "bad" ? "✕" : "!"}</span><span>${esc(msg)}</span></div>`).join("")
       + `<div class="check-row ok"><span class="ic">✓</span><span>${deck.proxied ? "Complete. Cards you don't own are covered by proxies." : `You own ${st.own} of ${st.count}.`}</span></div>`;
     $("bBracket").textContent = S.cards ? `Bracket estimate ${ch.bracket}` : "";
-    const unpriced = [deck.commander, ...deck.list.map(x => x[0])].filter(n => n && !V.BASICS.has(norm(n)) && V.priceOf(n) == null).length;
+    const unpriced = [...V.cmds(deck), ...deck.list.map(x => x[0])].filter(n => n && !V.BASICS.has(norm(n)) && V.priceOf(n) == null).length;
     $("bMoney").innerHTML = `<span>Deck value <b>${cad(st.value)}</b></span>${deck.proxied ? "<span>Complete with proxies</span>" : `<span>To finish <b>${cad(st.cost)}</b> for ${st.need.length} cards</span>`}${unpriced ? `<span>${unpriced} not priced in Canada yet</span>` : ""}`;
     $("bProxy").checked = deck.proxied; $("bProxy").disabled = !window.DECKS?.current();
     $("bProxy").parentElement.title = window.DECKS?.current() ? "Counts every card as owned, so nothing shows as missing or to buy" : "Save the deck first";
@@ -73,20 +74,18 @@
     const c = V.lookup(name), nm = c ? c.n : name.trim(); if (!nm) return;
     const ex = deck.list.find(x => norm(x[0]) === norm(nm));
     if (ex && !V.BASICS.has(norm(nm)) && !(c && /any number of cards named/i.test(c.o))) return toast(`${nm} is already in the deck`);
-    if (ex) ex[1]++; else deck.list.push([nm, 1]);
-    write(`Added ${nm}`);
+    write([{ add: ex ? ex[0] : nm }], `Added ${nm}`);
   }
   $("bGroups").onclick = e => {
     const rm = e.target.closest("[data-rm]"), inc = e.target.closest("[data-inc]");
-    if (rm) { read(); const i = deck.list.findIndex(x => x[0] === rm.dataset.rm); if (i >= 0) { if (deck.list[i][1] > 1) deck.list[i][1]--; else deck.list.splice(i, 1); write(); } }
-    if (inc) { read(); const x = deck.list.find(y => y[0] === inc.dataset.inc); if (x) { x[1]++; write(); } }
+    if (rm) { read(); if (deck.list.some(x => x[0] === rm.dataset.rm)) write([{ remove: rm.dataset.rm }]); }
+    if (inc) { read(); if (deck.list.some(y => y[0] === inc.dataset.inc)) write([{ add: inc.dataset.inc }]); }
   };
+  // The new commander replaces the old one (and a partner): they go into the deck.
   $("bSetCmd").onclick = () => {
     read(); const n = $("bAdd").value.trim(), c = n ? V.lookup(n) : null;
     if (!c) { toast("Type the commander's name in the Add a card box first"); return $("bAdd").focus(); }
-    if (deck.commander && !deck.list.some(x => norm(x[0]) === norm(deck.commander))) deck.list.push([deck.commander, 1]);
-    deck.list = deck.list.filter(x => norm(x[0]) !== norm(c.n)); deck.commander = c.n;
-    $("bAdd").value = ""; $("bSug").hidden = true; write(`${c.n} is now the commander`);
+    $("bAdd").value = ""; $("bSug").hidden = true; write([{ commander: c.n }], `${c.n} is now the commander`);
   };
   $("bCopy").onclick = () => { read(); copy(V.deckToText(deck)).then(() => toast("Decklist copied"), () => toast("Couldn't copy")); };
   $("bShop").onclick = () => {
@@ -104,12 +103,12 @@
   window.BUILDER = {
     apply(pairs, msg) {
       read();
+      const ops = [];
       for (const [cut, add] of pairs) {
-        const i = deck.list.findIndex(x => norm(x[0]) === norm(cut)); if (i < 0) continue;
-        if (deck.list[i][1] > 1) deck.list[i][1]--; else deck.list.splice(i, 1);
-        const ex = deck.list.find(x => norm(x[0]) === norm(add)); if (ex) ex[1]++; else deck.list.push([add, 1]);
+        if (!deck.list.some(x => norm(x[0]) === norm(cut))) continue;
+        ops.push({ remove: cut }, { add });
       }
-      write(msg);
+      write(ops, msg);
     },
   };
 
@@ -117,7 +116,7 @@
   function suggest() {
     const q = norm($("bAdd").value), ul = $("bSug");
     if (!q || !S.cards) { ul.hidden = true; return; }
-    const cmd = V.lookup(deck?.commander), ci = cmd ? new Set(cmd.ci) : null, starts = [], has = [];
+    const ci = deck ? V.cmdCI(deck) : null, starts = [], has = [];
     for (const c of S.cards) { if (c._k.startsWith(q)) starts.push(c); else if (c._k.includes(q)) has.push(c); if (starts.length > 40) break; }
     const rank = (a, b) => (a.e || 1e6) - (b.e || 1e6);
     sug = [...starts.sort(rank), ...has.sort(rank)].slice(0, 12); sugIdx = sug.length ? 0 : -1;

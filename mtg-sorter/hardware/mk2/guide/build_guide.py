@@ -56,8 +56,8 @@ step(part="a", title="Join the base",
      lines=["Lay the four base tiles on the table, top up, and push them together.",
             "Press a bowtie key into each of the 5 sockets across the seams.",
             "Push the 3 x 16 mm pins into the seam holes: 3 across the long seam, 2 across the short one.",
-            "Press the magnets into their pockets: 1 for the drawer and 2 for each of bins 3 and 4."],
-     parts=["base_fl", "base_fr", "base_bl", "base_br", "5 × key"], need=["5 × 3 × 16 mm pin", "5 × magnet"],
+            "Press 3 magnets into their pockets: 1 for the drawer and 1 under each of bins 3 and 4."],
+     parts=["base_fl", "base_fr", "base_bl", "base_br", "5 × key"], need=["5 × 3 × 16 mm pin", "3 × magnet"],
      meshes=m(["base_fl"], "new", [-14, -14, 0]) + m(["base_fr"], "new", [14, -14, 0]) + m(["base_bl"], "new", [-14, 14, 0])
             + m(["base_br"], "new", [14, 14, 0]) + m(["base_keys"], "new", [0, 0, 30]),
      arrows="new", dir=(0.45, -0.75, 0.9))
@@ -73,8 +73,8 @@ step(part="a", title="Join each wall",
 step(part="a", title="Slide the walls onto the base",
      lines=["Stand each wall at the front corner of the base, its bottom groove on the dovetail along the base's edge.",
             "Slide it back with a firm push until it's flush with the base's back edge. The dovetail locks the wall down, so the machine can be lifted by its walls.",
-            "Press the magnets into the rails (near the closed back end of each rail) and into the top ledge for the lid."],
-     parts=["left wall", "right wall"], need=["rail and lid magnets"],
+            "Press 10 magnets into each wall: 1 near the closed end of each rail, 2 low at the back for the electronics tray, and 4 in the top ledge for the lid."],
+     parts=["left wall", "right wall"], need=["20 × magnet"],
      meshes=m(BASE) + m(["wall_r"], "new", [0, -200, 0]) + m(["wall_l"], "new", [0, -200, 0]),
      arrows=[[[s * 126, 40, 12], [s * 126, 170, 12]] for s in (-1, 1)], dir=(0.6, -0.75, 0.5))
 

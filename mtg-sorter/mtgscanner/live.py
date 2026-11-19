@@ -4,8 +4,9 @@ Recognition itself stays offline (it uses the fingerprints in data/cards.db). Th
 adds fresh information on top, and if the internet is down everything quietly falls
 back to the prices saved in the database. (The USD to CAD rate comes from exchange.py.)
 
-Scryfall asks apps to stay under 10 requests a second and to cache what they fetch,
-so every answer is kept in memory for a few hours.
+Scryfall asks apps to stay under 10 requests a second (2 a second for searches and
+/cards/collection) and to cache what they fetch, so every answer is kept in memory for
+a few hours.
 """
 
 import threading
@@ -24,6 +25,9 @@ HEADERS = {"User-Agent": config.USER_AGENT, "Accept": "application/json"}
 CARD_TTL = 6 * 3600     # how long a fetched card (and its price) stays fresh, in seconds
 FAIL_TTL = 60           # how long to wait before retrying a lookup that failed (internet blip)
 BATCH = 75              # Scryfall's /cards/collection takes up to 75 cards per request
+GAP = 0.1               # seconds between requests
+SLOW_GAP = 0.5          # ... and between searches and /cards/collection requests
+SLOW = ("/cards/collection", "/cards/search")
 
 
 def get_json(url: str, body: dict | None = None) -> dict:
@@ -64,18 +68,33 @@ class Live:
         self._pending: set[str] = set()
         self._last_request = 0.0
         self._pool = ThreadPoolExecutor(max_workers=2)
+        self.sleep = time.sleep
 
     def _get(self, url: str, body: dict | None = None) -> dict | None:
-        """Fetch JSON, politely spaced out. Returns None if the internet or Scryfall is down."""
-        with self._lock:
-            wait = self._last_request + 0.1 - time.time()
-            self._last_request = time.time() + max(wait, 0)
-        if wait > 0:
-            time.sleep(wait)
-        try:
-            return self.fetch(url) if body is None else self.fetch(url, body)
-        except Exception:
-            return None
+        """Fetch JSON, politely spaced out. Returns None if the internet or Scryfall is down.
+        A search or /cards/collection request that Scryfall turns away as busy (429) or
+        fails on its side (5xx) is tried once more, after the wait Scryfall asks for."""
+        slow = any(part in url for part in SLOW)
+        for attempt in range(2 if slow else 1):
+            with self._lock:
+                wait = self._last_request + (SLOW_GAP if slow else GAP) - time.time()
+                self._last_request = time.time() + max(wait, 0)
+            if wait > 0:
+                self.sleep(wait)
+            try:
+                return self.fetch(url) if body is None else self.fetch(url, body)
+            except requests.HTTPError as e:
+                code = getattr(e.response, "status_code", 0) or 0
+                if attempt or not (code == 429 or code >= 500):
+                    return None
+                try:
+                    pause = float(e.response.headers.get("Retry-After") or 2)
+                except (AttributeError, TypeError, ValueError):
+                    pause = 2.0
+                self.sleep(max(0.0, min(10.0, pause)))
+            except Exception:
+                return None
+        return None
 
     def _remember(self, js: dict) -> None:
         with self._lock:
@@ -161,19 +180,29 @@ class Live:
     def fetch_many(self, card_ids: list[str], progress=None) -> int:
         """Fetch today's prices for many cards at once (the Collection page's Refresh
         prices), 75 per request. Cards fetched in the last few hours are skipped.
-        Returns how many cards got fresh prices."""
+        Returns how many cards got fresh prices. If Scryfall stops answering part way,
+        it raises an error that says how far it got (the cards done so far are kept, so
+        trying again carries on from there)."""
         todo = [i for i in dict.fromkeys(card_ids) if not self._fresh(i)]
-        done = 0
+        done, misses, missed = 0, 0, 0
         for start in range(0, len(todo), BATCH):
             chunk = todo[start:start + BATCH]
             page = self._get(f"{API}/cards/collection", {"identifiers": [{"id": i} for i in chunk]})
             if not page:
-                break   # offline: keep whatever prices we have
+                misses += 1
+                missed += len(chunk)
+                if misses < 2:
+                    continue   # one batch can fail: carry on with the next
+                break          # two in a row: Scryfall is down, or we're offline
+            misses = 0
             for js in page.get("data", []):
                 self._remember(js)
                 done += 1
             if progress:
                 progress(min(start + BATCH, len(todo)), len(todo))
+        if missed and done:   # (nothing at all: offline, keep whatever prices we have)
+            raise RuntimeError(f"Stopped after {done:,} of {len(todo):,} cards: Scryfall didn't answer for "
+                               f"the rest. Try again in a minute")
         return done
 
     def cached_count(self) -> int:
@@ -191,11 +220,16 @@ class Live:
                 known = self._names = {}
         todo = [n for n in dict.fromkeys(n.strip() for n in names if n.strip())
                 if not ((hit := known.get(n.lower())) and now - hit[0] < (CARD_TTL if hit[1] else FAIL_TTL))]
+        misses = 0
         for start in range(0, len(todo), BATCH):
             chunk = todo[start:start + BATCH]
             page = self._get(f"{API}/cards/collection", {"identifiers": [{"name": n} for n in chunk]})
             if not page:
-                break
+                misses += 1
+                if misses < 2:
+                    continue   # one batch can fail: carry on with the next
+                break          # offline, or Scryfall is down: price what we have
+            misses = 0
             found = {}
             for js in page.get("data", []):
                 self._remember(js)

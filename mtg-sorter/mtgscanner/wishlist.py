@@ -9,7 +9,9 @@ is saved, or when a wishlist card shows up. Kept in data/alerts.json so every ph
 and laptop gets the same alerts.
 """
 
+import functools
 import json
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -17,7 +19,7 @@ from pathlib import Path
 from flask import jsonify, request, send_from_directory
 
 from . import accounts, config
-from .decks import _cheapest_known, name_key
+from .decks import _cheapest_known, name_key, write_json
 from .library import holdings, read_rows
 from .live import card_from_scryfall
 from .sorting import card_price
@@ -25,6 +27,7 @@ from .sorting import card_price
 DEFAULT_ALERTS = {"big_card": 20.0, "sound": True, "wishlist": True}
 MAX_ITEMS = 500
 _cache: dict = {"mtime": None, "path": None, "names": frozenset()}
+_lock = threading.RLock()   # one change at a time, so two at once can't lose a card
 
 
 def wishlist_file() -> Path:
@@ -43,10 +46,7 @@ def _read(path: Path, default):
 
 
 def _write(path: Path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=1))
-    tmp.replace(path)
+    write_json(path, data)
 
 
 def load_items() -> list[dict]:
@@ -83,6 +83,15 @@ def _target(v):
     return v
 
 
+def _locked(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _lock:
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+@_locked
 def add(name: str, target=None, foil=False, note="") -> dict:
     name = str(name or "").strip()[:150]
     if not name:
@@ -103,6 +112,7 @@ def add(name: str, target=None, foil=False, note="") -> dict:
     return item
 
 
+@_locked
 def update(item_id: str, **changes) -> bool:
     items = load_items()
     for i in items:
@@ -118,6 +128,7 @@ def update(item_id: str, **changes) -> bool:
     return False
 
 
+@_locked
 def remove(item_id: str) -> bool:
     items = load_items()
     keep = [i for i in items if i["id"] != item_id]
@@ -163,6 +174,7 @@ def load_alerts() -> dict:
     return DEFAULT_ALERTS | (saved if isinstance(saved, dict) else {})
 
 
+@_locked
 def save_alerts(js: dict) -> dict:
     alerts = load_alerts()
     if "big_card" in js:

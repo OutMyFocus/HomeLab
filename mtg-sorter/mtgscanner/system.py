@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import zipfile
+import zlib
 import logging
 from collections import deque
 from pathlib import Path
@@ -184,21 +185,29 @@ def ip_address() -> str | None:
 
 
 def wifi() -> dict:
-    """The Wi-Fi network in use, its signal (0-100) and the networks saved on the Pi."""
+    """The Wi-Fi network in use, its signal (0-100) and the networks saved on the Pi.
+    in_use lists the saved profiles that are connected now. A profile's name isn't always
+    its network's name (Raspberry Pi Imager calls the first one "preconfigured")."""
     if not shutil.which("nmcli"):
         return {"available": False}
-    now = {"available": True, "ssid": None, "signal": None, "saved": []}
+    now = {"available": True, "ssid": None, "signal": None, "saved": [], "in_use": []}
     ok, out = run(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL", "device", "wifi", "list", "--rescan", "no"])
     for line in out.splitlines() if ok else []:
         active, *ssid, signal = line.replace("\\:", "\x00").split(":")
         if active == "yes":
             now["ssid"] = ":".join(ssid).replace("\x00", ":")
             now["signal"] = int(signal) if signal.isdigit() else None
-    ok, out = run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"])
+    ok, out = run(["nmcli", "-t", "-f", "NAME,TYPE,ACTIVE", "connection", "show"])
     for line in out.splitlines() if ok else []:
-        name, _, kind = line.replace("\\:", "\x00").rpartition(":")
+        parts = line.replace("\\:", "\x00").rsplit(":", 2)
+        if len(parts) != 3:
+            continue
+        name, kind, active = parts
         if kind == "802-11-wireless":
-            now["saved"].append(name.replace("\x00", ":"))
+            name = name.replace("\x00", ":")
+            now["saved"].append(name)
+            if active == "yes":
+                now["in_use"].append(name)
     return now
 
 
@@ -606,13 +615,21 @@ def add_wifi(ssid: str, password: str):
         raise ValueError("Wi-Fi passwords are 8 to 63 characters.")
     if "\n" in ssid or "\n" in password:
         raise ValueError("Names and passwords can't have line breaks.")
+    now = wifi()
+    if ssid == now.get("ssid") or ssid in now.get("in_use", []):
+        # Saving it again replaces the profile in use, which drops the connection (and a
+        # mistyped password would leave a headless Pi offline).
+        raise ValueError("That's the network the Pi is using right now. Saving it again would drop the "
+                         "connection. To change its password, connect the Pi by cable or to another saved "
+                         "network first.")
     admin("wifi-add", input=f"{ssid}\n{password}\n")
 
 
 def forget_wifi(name: str):
     if not name or "\n" in name:
         raise ValueError("Pick a network.")
-    if name == wifi().get("ssid"):
+    now = wifi()
+    if name == now.get("ssid") or name in now.get("in_use", []):
         raise ValueError("That's the network the Pi is using right now, so forgetting it would cut you off.")
     admin("wifi-forget", input=name + "\n")
 
@@ -623,17 +640,81 @@ def forget_wifi(name: str):
 # scanner learned from them is already in cards.db.
 BACKUP_FILES = ["collection.csv", "cards.db", "app_settings.json", "machine_settings.json",
                 "vault_prices.json", "usd_cad.json", "decks.json", "wishlist.json", "alerts.json",
-                "sort_rules.json", "games.json", "trades.json", "price_history.json", "users.json"]
+                "sort_rules.json", "games.json", "trades.json", "price_history.json", "users.json",
+                "lights.json", "news_settings.json", "machine_key"]
 # Folders a backup holds too: everyone else's cards (accounts.py) and deck guides.
 BACKUP_FOLDERS = ["users", "guides"]
+# What belongs to one machine rather than to the cards: its camera and scan bed, its servos,
+# its light bars, its logins and its machine key. A restore can leave these as they are, for
+# a backup made on the other kind of machine (the server's backup restored on the sorter Pi).
+MACHINE_FILES = ["app_settings.json", "machine_settings.json", "users.json", "lights.json", "machine_key"]
+PRIVATE_FILES = ["machine_key", "users.json"]   # written back readable by the app's user only
 
 
-def make_backup(with_scans: bool = False) -> io.BytesIO:
-    """A zip of your collection, card database (with training), and settings."""
-    buf, data = io.BytesIO(), config.DATA_DIR
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("README.txt", "MTG sorter backup, " + time.strftime("%Y-%m-%d %H:%M") +
+def machine_kind() -> str:
+    """"pi" for the sorter's Pi (git copy or Docker), "server" for anything else."""
+    return "pi" if ON_PI or HOST_BRIDGE else "server"
+
+
+def backup_source(z: zipfile.ZipFile) -> str | None:
+    """Which kind of machine made this backup ("pi" or "server"), from the zip's comment.
+    None for backups made before it was written down."""
+    try:
+        kind = json.loads(z.comment.decode() or "{}").get("made_on")
+    except (ValueError, AttributeError):
+        return None
+    return kind if kind in ("pi", "server") else None
+
+
+class _Chunks:
+    """Where the zip is written while it streams: it only keeps what hasn't been sent yet.
+    It can't seek, so zipfile writes each file's sizes after its data instead."""
+    def __init__(self):
+        self.parts, self.pos = [], 0
+
+    def write(self, b):
+        self.parts.append(bytes(b))
+        self.pos += len(b)
+        return len(b)
+
+    def tell(self):
+        return self.pos
+
+    def flush(self):
+        pass
+
+    def take(self) -> bytes:
+        out = b"".join(self.parts)
+        self.parts.clear()
+        return out
+
+
+def backup_chunks(with_scans: bool = False):
+    """A zip of your collection, card database (with training), and settings, in pieces as
+    it's made. With the saved scans it can be several GB, so it's never all in memory."""
+    out, data = _Chunks(), config.DATA_DIR
+    kind = machine_kind()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.comment = json.dumps({"sortr": 1, "made_on": kind}).encode()
+        z.writestr("README.txt", "MTG sorter backup, " + time.strftime("%Y-%m-%d %H:%M") + ", made on " +
+                   ("the sorter Pi" if kind == "pi" else "a server or computer") +
                    ".\nRestore it from the app's Maintenance page.\n")
+        yield out.take()
+
+        def add(path: Path, name: str):
+            try:
+                src = open(path, "rb")
+            except FileNotFoundError:   # deleted while the backup was being made
+                return
+            with src:
+                info = zipfile.ZipInfo.from_file(path, name)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                with z.open(info, "w") as dst:
+                    while chunk := src.read(1 << 20):
+                        dst.write(chunk)
+                        yield out.take()
+            yield out.take()
+
         for name in BACKUP_FILES:
             path = data / name
             if not path.exists():
@@ -645,16 +726,22 @@ def make_backup(with_scans: bool = False) -> io.BytesIO:
                     with dst:
                         src.backup(dst)
                     src.close(); dst.close()
-                    z.write(tmp, name)
+                    yield from add(tmp, name)
                 finally:
                     tmp.unlink(missing_ok=True)
             else:
-                z.write(path, name)
+                yield from add(path, name)
         for folder in BACKUP_FOLDERS + (["captures"] if with_scans else []):
             if (data / folder).is_dir():
                 for path in sorted((data / folder).rglob("*")):
                     if path.is_file() and path.suffix not in (".tmp", ".restoring"):
-                        z.write(path, path.relative_to(data).as_posix())
+                        yield from add(path, path.relative_to(data).as_posix())
+    yield out.take()
+
+
+def make_backup(with_scans: bool = False) -> io.BytesIO:
+    """The whole backup zip in memory (fine without the scans: those are what's big)."""
+    buf = io.BytesIO(b"".join(backup_chunks(with_scans)))
     buf.seek(0)
     return buf
 
@@ -667,9 +754,14 @@ def _safe_member(name: str) -> bool:
             and not name.startswith("/") and "\\" not in name)
 
 
-def restore_backup(stream) -> dict:
+DAMAGED = "That backup is damaged, or the disk is full. Nothing was changed."
+
+
+def restore_backup(stream, keep_settings: bool = False) -> dict:
     """Puts a backup back. The current data is saved in data/backups first, just in case.
-    Returns what was restored; the app must restart afterwards to use it."""
+    keep_settings leaves this machine's own settings and logins (MACHINE_FILES) as they are.
+    Everything is unpacked next to the old files first, so a damaged zip or a full disk
+    changes nothing. Returns what was restored; the app must restart afterwards to use it."""
     try:
         z = zipfile.ZipFile(stream)
     except zipfile.BadZipFile:
@@ -677,24 +769,58 @@ def restore_backup(stream) -> dict:
     members = [m for m in z.infolist() if not m.is_dir() and _safe_member(m.filename)]
     if not members:
         raise ValueError("That zip doesn't look like an MTG sorter backup (no collection or card database in it).")
+    kept = sorted({m.filename for m in members if m.filename in MACHINE_FILES}) if keep_settings else []
+    members = [m for m in members if m.filename not in kept]
+    if not members:
+        raise ValueError("That backup only holds settings, and you chose to keep this machine's own.")
+    free = shutil.disk_usage(config.DATA_DIR).free
+    if sum(m.file_size for m in members) > free:
+        raise ValueError("There isn't enough free space to unpack that backup. Nothing was changed.")
+
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     before = BACKUP_DIR / time.strftime("before-restore-%Y%m%d-%H%M%S.zip")
-    before.write_bytes(make_backup(with_scans=False).getvalue())
+    try:
+        with open(before, "wb") as f:
+            for chunk in backup_chunks(with_scans=False):
+                f.write(chunk)
+    except OSError:
+        before.unlink(missing_ok=True)
+        raise ValueError("Couldn't save a copy of what's here now first (is the disk full?). Nothing was changed.")
     for old in sorted(BACKUP_DIR.glob("before-restore-*.zip"))[:-5]:   # keep the last 5
         old.unlink()
+
+    # 1. Unpack every file next to the one it replaces. Any trouble: undo, and nothing changed.
+    staged = []
+    try:
+        for m in members:
+            dest = config.DATA_DIR / m.filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dest.with_name(dest.name + ".restoring")
+            staged.append((m.filename, tmp, dest))
+            with z.open(m) as src, open(tmp, "wb") as out:
+                shutil.copyfileobj(src, out)
+            if m.filename in PRIVATE_FILES:
+                os.chmod(tmp, 0o600)
+    except (OSError, EOFError, zipfile.BadZipFile, zlib.error, NotImplementedError, RuntimeError):
+        for _, tmp, _ in staged:
+            tmp.unlink(missing_ok=True)
+        raise ValueError(DAMAGED)
+
+    # 2. Swap them in. Each swap is a rename, so only a failing SD card stops this halfway.
     restored = []
-    for m in members:
-        dest = config.DATA_DIR / m.filename
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dest.with_name(dest.name + ".restoring")
-        with z.open(m) as src, open(tmp, "wb") as out:
-            shutil.copyfileobj(src, out)
-        if m.filename == "cards.db":   # the old database's write-ahead files would confuse the new one
-            for extra in ("cards.db-wal", "cards.db-shm"):
+    try:
+        if any(name == "cards.db" for name, _, _ in staged):   # the old database's write-ahead files
+            for extra in ("cards.db-wal", "cards.db-shm"):       # would confuse the new one
                 (config.DATA_DIR / extra).unlink(missing_ok=True)
-        tmp.replace(dest)
-        restored.append(m.filename)
-    return {"restored": restored, "saved_first": before.name}
+        for name, tmp, dest in staged:
+            os.replace(tmp, dest)
+            restored.append(name)
+    except OSError:
+        for _, tmp, _ in staged:
+            tmp.unlink(missing_ok=True)
+        raise RuntimeError(f"Only part of the backup went back. What was here before is in data/backups/"
+                           f"{before.name}: restore that to undo it.")
+    return {"restored": restored, "kept": kept, "saved_first": before.name, "made_on": backup_source(z)}
 
 
 # --- The Maintenance page and its API ---------------------------------------------------
@@ -713,7 +839,7 @@ def restart_in_place():
 def add_system_routes(app, scanner, machine, web_dir):
     if IN_DOCKER and not HOST_BRIDGE:
         keep_logs_in_memory()
-    from flask import Response, jsonify, request, send_file, send_from_directory
+    from flask import Response, jsonify, request, send_from_directory
 
     def answer(action, then=None):
         try:
@@ -734,10 +860,22 @@ def add_system_routes(app, scanner, machine, web_dir):
     def maintenance_page():
         return send_from_directory(web_dir, "maintenance.html")
 
+    def may_see_problems() -> bool:
+        """/api/health answers anyone (it's how Docker and the page tell the app is up), but
+        what's wrong, with addresses inside it, is only for the people who run Maintenance."""
+        from . import accounts, security
+        if accounts.enabled():
+            if accounts.current() is None:   # not logged in, or users.json is damaged
+                return security.is_local()
+            return accounts.can("admin")
+        return security.allowed()
+
     @app.get("/api/health")
     def health():
         """Quick answer for "is it up, and is anything wrong?" (the page header uses it)."""
         checks = checkup(scanner, machine)
+        if not may_see_problems():
+            return jsonify(alive=True, overall=overall(checks))
         problems = [c for c in checks if c["state"] in ("bad", "warn")]
         return jsonify(alive=True, overall=overall(checks),
                        problems=[{"label": c["label"], "summary": c["summary"], "state": c["state"]}
@@ -836,9 +974,10 @@ def add_system_routes(app, scanner, machine, web_dir):
 
     @app.get("/api/system/backup")
     def backup():
-        buf = make_backup(with_scans=bool(request.args.get("scans")))
-        return send_file(buf, mimetype="application/zip", as_attachment=True,
-                         download_name=time.strftime("mtg-sorter-backup-%Y-%m-%d.zip"))
+        # Sent as it's made, so a backup with GBs of scans never sits in the Pi's memory.
+        name = time.strftime("mtg-sorter-backup-%Y-%m-%d.zip")
+        return Response(backup_chunks(with_scans=bool(request.args.get("scans"))), mimetype="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
     @app.post("/api/system/restore")
     def restore():
@@ -846,16 +985,18 @@ def add_system_routes(app, scanner, machine, web_dir):
         if not f:
             return jsonify(error="Pick a backup zip file."), 400
 
+        keep = request.form.get("keep_settings") in ("1", "true", "on")
+
         def go():
-            done = restore_backup(f.stream)
+            done = restore_backup(f.stream, keep_settings=keep)
+            kept = " This machine's own camera, machine and login settings stayed as they were." if done["kept"] else ""
+            done["restarting"] = IN_DOCKER or admin_installed()
             if IN_DOCKER:
                 docker_restart()
-                done["message"] = "Restored. The app restarts to load it."
-            elif admin_installed():
+            elif done["restarting"]:
                 later("restart")
-                done["message"] = "Restored. The app restarts to load it."
-            else:
-                done["message"] = "Restored. Restart the app (or the Pi) to load it."
+            done["message"] = ("Restored. The app restarts to load it." if done["restarting"]
+                               else "Restored. Restart the app (or the Pi) to load it.") + kept
             return done
         return answer(go)
 

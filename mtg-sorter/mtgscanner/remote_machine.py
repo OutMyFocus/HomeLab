@@ -24,6 +24,7 @@ import requests
 from flask import request
 
 from . import config
+from .machine import Busy
 
 TIMEOUT = (2, 6)      # seconds to connect, then to answer; a move answers in well under one
 DOWN_PAUSE = 20       # after the Pi didn't answer, report it as down this long without asking again
@@ -64,6 +65,9 @@ class RemoteMachine:
                                "data/machine_key in MTG_MACHINE_KEY on this server (deploy/PI_DOCKER.md).")
         if r.status_code == 400:
             raise ValueError(data.get("error") or "The Pi didn't accept that.")
+        if r.status_code == 409:     # a run or a feed drives the machine there: wait for it
+            raise Busy(data.get("error") if isinstance(data, dict) and data.get("error")
+                       else "The sorter is busy: wait for it to stop, then try again.")
         if r.status_code >= 300 or not isinstance(data, dict):
             raise RuntimeError(data.get("error") if isinstance(data, dict) and data.get("error")
                                else f"The sorter's Pi answered with an error ({r.status_code}).")

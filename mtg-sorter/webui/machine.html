@@ -59,6 +59,7 @@
   <div class="head">
     <h1>Machine</h1>
   </div>
+  <p class="err" id="runNote" hidden></p>
 
   <section class="panel" id="servoPanel">
     <h2><span class="dot" id="servoDot"></span>Servos</h2>
@@ -77,7 +78,7 @@
     <label class="switch"><input type="checkbox" id="wideTravel"><span></span>Wider servo travel: 0-180 on the
       slider turns about the full 180&deg; (normally only about 135&deg;). Saved angles other than 90 move, so check them after.</label>
     <label class="switch"><input type="checkbox" id="homeStartup"><span></span>Go home when the sorter starts:
-      each part sweeps slowly to doors closed, tray level and stop pins up, using the saved angles (the <b>Home</b>
+      each part sweeps slowly to doors closed, tray level and stop pins up, using the saved angles (the “Home”
       button does the same). Any servo that's still holding lets go after 30 seconds without a move, so a jam can't burn it out.</label>
   </section>
 
@@ -113,9 +114,10 @@
       <button class="btn" data-sort="2">Bin 2</button>
       <button class="btn" data-sort="3">Bin 3</button>
     </div>
-    <p class="sub"><b>Bin 1/2/3</b> feeds a card as above, tilts the chute to that bin, drops the stop pins for 3
-      seconds (a card takes a moment to slide), opens the trapdoors for bin 2, then puts everything back. If the
-      camera still sees the card on the bed, it drops it once more.</p>
+    <p class="sub"><b>Bin 1/2/3</b> feeds a card as above. Then it drops the stop pins with the tray level, so the
+      card slides onto the tray. It waits until the camera sees the card leave the stop teeth, or the pins time at
+      most. Then it opens the trapdoors (bin 2), or raises the pins and tilts and shakes the tray to that side
+      (bins 1 and 3), and puts everything back. If the camera still sees the card on the bed, it drops it once more.</p>
     <div class="row">
       <label class="inline">Landing zone <input id="feedZone" size="22" title="x0, y0, x1, y1 as shares of the camera picture: a band across the bed just above the stop teeth"></label>
       <button class="btn ghost" id="feedZoneSave">Save zone</button>
@@ -163,6 +165,8 @@
   </section>
 </div>
 <div id="toast" hidden></div>
+<!-- what the toast says, read out by screen readers (never shown) -->
+<div id="toastLive" class="sr-only" role="status" aria-live="polite"></div>
 
 <script>
 const NAMES = { pins: "Stop pins", chute: "Chute tilt", door_r: "Right trapdoor", door_l: "Left trapdoor" };
@@ -171,13 +175,42 @@ let toastTimer;
 function toast(text) {
   const t = $("toast"); t.textContent = text; t.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3500);
+  speak(text);
+}
+// Screen readers read out what lands in #toastLive. Emptied first, so the same message
+// twice is read twice.
+function speak(text) {
+  const live = $("toastLive"); if (!live) return;
+  live.textContent = "";
+  requestAnimationFrame(() => { live.textContent = text; });
+}
+// The answer as JSON, or {error} when the sorter sent back something else (an error page).
+async function answerOf(res) {
+  try { return await res.json(); }
+  catch (e) { return { error: `The sorter answered with an error (${res.status}).` }; }
 }
 async function call(path, body) {
-  const res = await fetch(path, { method: body ? "POST" : "GET",
-    headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-  const data = await res.json();
+  let data;
+  try {
+    const res = await fetch(path, { method: body ? "POST" : "GET",
+      headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    data = await answerOf(res);
+  } catch (e) { data = { error: "Couldn't reach the sorter." }; }
   if (data.error) { toast(data.error); return null; }
   show(data); return data;
+}
+// While a sort or tuning run drives the machine, the buttons that move it wait (the sorter
+// refuses them too). Relax all, Stop and the saves keep working.
+let sortRunning = false, tuneRunning = false, manualBusy = false;
+function lockOut() {
+  const run = sortRunning ? "sort run" : (tuneRunning ? "tuning run" : null);
+  const moving = document.querySelectorAll("#homeAll, #centreAll, #feedFwd, #feedBack, #parts button[data-part], #parts input[type=range]");
+  for (const el of moving) el.disabled = !!run;
+  for (const el of [...document.querySelectorAll("[data-sort]"), $("feedOne")]) el.disabled = !!run || manualBusy;
+  $("sortStart").disabled = !!run || manualBusy;
+  $("tuneStart").disabled = !!run || manualBusy;
+  $("runNote").hidden = !run;
+  if (run) $("runNote").textContent = `The ${run} is using the machine. The move and feed buttons come back when it stops. Relax all and Stop still work.`;
 }
 function status(dot, err, part) {
   $(dot).classList.toggle("ok", part.ok);
@@ -201,6 +234,7 @@ function show(s) {
   $("homeStartup").checked = s.home_at_startup !== false;
   $("remoteNote").hidden = !s.remote;
   if (s.remote) $("remoteNote").textContent = `This page drives the sorter's Pi at ${s.remote}: moves and saved angles happen there.`;
+  lockOut();
 }
 function build(s) {
   const box = $("parts");
@@ -279,32 +313,33 @@ $("feedFwd").onclick = () => feed(false);
 $("feedBack").onclick = () => feed(true);
 $("feedStop").onclick = () => call("/api/machine/stop", {});
 $("feedOne").onclick = async () => {
-  $("feedOne").disabled = true; $("feedResult").textContent = "Feeding, watching the camera…";
+  manualBusy = true; lockOut(); $("feedResult").textContent = "Feeding, watching the camera…";
   try {
     const res = await fetch("/api/machine/feed_one", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(feedOpts()) });
-    const d = await res.json();
+    const d = await answerOf(res);
     $("feedResult").textContent = d.error || (d.message + (d.landed_ms != null ? ` (landed after ${(d.landed_ms / 1000).toFixed(2)} s)` : ""));
   } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }
-  $("feedOne").disabled = false;
+  manualBusy = false; lockOut();
 };
 for (const b of document.querySelectorAll("[data-sort]")) b.onclick = async () => {
-  const buttons = [...document.querySelectorAll("[data-sort]"), $("feedOne")];
-  buttons.forEach((x) => x.disabled = true);
+  manualBusy = true; lockOut();
   $("feedResult").textContent = `Feeding, then sorting to bin ${b.dataset.sort}…`;
   try {
     const res = await fetch("/api/machine/sort_one", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bin: +b.dataset.sort, ...feedOpts() }) });
-    const d = await res.json();
+    const d = await answerOf(res);
     $("feedResult").textContent = d.error || d.message;
   } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }
-  buttons.forEach((x) => x.disabled = false);
+  manualBusy = false; lockOut();
 };
 
 // --- the tuning run ---
 const tuneApi = async (path, body) => {
-  const res = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  return res.json();
+  try {
+    const res = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return await answerOf(res);
+  } catch (e) { return { error: "Couldn't reach the sorter." }; }
 };
 let tuneTimer = null;
 function showTune(d) {
@@ -317,7 +352,7 @@ function showTune(d) {
   $("tuneTable").querySelector("tbody").innerHTML = rows.map((f) =>
     `<tr><td>${f.n}</td><td>${f.bin}</td><td>${f.result}</td><td>${f.landed_ms == null ? "-" : (f.landed_ms / 1000).toFixed(2) + " s"}</td><td>${f.drop_tries}${f.dropped === false ? " (still there)" : ""}</td><td>${f.speed}</td><td>${f.pins_seconds} s</td><td>${f.note || ""}</td></tr>`).join("");
   $("tuneSave").hidden = !(d.done && d.settings);
-  $("tuneStart").disabled = !!d.running;
+  tuneRunning = !!d.running; lockOut();
   if (d.running && !tuneTimer) tuneTimer = setInterval(async () => showTune(await tuneApi("/api/machine/tune")), 2000);
   if (!d.running && tuneTimer) { clearInterval(tuneTimer); tuneTimer = null; }
 }
@@ -347,7 +382,7 @@ function showSort(d) {
   const w = d.running && d.waiting;
   $("sortWait").hidden = !w;
   if (w) $("sortWaitText").textContent = `Card ${w.n}${w.name ? ` (best guess ${w.name})` : ""}: ${w.message}`;
-  $("sortStart").disabled = !!d.running;
+  sortRunning = !!d.running; lockOut();
   if (d.running && !sortTimer) sortTimer = setInterval(async () => showSort(await tuneApi("/api/machine/sort")), 2000);
   if (!d.running && sortTimer) { clearInterval(sortTimer); sortTimer = null; }
 }
