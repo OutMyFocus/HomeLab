@@ -26,7 +26,7 @@ def bb(a):
 # ---- the groups the steps are made of ------------------------------------------------------
 BASE = ["base_fl", "base_fr", "base_bl", "base_br", "base_keys"]
 LV2 = ["lv2_frame", "carriage2", "lever2", "pin2", "psv2"]
-LV1 = ["lv1_frame", "carriage1", "lever1", "pin1", "psv1", "doors", "dsv"]
+LV1 = ["lv1_frame", "carriage1", "lever1", "pin1", "psv1", "doors", "dsv", "dcp"]
 SHAFT = ["col_front", "liner_back"]
 SCAN = ["carrier", "bed", "lightbars", "stop_bar", "stop_sv"]
 ARCH = ["cam_arch", "cam_hood"]
@@ -106,12 +106,14 @@ step(part="b", title="Level 1's pusher, on the bench",
      meshes=m(["lv1_frame"]) + m(["carriage1"], "new", [0, 0, 50]) + m(["lever1", "pin1"], "new", [0, 0, 110]) + m(["psv1"], "new", [0, 70, 0]),
      arrows="new", dir=(0.5, 0.85, 0.85), zoom=1.05)
 step(part="b", title="Trapdoors and their servos (seen from below)",
-     lines=["Hold each door in place under the floor's opening, its left knuckle against the servo pocket.",
-            "Slide the two door servos in from the left until their latches click, each horn in its door's pocket.",
-            "Push a 3 x 10 mm pin through each door's right knuckle.",
-            "Check both doors swing down freely by hand."],
-     parts=["2 × door (white)"], need=["2 × MG90S servo (centred)", "2 × 3 × 10 mm pin"],
-     meshes=m(["lv1_frame", "carriage1", "lever1", "pin1", "psv1"]) + m(["doors"], "new", [0, 0, -40]) + m(["dsv"], "new", [-80, 0, 0]),
+     lines=["Each door servo's shaft hole must go right through the frame, 6.5 mm wide. A frame printed before 19 Nov 2026 has a 5.5 mm hole closed at the inside: open it with a 1/4 inch or 6.5 mm drill bit turned by hand, or a round file, until a coupler slides through.",
+            "Press a 3 x 10 mm pin into each door's boss at the right end until it stops. About 2 mm stands out.",
+            "Centre each door servo. Hold it the way it sits in its box and press a coupler onto its shaft, fin pointing straight down.",
+            "The back door has its socket at the left end with the plate towards you; the front door is its mirror. Slide each door's right knuckle onto its pin and hold the door level.",
+            "Slide each servo into its box from the left. Turn the door until the coupler's key goes into the socket, then push the servo in until the latch clicks.",
+            "With the servos centred, the doors sit half open. Shut and open are set on the Machine page."],
+     parts=["door_b, door_f (white)", "2 × door_coupler (white)"], need=["2 × MG90S servo (centred)", "2 × 3 × 10 mm pin"],
+     meshes=m(["lv1_frame", "carriage1", "lever1", "pin1", "psv1"]) + m(["doors"], "new", [0, 0, -40]) + m(["dsv"], "new", [-80, 0, 0]) + m(["dcp"], "new", [-40, 0, 0]),
      arrows="new", dir=(-0.7, -0.55, -0.45), zoom=1.05)
 step(part="b", title="Level 1 into the box",
      lines=["Slide level 1 in from the front on its rail, until its magnet clicks.",

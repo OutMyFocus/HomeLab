@@ -37,6 +37,18 @@ if (what == "push_l") intersection() { movers(-1); union() { static_all(); doors
 if (what == "push_half") intersection() { movers(0.5); union() { static_all(); doors_shut(); } }
 if (what == "doors_mid") intersection() { union() { door_at(lv1_z, false, 0.5); door_at(lv1_z, true, 0.5); } union() { static_all(); movers(0); } }
 if (what == "doors_open") intersection() { doors_open(); union() { static_all(); movers(0); } }
+// the door couplers turn with their doors: clear of the frame and everything round them, and of
+// their own door's socket (the key sits in it with room all round), shut, half open and open
+module couplers(o) { coupler_at(lv1_z, false, o); coupler_at(lv1_z, true, o); }
+module no_servos() { walls(); base_full(); bins(); frames(); shaft(); movers(0); }
+if (what == "coupler_shut") intersection() { couplers(0); union() { no_servos(); doors_shut(); } }
+if (what == "coupler_mid") intersection() { couplers(0.5); union() { no_servos(); door_at(lv1_z, false, 0.5); door_at(lv1_z, true, 0.5); } }
+if (what == "coupler_open") intersection() { couplers(1); union() { no_servos(); doors_open(); } }
+// ... and the servo's shaft is inside the coupler's bore: the servo body itself stays clear
+if (what == "coupler_servo") intersection() { couplers(0); difference() { servos_at(0, "doors"); door_shafts(5.8); } }   // (the shaft is meant to be in the bore)
+// the doors and couplers a quarter and three quarters open
+for (q = [[1, "doors_q1"], [3, "doors_q3"]]) if (what == q[1]) intersection() {
+    union() { door_at(lv1_z, false, q[0] / 4); door_at(lv1_z, true, q[0] / 4); couplers(q[0] / 4); } union() { no_servos(); } }
 // the card's paths stay clear of everything but the floor it lies on and the paddle pushing it
 if (what == "card_lv1_r") intersection() { card_sweep(lv1_z, 1); union() { walls(); bins(); frames(); shaft(); servos_at(); } }
 if (what == "card_lv1_l") intersection() { card_sweep(lv1_z, -1); union() { walls(); bins(); frames(); shaft(); servos_at(); } }

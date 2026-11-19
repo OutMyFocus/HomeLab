@@ -65,8 +65,12 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
    - Slide the frame in from the front on the lowest rail until its magnet clicks.
 4. **Level 1:**
    - Same as level 2.
-   - Then slide the two door servos in from the left until their latches click, each horn in its door's pocket.
-   - Push a 3 x 10 mm pin through each door's right knuckle.
+   - The trapdoors (`door_b` back, `door_f` front) don't take horns. A printed **door coupler** presses onto each door servo's shaft and keys into a socket in the door's left end. To reprint just the doors and couplers, use `bambu/MTG_Sorter_Mk2_Trapdoors.3mf` (one white plate).
+   - Each door servo's shaft hole must go right through the frame, 6.5 mm wide. A level 1 frame printed before 19 Nov 2026 has a 5.5 mm hole closed by a thin skin at the inside face: open it with a 1/4 inch or 6.5 mm drill bit turned by hand, or a round file, until a coupler slides through freely.
+   - Press a 3 x 10 mm pin into each door's boss at the right end until it stops. About 2.3 mm stands out.
+   - Centre each door servo. Hold it the way it sits in its box and press a coupler onto its shaft with the fin pointing straight down. If it's loose on the shaft, add a drop of superglue.
+   - Slide each door's right knuckle onto its pin and hold the door level under the opening. Slide its servo in from the left, turn the door until the coupler's key drops into the socket, then push the servo in until the latch clicks. The coupler's collar keeps the door on its pin.
+   - With the servos centred, the doors sit half open. Their shut and open angles are set on the Machine page.
    - Fit the column front and the back liner. They line the shaft the cards fall down.
    - **Bin-full sensors:** slide a TCRT5000 module into each of the four holders (sensor end first, sensor facing out of the open side), then slide each holder's tongue back into the groove in the frame's stiffener behind its bin. The left holders are the same part turned upside down. The sensor looks through the slot in the bin's back wall, and the bin in front keeps the holder in its groove.
 5. **Scan module:**

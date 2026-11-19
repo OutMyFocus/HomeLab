@@ -46,6 +46,7 @@ if (a == "psv1") servos_at(0, "push1");
 if (a == "psv2") servos_at(0, "push2");
 if (a == "dsv") servos_at(0, "doors");
 if (a == "doors") { door_at(lv1_z, false, 0); door_at(lv1_z, true, 0); }
+if (a == "dcp") { coupler_at(lv1_z, false, 0); coupler_at(lv1_z, true, 0); }
 if (a == "col_front") col_front();
 if (a == "liner_back") liner_back();
 if (a == "ir") ir_holders_at();
