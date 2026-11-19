@@ -1,7 +1,7 @@
 """Commander Vault, built into the sorter.
 
-Commander Vault used to be a separate web page with its own collection, decks
-and prices. Everything it did now lives here, on the Pi:
+Commander Vault used to be a separate web page with its own collection, decks and
+prices. Everything it did now lives here, on the Pi:
 
   * the weekly Canadian price check (ca_prices.py) and the Commander card database
     (carddb.py), run in the background once a week, or now from Settings;

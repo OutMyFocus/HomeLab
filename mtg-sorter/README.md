@@ -12,6 +12,8 @@ It has three parts, built in this order:
 | 3. Feeder & sorter, Mk1 | Feeder, scan bed, tilting tray and trapdoors in the enclosure | Built and tested; out of service since its tilting bed broke on 2026-11-09 |
 | 4. Sorter Mk2 | Screwless rebuild: slide-in modules, 4 bins, 450-card magazine, one plug | Designed, parts bought, printing next: [`hardware/mk2/MK2.md`](hardware/mk2/MK2.md). The app still drives Mk1 until Mk2 is built |
 
+**How it was built:** the week-by-week development log is in [DEVLOG.md](DEVLOG.md).
+
 **On your phone:** open the app's address in Safari or Chrome and pick *Add to Home Screen*
 (Safari: the Share button). It gets its own icon and opens full screen like an app, with the
 page menu along the bottom.
