@@ -29,6 +29,7 @@ TREE = {"enable_support": "1", "support_type": "tree(auto)", "support_style": "d
         "support_threshold_angle": "35", "support_top_z_distance": "0.2"}
 TALL_TREE = dict(TALL, **TREE)
 STRUCT_TREE = dict(STRUCTURAL, **TREE)
+SOLID_TREE = dict(SOLID, **TREE)
 SMOOTH = {"wall_loops": "4", "sparse_infill_density": "25%", "top_shell_layers": "7",
           "top_surface_line_width": "0.4", "ironing_type": "top", "ironing_flow": "15%",
           "ironing_spacing": "0.1", "ironing_speed": "20"}   # the scan bed: the card slides on it
@@ -61,7 +62,7 @@ mp.PER_PART.update({N(k): v for k, v in {
     "lv1_frame": TALL_TREE, "lv2_frame": TALL_TREE,
     "carriage1": STRUCT_TREE, "carriage2": STRUCT_TREE, "lever": SOLID,
     "door_b": STRUCTURAL, "door_f": STRUCTURAL, "door_coupler": SOLID_BRIM, "col_front": TALL, "liner_back": STRUCTURAL, "ir_holder": STRUCTURAL,
-    "scan_carrier": TALL_TREE, "scan_bed": SMOOTH, "stop_bar": STRUCTURAL,
+    "scan_carrier": TALL_TREE, "scan_bed": SMOOTH, "stop_bar": SOLID_TREE,
     "cam_arch": TALL_TREE, "cam_hood": SOLID, "lightbar": SOLID_BRIM,
     "fd_stand": STRUCT_TREE, "fd_hopper": TALL, "fd_shoe": SOLID_BRIM,
     "fd_roller": SOLID, "fd_motor_lid": STRUCTURAL,
@@ -82,6 +83,7 @@ PRESETS = [
     ("6 Solid", SOLID),
     ("7 Solid, brim", SOLID_BRIM),
     ("8 Scan bed, ironed", SMOOTH),
+    ("9 Solid, tree supports", SOLID_TREE),
 ]
 WHITE = ("bin", "door_b", "door_f", "door_coupler", "drawer", "scan_bed", "lightbar")
 
@@ -195,6 +197,11 @@ if __name__ == "__main__":
     if "--doors" in sys.argv:       # the trapdoors on their own, for reprinting them
         mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Trapdoors.3mf")
         mp.PLATES = [("1 Trapdoors (back, front) and 4 door couplers (WHITE)", P("door_b", "door_f", "door_coupler*4"))]
+        mp.main()
+        sys.exit(0)
+    if "--stopbar" in sys.argv:     # the stop bar on its own, for reprinting it
+        mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Stop_Bar.3mf")
+        mp.PLATES = [("1 Stop bar (solid, tree supports under the bar)", P("stop_bar"))]
         mp.main()
         sys.exit(0)
     if "--config" not in sys.argv:
