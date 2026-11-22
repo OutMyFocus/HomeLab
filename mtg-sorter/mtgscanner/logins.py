@@ -19,7 +19,7 @@ OPEN_PATHS = {"/login", "/api/login", "/api/logout", "/api/me", "/api/health", "
 # Looking at these needs a permission (path, or path prefix ending in /).
 GET_NEEDS = [
     ("/maintenance", "admin"), ("/api/system/", "admin"), ("/api/system", "admin"),
-    ("/api/accounts", "admin"),
+    ("/api/accounts", "admin"), ("/api/pi_sync", "admin"),
     ("/machine", "machine"), ("/api/machine", "machine"), ("/lights", "machine"), ("/api/lights", "machine"),
     ("/api/training", "machine"), ("/captures/", "machine"),
 ]
