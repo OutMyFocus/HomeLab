@@ -8,6 +8,7 @@ use <scan.scad>
 use <feeder.scad>
 use <etray.scad>
 use <covers.scad>
+use <pi_mount.scad>
 part = "none";
 
 // walls: the outside skin on the plate, the rails' slots open upwards
@@ -61,3 +62,6 @@ if (part == "back_high") rotate([-90, 0, 0]) back_high();
 if (part == "lid_front") rotate([180, 0, 0]) lid_front();
 if (part == "lid_back") lid_back();                                  // right way up: its half-lap step is on top
 if (part == "drawer") drawer();
+
+// the Pi 5 wall mount: the end that goes into the wall on the plate, the standoffs up
+if (part == "pi_mount") pi_mount_print();

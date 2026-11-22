@@ -62,7 +62,7 @@ mp.PER_PART.update({N(k): v for k, v in {
     "lv1_frame": TALL_TREE, "lv2_frame": TALL_TREE,
     "carriage1": STRUCT_TREE, "carriage2": STRUCT_TREE, "lever": SOLID,
     "door_b": STRUCTURAL, "door_f": STRUCTURAL, "door_coupler": SOLID_BRIM, "col_front": TALL, "liner_back": STRUCTURAL, "ir_holder": STRUCTURAL,
-    "scan_carrier": TALL_TREE, "scan_bed": SMOOTH, "stop_bar": SOLID_TREE,
+    "scan_carrier": TALL_TREE, "scan_bed": SMOOTH, "stop_bar": SOLID_TREE, "pi_mount": STRUCTURAL,
     "cam_arch": TALL_TREE, "cam_hood": SOLID, "lightbar": SOLID_BRIM,
     "fd_stand": STRUCT_TREE, "fd_hopper": TALL, "fd_shoe": SOLID_BRIM,
     "fd_roller": SOLID, "fd_motor_lid": STRUCTURAL,
@@ -202,6 +202,11 @@ if __name__ == "__main__":
     if "--stopbar" in sys.argv:     # the stop bar on its own, for reprinting it
         mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Stop_Bar.3mf")
         mp.PLATES = [("1 Stop bar (solid, tree supports under the bar)", P("stop_bar"))]
+        mp.main()
+        sys.exit(0)
+    if "--pimount" in sys.argv:     # the Pi 5 wall mount on its own (added after the rest was printed)
+        mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Pi_Mount.3mf")
+        mp.PLATES = [("1 Pi wall mount (black, no supports)", P("pi_mount"))]
         mp.main()
         sys.exit(0)
     if "--config" not in sys.argv:

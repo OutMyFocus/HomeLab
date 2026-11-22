@@ -123,6 +123,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
 - **Relay.** It's driven by **GPIO22**, with the module's trigger jumper on HIGH. The app closes it once it has started and opens it when the Pi shuts down. Until then the servos, motor and lights have no power, so nothing twitches at boot.
 - **The Pi 5 on a non-PD supply.** Run `sudo rpi-eeprom-config --edit` and add `PSU_MAX_CURRENT=5000`. That stops the "power supply not capable of 5A" warning, and the brick does supply it.
 - **Never use 12 V.** Mk2 has no regulator.
+- **The Pi on the right wall (optional).** If the camera ribbon won't reach the electronics tray, print `bambu/MTG_Sorter_Mk2_Pi_Mount.3mf` (black, no supports). It pushes into the triangle pocket of the right wall's middle back tile (behind the top bins, under level 1) and holds by three crush ribs on two sides, with nothing screwed into the wall. The Pi screws onto its four standoffs with M2.5 screws, 6 to 10 mm long, with USB and Ethernet facing the back. Pull it straight out to remove it. Source: `pi_mount.scad`.
 
 ## Heat
 
