@@ -128,6 +128,18 @@ Give the container the Pi's address (the **Sorter's Pi** field, `MTG_MACHINE_URL
   separate collection to fill up as well.)
 - **Machine** and **Lights:** the servos, feeder and light bars are the Pi's, driven over the
   network.
+- **One collection:** a sort run happens on the Pi, so the Pi saves those cards first. Every
+  15 seconds the server copies whatever the Pi saved since last time into its own collection
+  (the Pi owner's cards to the owner here, another Pi account's to the same username here).
+  The first time it only notes where the Pi's collection ends: cards the Pi held before stay
+  on the Pi. Maintenance shows the link as **Cards from the sorter**.
+- **One address:** while the server keeps asking, opening the Pi's own address
+  (`http://10.0.0.247:5000`) sends the browser to the server's site, so there's only one app to
+  look at. The server learns its site from the Cloudflare tunnel the first time you open a
+  page through it; set `MTG_PUBLIC_URL` (e.g. `https://mtg.example.com`, the **Site address**
+  field) to pick it yourself. The Pi's own screen, its API and its camera stream stay as they
+  are, the Pi's pages come back by themselves when the server is off, and adding `?stay=1` to
+  a Pi address keeps that browser on the Pi (for its Maintenance page, say).
 
 If the Pi has a PIN or accounts on, also set `MTG_MACHINE_KEY` to the Pi's `data/machine_key`
 (`mtg machine-key` on the Pi prints it).

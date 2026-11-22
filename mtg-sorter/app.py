@@ -42,7 +42,7 @@ from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect, fingerprint_distance
 from mtgscanner.vision import fingerprint, warp_card
 from mtgscanner.exchange import load_rate
-from mtgscanner import accounts, assets, logins, security, sort_rules, wishlist
+from mtgscanner import accounts, assets, logins, pi_sync, security, sort_rules, wishlist
 from mtgscanner.decks import name_key
 from mtgscanner.history import add_history_routes
 from mtgscanner.home import add_home_routes
@@ -1083,6 +1083,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     # On the server, MTG_MACHINE_URL points at the sorter's Pi, which does the moving.
     machine = machine or (RemoteMachine(remote_url()) if remote_url() else Machine())
     scanner.lights = lights or scanner.lights or make_lights()
+    pi_sync.install(app)  # the Pi follows the server: its cards copied there, its pages sent there
     assets.install(app, WEB)  # versioned script and style links, so caches never mix old and new
     logins.install(app, WEB)  # user accounts, once they're on: logging in, and who may do what
     security.install(app, WEB)  # the optional PIN lock, checked before every page (without accounts)
@@ -1894,6 +1895,7 @@ def main():
         )
     machine = RemoteMachine(remote_url()) if remote_url() else Machine()
     app = create_app(scanner, machine)
+    pi_sync.start()  # the server: copy the cards the sorter's Pi saves into the collection here
     if isinstance(machine, Machine) and ON_PI:
         # The servos to their saved home positions (Machine page: Home), in the background
         # so the page is up straight away.

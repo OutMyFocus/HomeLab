@@ -511,8 +511,13 @@ def checkup(scanner, machine) -> list[dict]:
     checks = [power_check(), temperature_check(), camera_check(scanner), *machine_checks(machine),
               lights_check(scanner),
               database_check(scanner), network_check(), internet_check(), disk_check(), memory_check(),
-              updates_check(), helper_check()]
+              updates_check(), helper_check(), pi_sync_check()]
     return [c for c in checks if c]
+
+
+def pi_sync_check() -> dict | None:
+    from . import pi_sync
+    return pi_sync.sync_check()
 
 
 def overall(checks: list[dict]) -> str:
