@@ -71,7 +71,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
    - Centre each door servo. Hold it the way it sits in its box and press a coupler onto its shaft with the fin pointing straight down. If it's loose on the shaft, add a drop of superglue.
    - Slide each door's right knuckle onto its pin and hold the door level under the opening. Slide its servo in from the left, turn the door until the coupler's key drops into the socket, then push the servo in until the latch clicks. The coupler's collar keeps the door on its pin.
    - With the servos centred, the doors sit half open. Their shut and open angles are set on the Machine page.
-   - Fit the column front and the back liner. They line the shaft the cards fall down.
+   - The column front and the back liner line the shaft the cards fall down. Nothing holds their tops, so glue them into level 2's two floor grooves (superglue or epoxy, with a fillet of epoxy round the back liner's two legs), held upright until set. Do it with level 2 out on the table, then slide it back in: the liners travel with it.
    - **Bin-full sensors:** slide a TCRT5000 module into each of the four holders (sensor end first, sensor facing out of the open side), then slide each holder's tongue back into the groove in the frame's stiffener behind its bin. The left holders are the same part turned upside down. The sensor looks through the slot in the bin's back wall, and the bin in front keeps the holder in its groove.
 5. **Scan module:**
    - Fit the stop bar: a 3 x 10 mm pin through the left arm, and the servo's horn in the right arm.

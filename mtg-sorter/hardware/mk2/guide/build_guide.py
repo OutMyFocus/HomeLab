@@ -95,8 +95,9 @@ step(part="b", title="Level 2 into the box",
      arrows="new", dir=FRONT)
 step(part="b", title="Shaft liners",
      lines=["The column front and the back liner line the shaft that cards fall down from level 1 to level 2.",
-            "Stand each one in level 2's floor groove. The column front's panel sits flush with the machine's face, between bins 1 and 2.",
-            "Their top tabs click under level 1's front hinge bar when level 1 goes in, in step 09."],
+            "Nothing holds their tops, so glue them to level 2: slide level 2 out, put superglue or epoxy in its two floor grooves, and stand each one in its groove, held upright until it sets.",
+            "The column front goes in the front groove, its panel facing out (it ends up flush with the machine's face, between bins 1 and 2). The back liner goes in the back groove on its two legs: give each leg a good fillet of epoxy.",
+            "Slide level 2 back in on its rail. The liners stop well below level 1 and travel with level 2."],
      parts=["col_front", "liner_back"], need=[],
      meshes=m(BASE + ["wall_l"] + LV2) + m(SHAFT, "new", [0, 0, 90]),
      arrows="new", dir=FRONT, zoom=1.0)

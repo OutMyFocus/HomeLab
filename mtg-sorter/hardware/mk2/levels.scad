@@ -430,8 +430,8 @@ module ir_holders_at(ribs = true) for (z = ir_z) for (m = [0, 1]) translate([0, 
 
 // ================================ SHAFT ======================================================
 // Front column: a panel flush with the machine's face between bins 1 and 2, and the shaft's front
-// liner behind it, joined by two ribs; it stands in level 2's floor groove and its top tab clicks
-// under level 1's front hinge bar. The back liner is a plain plate the same way. Both stop 52 mm
+// liner behind it, joined by two ribs; it is glued into level 2's floor groove (nothing holds its top).
+// The back liner is a plain plate, glued in the same way. Both stop 52 mm
 // under level 1 so the open doors hang clear, and flare at the top into a funnel.
 liner_z = [lv2_z - 1.5, lv1_z - hinge_y - 6];
 module liner(f) {
