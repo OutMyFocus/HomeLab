@@ -38,7 +38,7 @@ if (part == "ir_holder") rotate([90, 0, 0]) ir_holder();               // its fr
 // scan module: the bed and the carrier lie flat (turned back by the bed's slope)
 if (part == "scan_carrier") rotate([-90, 0, 0]) carrier();  // standing on the skids' back ends, which are flat (brim, tree supports)
 if (part == "scan_bed") rotate([-bed_a, 0, 0]) bed();
-if (part == "stop_bar") rotate([60, 0, 0]) stop_bar(0);           // the arms' outer faces on the plate
+if (part == "stop_bar") rotate([-bed_a, 0, 0]) stop_bar(0);       // flat, on the arms' undersides, so the arms' layers run along them (tree supports under the bar)
 if (part == "cam_arch") rotate([180, 0, 0]) cam_arch();            // the beam on the plate
 if (part == "cam_hood") rotate([180 - bed_a, 0, 0]) cam_hood();
 if (part == "lightbar") rotate([90, 0, 0]) rotate([0, 90, 0]) rotate([-bed_a, 0, 0]) lightbar(1);   // on its end

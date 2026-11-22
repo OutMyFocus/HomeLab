@@ -14,6 +14,8 @@
 //              card rests on it. Down (18 degrees): the bar drops almost straight down, 9 mm below
 //              the bed's surface, so it never pushes the card back up the slope, and the card
 //              slides off the edge on its own.
+//              The arms are 4.5 x 9.3 mm and the part prints flat on their undersides, so the layers
+//              run along the arms (the first version stood on end and snapped across its layers).
 //   cam_arch   two posts and a beam over the bed, riding the same rail as the carrier and keyed to
 //              it. The Camera Module 3 clicks onto two pegs, square to the bed, 120 mm over the
 //              card's centre; a twist-on hood holds a polarizer disc in front of the lens.
@@ -50,7 +52,7 @@ skid_y = [48, 162];     // the camera arch's feet ride the rail in front of them
 // ---- stop bar -----------------------------------------------------------------------------
 stop_axis = [60, -11];           // (s, n): far up the slope, so the bar's face drops nearly straight down
 stop_half = 41.5;  stop_face = 2;  stop_n = [-6, 10];  stop_t = 3.7;
-arm_x = [38.5, 41.5];  arm_n = [-13.5, -8.5];   // the arms run under the carrier plate, outside the light box
+arm_x = [37, 41.5];  arm_n = [-16.8, -7.5];   // the arms run under the carrier plate, outside the light box
 stop_turn = 18;
 // ---- MG90S -----------------------------------------------------------------------------------
 sv_len = 22.7;  sv_w = 12.2;  sv_shaft_off = 5.9;  sv_top = 6.6;  sv_tab_len = 32.2;  sv_body = 16.8;
@@ -179,12 +181,17 @@ module stop_bar(d = stop_down) {
                 translate([arm_x[0], stop_face - stop_t, arm_n[0]]) cube([arm_x[1] - arm_x[0], stop_t, stop_n[0] - arm_n[0] + 0.01]);
                 translate([arm_x[0], stop_face - stop_t, arm_n[0]]) cube([arm_x[1] - arm_x[0], stop_axis[0] - stop_face + stop_t, arm_n[1] - arm_n[0]]);
                 translate([arm_x[0], stop_axis[0], stop_axis[1]]) rotate([0, 90, 0]) cylinder(r = 5.8, h = arm_x[1] - arm_x[0], $fn = 40);
+                // a gusset in the corner under the bar's end, so the bar can't snap off its arm
+                hull() {
+                    translate([arm_x[0] - 3, stop_face - stop_t, stop_n[0] - 0.01]) cube([3.01, stop_t, 0.01]);
+                    translate([arm_x[0] - 0.01, stop_face - stop_t, stop_n[0] - 3]) cube([0.01, stop_t, 3]);
+                }
             }
         }
         // left: free on the steel pin; right: the servo's single-arm horn presses into a pocket on its outer face
-        translate([-arm_x[1] - 1, stop_axis[0], stop_axis[1]]) rotate([0, 90, 0]) cylinder(d = pin_free, h = 5, $fn = 32);
+        translate([-arm_x[1] - 1, stop_axis[0], stop_axis[1]]) rotate([0, 90, 0]) cylinder(d = pin_free, h = arm_x[1] - arm_x[0] + 2, $fn = 32);
         translate([arm_x[1] - 1.8, stop_axis[0], stop_axis[1]]) rotate([0, 90, 0]) linear_extrude(1.81) rotate(180) translate([0, -2.6]) square([16, 5.2]);
-        translate([arm_x[0] - 1, stop_axis[0], stop_axis[1]]) rotate([0, 90, 0]) cylinder(d = 7.4, h = 5, $fn = 32);   // the horn's hub, through
+        translate([arm_x[0] - 1, stop_axis[0], stop_axis[1]]) rotate([0, 90, 0]) cylinder(d = 7.4, h = arm_x[1] - arm_x[0] + 2, $fn = 32);   // the horn's hub, through
     }
 }
 
