@@ -187,6 +187,10 @@ MK2_STOP_SECONDS = 0.6        # stop bar down this long at most (the card lands 
 MK2_DOORS_SECONDS = 0.8       # trapdoors open this long (the card drops in about 0.4 s)
 MK2_PUSH_SPEED = 130          # pusher servo degrees a second: about 120 mm/s at the paddle (MK2.md)
 MK2_PUSH_HOLD = 0.3           # the pusher waits at the side this long before coming back
+# Mk2's power relay (MK2.md, Power): servos, feeder motor and lights get their 5 V through it.
+# The app closes it (pin high, the module's trigger jumper on HIGH) when it starts on Mk2; when
+# the app stops the pin lets go, the module's pull-down opens the relay and everything goes dark.
+RELAY_PIN = 22
 # Servo pulse widths in microseconds for 0 and 180 degrees. The first is ServoKit's
 # default, which turns an MG90S only about 130-140 real degrees. "Wider servo travel" on
 # the Machine page switches to the second for about the full 180 (some cheap servos buzz

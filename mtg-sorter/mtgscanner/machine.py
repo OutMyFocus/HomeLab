@@ -108,6 +108,8 @@ class Machine:
         self.pins_up_at = None    # when the stop pins were last sent up from somewhere else
         self.run_lock = threading.Lock()
         self.run = None           # what drives the machine on its own right now (see claim)
+        self._relay = None        # Mk2's power relay, once switched on
+        self.relay_error = None
 
     # --- connecting ---------------------------------------------------------
 
@@ -131,6 +133,26 @@ class Machine:
                 self.feeder_error = f"Feeder motor not available ({e})."
         return self._motor
 
+    def power_on(self) -> bool:
+        """Mk2: close the power relay (config.RELAY_PIN) so the servos, feeder and lights get
+        their 5 V. It stays closed while the app runs. Nothing happens on the first machine,
+        which has no relay. Returns True when the relay is (now) closed."""
+        if self.model() != "mk2" or not getattr(config, "RELAY_PIN", None):
+            return False
+        with self.lock:
+            if self._relay is None:
+                try:
+                    from gpiozero import OutputDevice
+                    self._relay = OutputDevice(config.RELAY_PIN, active_high=True, initial_value=True)
+                    self.relay_error = None
+                except Exception as e:   # not a Pi, or the pin is taken
+                    self.relay_error = f"Couldn't switch the power relay on GPIO{config.RELAY_PIN} ({e})."
+                    return False
+            self._relay.on()
+            # The servo board was without power until now: it wakes up asleep, so set it up again.
+            self._kit = None
+        return True
+
     # --- settings: config.py, with what was saved on the page on top ---------
 
     def model(self) -> str:
@@ -151,6 +173,8 @@ class Machine:
             pass     # no servo board here: nothing is holding anyway
         saved["model"] = model
         self._write(saved)
+        if model == "mk2":
+            self.power_on()
 
     def parts(self) -> dict:
         """This machine's parts as config.py has them (no saved angles)."""
@@ -669,6 +693,8 @@ class Machine:
                 "home_at_startup": self.home_at_startup(),
                 "customized": settings_file().exists(),
                 "model": model,
+                "relay": {"on": self._relay is not None and bool(self._relay.value),
+                          "error": self.relay_error} if model == "mk2" else None,
                 "models": MODELS,
                 "bins": list(self.bins()),
             }

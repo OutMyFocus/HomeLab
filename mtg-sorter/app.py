@@ -1881,9 +1881,6 @@ def main():
     if isinstance(source, WaitingForCamera):
         source.on_found = scanner.use_source
     scanner.restore(load_settings())
-    scanner.lights = make_lights()
-    scanner.lights.start()  # shows the saved color (nothing happens without light bars)
-    threading.Thread(target=scanner.run, daemon=True).start()
 
     print(
         f"Loaded {matcher.card_count} cards ({matcher.learned_count} learned scans). Open http://localhost:{args.port} in your browser."
@@ -1894,6 +1891,13 @@ def main():
             "Maintenance page, or press Download every card there (see README.md)."
         )
     machine = RemoteMachine(remote_url()) if remote_url() else Machine()
+    if isinstance(machine, Machine) and ON_PI and machine.power_on():
+        # Mk2: the relay gives the servos, feeder and lights their 5 V (MK2.md, Power)
+        print("Machine: the power relay is on.")
+        time.sleep(0.3)   # let the 5 V settle before the light bars are sent their colour
+    scanner.lights = make_lights()
+    scanner.lights.start()  # shows the saved color (nothing happens without light bars)
+    threading.Thread(target=scanner.run, daemon=True).start()
     app = create_app(scanner, machine)
     pi_sync.start()  # the server: copy the cards the sorter's Pi saves into the collection here
     if isinstance(machine, Machine) and ON_PI:
