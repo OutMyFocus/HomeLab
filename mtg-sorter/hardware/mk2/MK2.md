@@ -76,6 +76,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
 5. **Scan module:**
    - Fit the stop bar: a 3 x 10 mm pin through the left arm, and the servo's horn in the right arm.
    - Stick the LED strip pieces into the light box and the light bars, and drop the bars into their slots with the polarizer strips in front.
+     - **Lights, how they go in.** Cut three pieces at the copper pads: 5 LEDs for each light bar and one 4-LED piece for the light box (one piece, not four singles). Solder three 20 cm wires (red +5V, green Din, white GND) to the end each piece's arrows point away from. Every piece goes in with its wired end at the back (feeder) end and its arrows pointing to the front. The bar strips sit in the groove on the bar's wall side, LEDs facing into the bar; the box piece lies on the box floor, LEDs up. The light box has no way out for wires, so drill one 5 mm hole in its floor at the back end, centred, and take the box wires down through it. The bar wires go over each bar's back end and down behind the plate. Under the plate, the three pieces join on three Wagos (5 V, ground, data) at the right back, and one 3-wire cable runs forward, out through the right skid's notch and down the right wall trunk: green to Pi pin 19, red to the switched 5 V Wago, white to ground. The three pieces share one data signal, so on the Lights page set Status LEDs 0 and Card light LEDs 5.
    - Press the bed into the carrier's rim until it clicks under the four lips.
    - Slide the carrier in from the front on the scan rail.
    - Slide the camera arch in after it. A key joins each of its feet to the carrier's skids.
@@ -123,6 +124,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
 - **Relay.** It's driven by **GPIO22**, with the module's trigger jumper on HIGH. The app closes it once it has started and opens it when the Pi shuts down. Until then the servos, motor and lights have no power, so nothing twitches at boot.
 - **The Pi 5 on a non-PD supply.** Run `sudo rpi-eeprom-config --edit` and add `PSU_MAX_CURRENT=5000`. That stops the "power supply not capable of 5A" warning, and the brick does supply it.
 - **Never use 12 V.** Mk2 has no regulator.
+- **The Pi on the right wall (optional).** If the camera ribbon won't reach the electronics tray, print `bambu/MTG_Sorter_Mk2_Pi_Mount.3mf` (black, no supports). It pushes into the triangle pocket of the right wall's middle back tile (behind the top bins, under level 1) and holds by three crush ribs on two sides, with nothing screwed into the wall. The Pi screws onto its four standoffs with M2.5 screws, 6 to 10 mm long, with USB and Ethernet facing the back. Pull it straight out to remove it. Source: `pi_mount.scad`.
 
 ## Heat
 
@@ -149,7 +151,9 @@ Servo plugs: brown is GND, orange is 5 V, yellow is signal. Every servo reaches 
 
 ## Software changes Mk2 needs
 
-The app still drives Mk1 (a tilt tray and stop pins). These changes come once the machine is built:
+**Done:** the Machine page has a **Which machine** switch. On **Sorter Mk2** it shows the five servos below with sliders and saveable angles (kept apart from Mk1's), Home goes doors shut, pushers centre, stop bar up, and **Bin 1-4** feed one card and run the sort sequence below. Its starting angles are guesses near 90, so set each one before trusting Home; going home at startup stays off for Mk2 until you switch it on. Sorting and tuning runs, the relay and the bin sensors are still to come.
+
+The rest of the plan:
 
 - **New parts:** `stop` (ch 0, up and down), `push1` (ch 1) and `push2` (ch 4), each with left, centre and right, plus `door_f` (ch 2) and `door_b` (ch 3), each open and closed. All of them are new mechanisms, so each gets calibrated on the Machine page. Your Mk1 angles don't carry over.
 - **Sort sequence:**

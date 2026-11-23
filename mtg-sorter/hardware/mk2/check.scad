@@ -7,6 +7,7 @@ use <etray.scad>
 use <scan.scad>
 use <feeder.scad>
 use <covers.scad>
+use <pi_mount.scad>
 what = "none";
 
 module walls() { wall_r(); wall_l(); }
@@ -104,3 +105,9 @@ if (what == "yoke") for (L = [lv1_z, lv2_z]) for (p = [-1, -0.75, -0.5, -0.25, 0
 // the bin-full sensor holders sit in their grooves (crush ribs left out) and clear everything else
 if (what == "ir_frames") intersection() { ir_holders_at(false); frames(); }
 if (what == "ir_rest") intersection() { ir_holders_at(); union() { walls(); bins(); base_full(); shaft(); servos_at(); doors_shut(); doors_open(); } }
+// the Pi's wall mount sits in its pocket (only its crush ribs touch the wall), and it and the Pi
+// clear everything else in the machine, the moving parts at both ends of their travel
+if (what == "pi_mount_wall") intersection() { union() { pi_mount(false); pi_on_mount(); } wall_r(); }
+if (what == "pi_mount") intersection() { union() { pi_mount(); pi_on_mount(); }
+    union() { wall_l(); base_full(); bins(); frames(); shaft(); servos_at(); doors_shut(); doors_open(); movers(-1); movers(0); movers(1);
+              scan_fixed(); stop_bar(0); stop_bar(1); feeder_fixed(); etray(); covers_all(); ir_holders_at(); } }

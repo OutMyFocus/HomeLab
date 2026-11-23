@@ -210,8 +210,8 @@ class FakeCamera:
             frame = np.full((400, 300, 3), 120, np.uint8)
             calls = self.machine._motor.calls
             forward = self.machine.feeding and bool(calls) and calls[-1][0] == "forward"
-            pins_ch = config.SERVOS["pins"][0]
-            pins_down = self.machine.angles.get(pins_ch) == config.SERVOS["pins"][1]["down"]
+            pins_ch, pins_at = self.machine.servos()[self.machine.stop_part()]   # pins, or Mk2's stop bar
+            pins_down = self.machine.angles.get(pins_ch) == pins_at["down"]
             if forward and gone and not pins_down:
                 gone, motor_frames, pins_since = False, 0, None   # the next card's feed
             if forward and not gone:
@@ -1068,3 +1068,112 @@ def test_a_lost_servo_board_gives_a_readable_answer(client, machine):
     r = client.post("/api/machine/home", json={})
     assert r.status_code == 503 and "servo board" in r.get_json()["error"]
     assert machine.run is None                  # the Home press let go of the machine
+
+
+# --- Sorter Mk2 ----------------------------------------------------------------------
+
+@pytest.fixture
+def mk2(client, machine, monkeypatch):
+    monkeypatch.setattr(config, "MK2_STOP_SECONDS", 0.7)
+    monkeypatch.setattr(config, "MK2_DOORS_SECONDS", 0.05)
+    monkeypatch.setattr(config, "MK2_PUSH_HOLD", 0.01)
+    monkeypatch.setattr(config, "MK2_PUSH_SPEED", 2000)
+    state = client.post("/api/machine/save", json={"model": "mk2"}).get_json()
+    assert state["model"] == "mk2", state
+    return state
+
+
+def test_mk2_has_its_own_five_servos(client, mk2):
+    assert {p: v["channel"] for p, v in mk2["parts"].items()} == {
+        "stop": 0, "push1": 1, "door_f": 2, "door_b": 3, "push2": 4}
+    assert mk2["bins"] == [1, 2, 3, 4]
+    assert mk2["home_at_startup"] is False      # its angles start as guesses
+
+
+def test_each_machine_keeps_its_own_saved_angles(client, machine, mk2):
+    client.post("/api/machine/save", json={"part": "stop", "position": "down", "angle": 112})
+    assert client.post("/api/machine/save", json={"part": "pins", "position": "down", "angle": 100}).status_code == 400
+    back = client.post("/api/machine/save", json={"model": "mk1"}).get_json()
+    assert back["parts"]["pins"]["positions"] == config.SERVOS["pins"][1]
+    again = client.post("/api/machine/save", json={"model": "mk2"}).get_json()
+    assert again["parts"]["stop"]["positions"]["down"] == 112
+    assert client.post("/api/machine/save", json={"model": "mk3"}).status_code == 400
+
+
+def test_switching_machines_lets_every_servo_go(client, machine):
+    client.post("/api/machine/move", json={"channel": 0, "angle": 120})
+    client.post("/api/machine/save", json={"model": "mk2"})
+    assert machine._kit.servo[0].angle is None
+
+
+def test_mk2_home_shuts_the_doors_centres_the_pushers_then_raises_the_stop_bar(client, logged, mk2):
+    assert client.post("/api/machine/home", json={}).status_code == 200
+    homed = [ch for ch in range(5) if logged.angles.get(ch) is not None]
+    assert homed == [0, 1, 2, 3, 4]
+    parts = config.SERVOS_MK2
+    assert logged.angles[parts["stop"][0]] == parts["stop"][1]["up"]
+    assert logged.angles[parts["door_f"][0]] == parts["door_f"][1]["closed"]
+
+
+def test_mk2_side_bin_drops_the_stop_bar_raises_it_then_pushes(client, logged, mk2):
+    r = client.post("/api/machine/drop", json={"bin": 2})
+    assert r.status_code == 200, r.get_json()
+    m = moves(logged)
+    down, up = m.index(("stop", "down")), m.index(("stop", "up"))
+    assert down < up
+    assert ("door_f", "open") not in m
+    ch, pos = config.SERVOS_MK2["push1"]
+    assert logged.angles[ch] == pos["centre"]          # pushed and back
+    assert logged._kit.servo[ch].angle in (None, pos["centre"])
+
+
+def test_mk2_level_2_bin_opens_both_doors_after_the_stop_bar_is_back_up(client, logged, mk2):
+    client.post("/api/machine/drop", json={"bin": 3})
+    m = moves(logged)
+    assert m.index(("stop", "up")) < m.index(("door_f", "open"))
+    assert m.index(("door_b", "open")) < m.index(("door_f", "closed"))
+    assert m[-1] == ("stop", "up")
+
+
+def test_mk2_pusher_sweeps_steadily_to_the_side_and_back(machine, mk2, monkeypatch):
+    sent = []
+    real = machine.set_angle
+    monkeypatch.setattr(machine, "set_angle", lambda ch, a: (sent.append((ch, a)), real(ch, a)))
+    machine._push(machine.servos()["push2"], "right")
+    angles = [a for ch, a in sent if ch == 4]
+    centre, right = config.SERVOS_MK2["push2"][1]["centre"], config.SERVOS_MK2["push2"][1]["right"]
+    assert len(angles) > 10 and max(angles) == right and angles[-1] == centre
+    assert all(abs(b - a) <= 4.01 for a, b in zip(angles, angles[1:]))
+
+
+def test_mk2_has_no_bin_5_and_mk1_has_no_bin_4(client, mk2):
+    assert client.post("/api/machine/drop", json={"bin": 5}).status_code == 400
+    client.post("/api/machine/save", json={"model": "mk1"})
+    assert client.post("/api/machine/drop", json={"bin": 4}).status_code == 400
+
+
+def test_mk2_sort_one_feeds_against_the_stop_bar_and_drops(watched, quick_sort, monkeypatch):
+    client, scanner, machine, cams = watched
+    monkeypatch.setattr(config, "MK2_DOORS_SECONDS", 0.05)
+    monkeypatch.setattr(config, "MK2_PUSH_HOLD", 0.01)
+    monkeypatch.setattr(config, "MK2_PUSH_SPEED", 2000)
+    client.post("/api/machine/save", json={"model": "mk2"})
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    out = client.post("/api/machine/sort_one", json={"bin": 4}).get_json()
+    assert out["result"] == "landed" and out["bin"] == 4, out
+    assert out["dropped"] is True
+
+
+def test_runs_do_not_drive_mk2_yet(watched):
+    client, scanner, machine, cams = watched
+    client.post("/api/machine/save", json={"model": "mk2"})
+    r = client.post("/api/machine/sort", json={"max_cards": 1})
+    assert r.status_code >= 400 and "Mk2" in r.get_json()["error"]
+    assert client.post("/api/machine/tune", json={"cycles": 1}).status_code >= 400
+    assert machine.run is None
+
+
+def test_reset_keeps_which_machine_it_is(client, mk2):
+    client.post("/api/machine/save", json={"part": "stop", "position": "down", "angle": 112})
+    state = client.post("/api/machine/reset", json={}).get_json()
+    assert state["model"] == "mk2" and state["parts"]["stop"]["positions"]["down"] == 108

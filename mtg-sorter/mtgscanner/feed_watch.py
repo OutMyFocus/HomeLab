@@ -238,9 +238,9 @@ class FeedWatcher:
             self.busy.release()
 
 
-    @staticmethod
-    def check_bin(bin_no) -> int:
-        bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
+    def check_bin(self, bin_no) -> int:
+        bins = (self.machine.bins() if hasattr(self.machine, "bins")
+                else getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"}))
         if bin_no not in bins and str(bin_no) not in map(str, bins):
             raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
         return int(bin_no)

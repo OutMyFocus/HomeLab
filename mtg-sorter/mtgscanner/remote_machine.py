@@ -92,7 +92,8 @@ class RemoteMachine:
                     "feeder_defaults": {"seconds": config.FEEDER_SECONDS, "speed": config.FEEDER_SPEED,
                                         "reverse": False, "backoff": config.FEED_BACKOFF_SECONDS,
                                         "push": getattr(config, "FEED_PUSH_SECONDS", 0.0)},
-                    "wide_travel": config.SERVO_WIDE_TRAVEL, "home_at_startup": config.HOME_AT_STARTUP}
+                    "wide_travel": config.SERVO_WIDE_TRAVEL, "home_at_startup": config.HOME_AT_STARTUP,
+                    "model": None, "models": {}, "bins": list(getattr(config, "SORT_BINS", {}))}
         self._down_until = 0.0
         s["remote"] = self.url
         return s
@@ -188,6 +189,12 @@ class RemoteMachine:
 
     def set_wide_travel(self, on: bool):
         self._call("/api/machine/save", {"wide_travel": bool(on)})
+
+    def set_model(self, model: str):
+        self._call("/api/machine/save", {"model": model})
+
+    def model(self) -> str:
+        return self.state().get("model", "mk1")
 
     def reset_saved(self):
         self._call("/api/machine/reset", {})
