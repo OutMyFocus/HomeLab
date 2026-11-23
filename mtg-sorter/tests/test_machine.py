@@ -1177,3 +1177,42 @@ def test_reset_keeps_which_machine_it_is(client, mk2):
     client.post("/api/machine/save", json={"part": "stop", "position": "down", "angle": 112})
     state = client.post("/api/machine/reset", json={}).get_json()
     assert state["model"] == "mk2" and state["parts"]["stop"]["positions"]["down"] == 108
+
+
+class FakeRelay:
+    made = []
+
+    def __init__(self, pin, active_high=True, initial_value=False):
+        self.pin, self.value = pin, int(initial_value)
+        FakeRelay.made.append(self)
+
+    def on(self): self.value = 1
+    def off(self): self.value = 0
+
+
+@pytest.fixture
+def fake_gpio(monkeypatch):
+    import sys
+    import types
+    FakeRelay.made = []
+    monkeypatch.setitem(sys.modules, "gpiozero", types.SimpleNamespace(OutputDevice=FakeRelay))
+    return FakeRelay
+
+
+def test_mk2_closes_the_power_relay(client, machine, fake_gpio):
+    assert machine.power_on() is False and not fake_gpio.made     # the first machine has no relay
+    state = client.post("/api/machine/save", json={"model": "mk2"}).get_json()
+    assert [r.pin for r in fake_gpio.made] == [config.RELAY_PIN] and fake_gpio.made[0].value == 1
+    assert state["relay"] == {"on": True, "error": None}
+    assert machine.power_on() is True and len(fake_gpio.made) == 1    # the same pin, not a second one
+
+
+def test_a_relay_that_cannot_be_switched_says_why(client, machine, monkeypatch):
+    import sys
+    import types
+
+    def broken(*a, **k):
+        raise RuntimeError("pin busy")
+    monkeypatch.setitem(sys.modules, "gpiozero", types.SimpleNamespace(OutputDevice=broken))
+    state = client.post("/api/machine/save", json={"model": "mk2"}).get_json()
+    assert state["relay"]["on"] is False and "pin busy" in state["relay"]["error"]
