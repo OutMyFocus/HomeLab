@@ -65,6 +65,15 @@
     <h2><span class="dot" id="servoDot"></span>Servos</h2>
     <p class="err" id="servoErr" hidden></p>
     <p class="sub" id="remoteNote" hidden></p>
+    <div class="row" id="modelRow" hidden>
+      <span class="sub">Which machine:</span>
+      <button class="btn" data-model="mk1">First machine</button>
+      <button class="btn" data-model="mk2">Sorter Mk2</button>
+    </div>
+    <p class="sub" id="mk2Note" hidden><b>Mk2:</b> its angles start as guesses. Set each servo before you trust Home:
+      drag its slider slowly until the part sits right, then press the position under it to save. Stop bar up holds
+      the card, down lets it go. Each pusher's centre is the paddle in the middle, left and right the two ends.
+      Each trapdoor's closed is level and shut, open is hanging down.</p>
     <p class="sub">The buttons go to each part's saved angles. To change one, move the slider until the part sits right,
       then press that position under <b>Save the slider's angle as</b>. It's kept on the Pi, so there's no file to edit.
       Centre each servo at 90 before pressing its horn on.</p>
@@ -108,13 +117,16 @@
       3 seconds, or sooner when a card stops moving half out of the slot (the gate is too tight). Start with the bed
       empty. <b>Save as the usual push</b> keeps all four numbers; Start sorting uses them. <b>Timed push</b> runs the
       motor for the seconds above, whatever happens.</p>
-    <div class="row">
+    <div class="row" id="binRow">
       <span class="sub">Feed and sort one card to</span>
       <button class="btn" data-sort="1">Bin 1</button>
       <button class="btn" data-sort="2">Bin 2</button>
       <button class="btn" data-sort="3">Bin 3</button>
     </div>
-    <p class="sub"><b>Bin 1/2/3</b> feeds a card as above. Then it drops the stop pins with the tray level, so the
+    <p class="sub" id="binMk2" hidden><b>Bin 1-4</b> on Mk2 feeds a card as above, drops the stop bar so the card lands
+      on level 1, and puts the stop bar back up. Bin 1 and 2: level 1's pusher slides it off to the left or right. Bin 3
+      and 4: both trapdoors open, the card falls to level 2, the doors shut, and level 2's pusher slides it left or right.</p>
+    <p class="sub" id="binMk1"><b>Bin 1/2/3</b> feeds a card as above. Then it drops the stop pins with the tray level, so the
       card slides onto the tray. It waits until the camera sees the card leave the stop teeth, or the pins time at
       most. Then it opens the trapdoors (bin 2), or raises the pins and tilts and shakes the tray to that side
       (bins 1 and 3), and puts everything back. If the camera still sees the card on the bed, it drops it once more.</p>
@@ -125,6 +137,8 @@
   </section>
   <section class="panel" id="sortPanel">
     <h2>Start sorting</h2>
+    <p class="err" id="sortNote" hidden>Sorting and tuning runs don't drive Mk2 yet. Set its angles above and try
+      the Bin buttons first.</p>
     <p class="sub">The machine on its own: it feeds a card, the scanner recognizes it, it is saved to the collection
       and dropped into the bin your <a href="/bins">Bins</a> rules give it, then the next one, until the hopper is empty
       or you press Stop. The stop pins only drop for a card that is recognized: one the scanner isn't sure of, or
@@ -169,7 +183,10 @@
 <div id="toastLive" class="sr-only" role="status" aria-live="polite"></div>
 
 <script>
-const NAMES = { pins: "Stop pins", chute: "Chute tilt", door_r: "Right trapdoor", door_l: "Left trapdoor" };
+const NAMES = { pins: "Stop pins", chute: "Chute tilt", door_r: "Right trapdoor", door_l: "Left trapdoor",
+                stop: "Stop bar", push1: "Level 1 pusher", door_f: "Front trapdoor", door_b: "Back trapdoor",
+                push2: "Level 2 pusher" };
+let last = null;      // the latest state, for the buttons that act on every part
 const $ = (id) => document.getElementById(id);
 let toastTimer;
 function toast(text) {
@@ -207,8 +224,10 @@ function lockOut() {
   const moving = document.querySelectorAll("#homeAll, #centreAll, #feedFwd, #feedBack, #parts button[data-part], #parts input[type=range]");
   for (const el of moving) el.disabled = !!run;
   for (const el of [...document.querySelectorAll("[data-sort]"), $("feedOne")]) el.disabled = !!run || manualBusy;
-  $("sortStart").disabled = !!run || manualBusy;
-  $("tuneStart").disabled = !!run || manualBusy;
+  const mk2 = last && last.model === "mk2";
+  $("sortStart").disabled = !!run || manualBusy || mk2;
+  $("tuneStart").disabled = !!run || manualBusy || mk2;
+  for (const el of document.querySelectorAll("[data-model]")) el.disabled = !!run;
   $("runNote").hidden = !run;
   if (run) $("runNote").textContent = `The ${run} is using the machine. The move and feed buttons come back when it stops. Relax all and Stop still work.`;
 }
@@ -216,11 +235,16 @@ function status(dot, err, part) {
   $(dot).classList.toggle("ok", part.ok);
   $(err).hidden = part.ok; $(err).textContent = part.error || "";
 }
-let built = false;
+let built = false, shownParts = "";
 function show(s) {
+  last = s;
   status("servoDot", "servoErr", s.servos);
   status("feedDot", "feedErr", s.feeder);
   if (!built) { build(s); built = true; }
+  // a different machine (or the first answer from the Pi): draw its parts again
+  const key = Object.keys(s.parts).join();
+  if (key !== shownParts) { buildParts(s); shownParts = key; }
+  showModel(s);
   for (const [part, p] of Object.entries(s.parts)) {
     $("pos-" + part).innerHTML = Object.entries(p.positions).map(([pos, a]) =>
       `<button class="btn" data-part="${part}" data-pos="${pos}">${pos} <span class="sub ${a !== p.factory[pos] ? "changed" : ""}"
@@ -236,8 +260,27 @@ function show(s) {
   if (s.remote) $("remoteNote").textContent = `This page drives the sorter's Pi at ${s.remote}: moves and saved angles happen there.`;
   lockOut();
 }
-function build(s) {
+// Which machine: the switch, Mk2's notes and its bin buttons
+function showModel(s) {
+  const mk2 = s.model === "mk2";
+  $("modelRow").hidden = !s.models || !Object.keys(s.models).length;
+  for (const b of document.querySelectorAll("[data-model]")) b.classList.toggle("primary", b.dataset.model === s.model);
+  $("mk2Note").hidden = !mk2; $("binMk2").hidden = !mk2; $("binMk1").hidden = mk2;
+  const bins = (s.bins && s.bins.length ? s.bins : [1, 2, 3]).join();
+  const row = $("binRow");
+  if (row.dataset.bins !== bins) {
+    row.dataset.bins = bins;
+    for (const b of row.querySelectorAll("[data-sort]")) b.remove();
+    for (const n of bins.split(",")) {
+      const b = document.createElement("button"); b.className = "btn"; b.dataset.sort = n; b.textContent = "Bin " + n;
+      row.append(b);
+    }
+  }
+  $("sortNote").hidden = !mk2;
+}
+function buildParts(s) {
   const box = $("parts");
+  box.innerHTML = "";
   const parts = Object.entries(s.parts).sort((a, b) => a[1].channel - b[1].channel);
   for (const [part, p] of parts) {
     const el = document.createElement("div"); el.className = "part";
@@ -260,6 +303,9 @@ function build(s) {
     range.addEventListener("input", () => { $("o-" + part).value = range.value; send(+range.value); });
     range.addEventListener("change", () => send(+range.value));
   }
+}
+function build(s) {
+  const box = $("parts");
   box.addEventListener("click", async (e) => {
     const b = e.target.closest("button[data-part]");
     if (b) call("/api/machine/move", { part: b.dataset.part, position: b.dataset.pos });
@@ -271,7 +317,7 @@ function build(s) {
     }
   });
   $("centreAll").onclick = async () => {
-    for (const p of Object.values(s.parts)) await call("/api/machine/move", { channel: p.channel, angle: 90 });
+    for (const p of Object.values(last.parts)) await call("/api/machine/move", { channel: p.channel, angle: 90 });
   };
   $("feedSecs").value = s.feeder_defaults.seconds;
   $("feedSpeed").value = s.feeder_defaults.speed;
@@ -322,7 +368,15 @@ $("feedOne").onclick = async () => {
   } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }
   manualBusy = false; lockOut();
 };
-for (const b of document.querySelectorAll("[data-sort]")) b.onclick = async () => {
+$("modelRow").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-model]");
+  if (!b || (last && b.dataset.model === last.model)) return;
+  if (await call("/api/machine/save", { model: b.dataset.model }))
+    toast(`Saved: this page now drives the ${b.textContent}. Every servo let go first.`);
+});
+$("binRow").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-sort]");
+  if (!b) return;
   manualBusy = true; lockOut();
   $("feedResult").textContent = `Feeding, then sorting to bin ${b.dataset.sort}…`;
   try {
@@ -332,7 +386,7 @@ for (const b of document.querySelectorAll("[data-sort]")) b.onclick = async () =
     $("feedResult").textContent = d.error || d.message;
   } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }
   manualBusy = false; lockOut();
-};
+});
 
 // --- the tuning run ---
 const tuneApi = async (path, body) => {

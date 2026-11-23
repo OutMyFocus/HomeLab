@@ -1,4 +1,8 @@
-"""The sorter's moving parts: four servos on the PCA9685 board and the feeder motor.
+"""The sorter's moving parts: the servos on the PCA9685 board and the feeder motor.
+
+Two machines: the first one (four servos: stop pins, chute tilt, two trapdoors) and Mk2
+(five: stop bar, two pushers, two trapdoors). Which one is saved on the Machine page;
+each has its own parts, home order and saved angles.
 
 Nothing here talks to the hardware until it's first used, and nothing fails if the
 hardware isn't there (a PC, or a Pi with nothing wired up yet): each part reports
@@ -36,6 +40,18 @@ def load_saved() -> dict:
         return {}
 
 
+MODELS = {"mk1": "First machine", "mk2": "Sorter Mk2"}
+
+
+def model_of(saved: dict) -> str:
+    return saved.get("model") if saved.get("model") in MODELS else "mk1"
+
+
+def parts_for(model: str) -> dict:
+    """{part: (channel, {position: angle})} as config.py has them, for that machine."""
+    return config.SERVOS_MK2 if model == "mk2" else config.SERVOS
+
+
 class Busy(RuntimeError):
     """Something else is driving the machine right now (a sort run, a tuning run, a card
     being fed): the Machine page's buttons wait until it has stopped."""
@@ -53,6 +69,9 @@ def claim(machine, who: str):
     lock = getattr(machine, "run_lock", None)
     if lock is None:
         return
+    if who in ("sort run", "tuning run") and getattr(machine, "model", lambda: "mk1")() == "mk2":
+        raise RuntimeError(f"The {who} doesn't drive Mk2 yet. Set each part's angles on the Machine page "
+                           "and try the Bin buttons; runs come once those work.")
     with lock:
         if machine.run is not None:
             raise Busy(busy_message(machine.run))
@@ -114,10 +133,49 @@ class Machine:
 
     # --- settings: config.py, with what was saved on the page on top ---------
 
+    def model(self) -> str:
+        """"mk1" (the first machine) or "mk2", as saved on the Machine page."""
+        return model_of(load_saved())
+
+    def set_model(self, model: str):
+        """Switch machines. Every servo lets go first, so nothing holds at the other
+        machine's angle; each machine keeps its own saved angles."""
+        if model not in MODELS:
+            raise ValueError(f"Unknown machine: {model!r} (it's one of {', '.join(MODELS)})")
+        saved = load_saved()
+        if model_of(saved) == model:
+            return
+        try:
+            self.relax_all()
+        except (RuntimeError, OSError):
+            pass     # no servo board here: nothing is holding anyway
+        saved["model"] = model
+        self._write(saved)
+
+    def parts(self) -> dict:
+        """This machine's parts as config.py has them (no saved angles)."""
+        return parts_for(self.model())
+
+    @staticmethod
+    def _servos_key(model: str) -> str:
+        return "servos_mk2" if model == "mk2" else "servos"
+
+    def bins(self) -> dict:
+        """The bins this machine can drop into: {number: how}."""
+        if self.model() == "mk2":
+            return config.SORT_BINS_MK2
+        return getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
+
+    def stop_part(self) -> str:
+        """The part that holds the card on the bed: the stop pins, or Mk2's stop bar."""
+        return "stop" if self.model() == "mk2" else "pins"
+
     def servos(self) -> dict:
         """{part: (channel, {position: angle})}, with saved angles applied."""
-        saved = load_saved().get("servos", {})
-        parts = copy.deepcopy(config.SERVOS)
+        all_saved = load_saved()
+        model = model_of(all_saved)
+        saved = all_saved.get(self._servos_key(model), {})
+        parts = copy.deepcopy(parts_for(model))
         for part, positions in saved.items():
             if part in parts and isinstance(positions, dict):
                 for pos, angle in positions.items():
@@ -143,11 +201,13 @@ class Machine:
 
     def save_position(self, part: str, position: str, angle: float):
         """Keep an angle as a part's named position, e.g. save_position("pins", "down", 58)."""
-        if part not in config.SERVOS or position not in config.SERVOS[part][1]:
+        saved = load_saved()
+        model = model_of(saved)
+        parts = parts_for(model)
+        if part not in parts or position not in parts[part][1]:
             raise ValueError(f"Unknown part or position: {part} {position}")
         angle = round(max(0.0, min(180.0, float(angle))), 1)
-        saved = load_saved()
-        saved.setdefault("servos", {}).setdefault(part, {})[position] = angle
+        saved.setdefault(self._servos_key(model), {}).setdefault(part, {})[position] = angle
         self._write(saved)
 
     def save_feeder(self, seconds: float, speed: float, backoff=None, push=None):
@@ -190,20 +250,27 @@ class Machine:
 
     def reset_saved(self):
         """Back to the angles and feeder settings in config.py. The old file is kept as
-        machine_settings.json.bak, so a reset pressed by mistake can be undone by hand."""
+        machine_settings.json.bak, so a reset pressed by mistake can be undone by hand.
+        Which machine it is stays as it was."""
         f = settings_file()
         if f.exists():
+            model = self.model()
             f.replace(f.with_name(f.name + ".bak"))
+            if model != "mk1":
+                self._write({"model": model})
 
     def wide_travel(self) -> bool:
         return bool(load_saved().get("wide_travel", config.SERVO_WIDE_TRAVEL))
 
     def home_at_startup(self) -> bool:
-        return bool(load_saved().get("home_at_startup", config.HOME_AT_STARTUP))
+        saved = load_saved()
+        if model_of(saved) == "mk2":
+            return bool(saved.get("home_at_startup_mk2", getattr(config, "HOME_AT_STARTUP_MK2", False)))
+        return bool(saved.get("home_at_startup", config.HOME_AT_STARTUP))
 
     def set_home_at_startup(self, on: bool):
         saved = load_saved()
-        saved["home_at_startup"] = bool(on)
+        saved["home_at_startup_mk2" if model_of(saved) == "mk2" else "home_at_startup"] = bool(on)
         self._write(saved)
 
     def pulse_range(self) -> tuple[int, int]:
@@ -225,6 +292,9 @@ class Machine:
             raise ValueError("Channel must be 0-15")
         if angle is not None:
             angle = max(0.0, min(180.0, float(angle)))
+        parts = self.parts()
+        held = getattr(config, "SERVO_KEEP_HOLDING_MK2" if parts is config.SERVOS_MK2 else "SERVO_KEEP_HOLDING", ())
+        keep = {parts[p][0] for p in held if p in parts}
         with self.lock:
             kit = self._fresh_servos()
             if kit is None:
@@ -243,8 +313,6 @@ class Machine:
             old = self._relax_timers.pop(channel, None)
             if old:
                 old.cancel()
-            keep = {config.SERVOS[p][0] for p in getattr(config, "SERVO_KEEP_HOLDING", ())
-                    if p in config.SERVOS}
             # Let go once it has had time to get there. A servo held against something it
             # can't push past draws full current and gets hot. Parts that have to keep
             # holding (the gate, the doors) still let go after SERVO_HOLD_LIMIT with no new
@@ -320,14 +388,14 @@ class Machine:
             raise ValueError(f"Unknown part or position: {part} {position}")
         moving = self.angles.get(channel) != angle
         self.set_angle(channel, angle)
-        if part == "pins" and position == "up" and moving:
+        if part in ("pins", "stop") and position == "up" and moving:
             self.pins_up_at = time.monotonic()
 
     def pins_up(self) -> float:
         """Put the stop pins up and wait until they are all the way up (config.FEED_PINS_UP_SECONDS
         after they were sent up; no wait if they were up already), so the next card can't
         arrive under a stop bar that is still rising. Returns how long it waited."""
-        self.move("pins", "up")
+        self.move(self.stop_part(), "up")
         if self.pins_up_at is None:
             return 0.0
         left = self.pins_up_at + float(getattr(config, "FEED_PINS_UP_SECONDS", 0.6)) - time.monotonic()
@@ -337,7 +405,7 @@ class Machine:
         return round(left, 2)
 
     def relax_all(self):
-        for channel, _ in config.SERVOS.values():
+        for channel, _ in self.parts().values():
             self.set_angle(channel, None)
 
     def home(self, pause: float = 0.4, speed: float | None = None):
@@ -347,7 +415,8 @@ class Machine:
         nothing slams into a stop; a part with no last angle goes straight there."""
         speed = speed or config.SERVO_HOME_SPEED
         servos, last = self.servos(), self.last_angles()
-        for part, position in config.SERVO_HOME.items():
+        order = config.SERVO_HOME_MK2 if self.model() == "mk2" else config.SERVO_HOME
+        for part, position in order.items():
             if part not in servos or position not in servos[part][1]:
                 continue
             channel, target = servos[part][0], float(servos[part][1][position])
@@ -369,6 +438,8 @@ class Machine:
         (seen on the right side, 2026-11-06). `card_gone`, if given, is asked every 0.1 s
         while the pins are down and ends the wait early (after config.SORT_PINS_MIN_SECONDS
         plus a moment to clear) once it says True: sort_one passes the camera's view."""
+        if self.model() == "mk2":
+            return self._drop_mk2(bin_no, card_gone)
         bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
         try:
             position = bins[int(bin_no)]
@@ -433,6 +504,68 @@ class Machine:
         finally:
             self.move("chute", "centre")
             self.move("pins", "up")
+
+    def _drop_mk2(self, bin_no, card_gone=None):
+        """Mk2 (MK2.md, Software changes): the stop bar drops and the card lands on level 1;
+        the stop bar goes back up before anything else moves (down, it hangs over level 1's
+        pusher). Bins 1 and 2: level 1's pusher slides the card off to that side and comes back.
+        Bins 3 and 4: both trapdoors open, the card falls to level 2, the doors shut, then
+        level 2's pusher does the same."""
+        bins = config.SORT_BINS_MK2
+        try:
+            pusher, side = bins[int(bin_no)]
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
+        servos = self.servos()
+        for part in ("stop", pusher) + (("door_f", "door_b") if pusher == "push2" else ()):
+            if part not in servos:
+                raise ValueError(f"Mk2 has no {part}")
+        stop_seconds = float(getattr(config, "MK2_STOP_SECONDS", 0.6))
+        self.last_gone_at = None
+        self.last_pins_seconds = 0.0
+        try:
+            self.move("push1", "centre")
+            self.move("push2", "centre")
+            self.move("stop", "down")
+            start = time.monotonic()
+            least = start + float(getattr(config, "SORT_PINS_MIN_SECONDS", 0.5))
+            while time.monotonic() < start + stop_seconds:
+                if card_gone is not None and time.monotonic() >= least and card_gone():
+                    self.last_gone_at = round(time.monotonic() - start, 2)
+                    break
+                time.sleep(0.05)
+            self.last_pins_seconds = round(time.monotonic() - start, 2)
+            self.move("stop", "up")
+            time.sleep(float(getattr(config, "FEED_PINS_UP_SECONDS", 0.6)))
+            if pusher == "push2":
+                self.move("door_f", "open")
+                self.move("door_b", "open")
+                time.sleep(float(getattr(config, "MK2_DOORS_SECONDS", 0.8)))
+                self.move("door_f", "closed")
+                self.move("door_b", "closed")
+                time.sleep(0.3)
+            self._push(servos[pusher], side)
+        finally:
+            for part, position in (("door_f", "closed"), ("door_b", "closed"), ("push1", "centre"),
+                                   ("push2", "centre"), ("stop", "up")):
+                if part in servos:
+                    self.move(part, position)
+
+    def _push(self, pusher, side, speed=None):
+        """Sweep a pusher from the centre to one side at a steady speed, wait, and sweep back."""
+        channel, positions = pusher
+        speed = float(speed or getattr(config, "MK2_PUSH_SPEED", 130))
+        centre, end = float(positions["centre"]), float(positions[side])
+
+        def sweep(a, b):
+            steps = max(1, int(abs(b - a) // 4))           # 4 degree steps
+            for i in range(1, steps + 1):
+                self.set_angle(channel, a + (b - a) * i / steps)
+                time.sleep(abs(b - a) / steps / speed)
+
+        sweep(centre, end)
+        time.sleep(float(getattr(config, "MK2_PUSH_HOLD", 0.3)))
+        sweep(end, centre)
 
     def _shake(self, chute, position, shakes=None, seconds=None):
         """Rock the tilted tray half way back towards level and tilt it again, a few times
@@ -517,6 +650,8 @@ class Machine:
 
     def state(self) -> dict:
         servos, defaults = self.servos(), self.feeder_defaults()
+        model = self.model()
+        factory = parts_for(model)
         with self.lock:
             self._servos()
             self._feeder()
@@ -525,7 +660,7 @@ class Machine:
                 "feeder": {"ok": self._motor is not None, "error": self.feeder_error,
                            "running": self.feeding},
                 "parts": {part: {"channel": ch, "positions": pos,
-                                 "factory": config.SERVOS[part][1],
+                                 "factory": factory[part][1],
                                  "angle": self.angles.get(ch)}
                           for part, (ch, pos) in servos.items()},
                 "feeder_defaults": defaults,
@@ -533,6 +668,9 @@ class Machine:
                 "wide_travel": self.wide_travel(),
                 "home_at_startup": self.home_at_startup(),
                 "customized": settings_file().exists(),
+                "model": model,
+                "models": MODELS,
+                "bins": list(self.bins()),
             }
 
 
@@ -616,6 +754,8 @@ def add_machine_routes(app, machine: Machine, web_dir):
         if "part" in body:
             return answer(lambda: machine.save_position(str(body["part"]), str(body.get("position")),
                                                         body.get("angle")), SAVING)
+        if "model" in body:
+            return answer(lambda: machine.set_model(str(body["model"])), SAVING, guard="check")
         if "home_at_startup" in body:
             return answer(lambda: machine.set_home_at_startup(bool(body["home_at_startup"])), SAVING)
         if "wide_travel" in body:

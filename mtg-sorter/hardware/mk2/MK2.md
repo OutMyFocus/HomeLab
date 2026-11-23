@@ -151,7 +151,9 @@ Servo plugs: brown is GND, orange is 5 V, yellow is signal. Every servo reaches 
 
 ## Software changes Mk2 needs
 
-The app still drives Mk1 (a tilt tray and stop pins). These changes come once the machine is built:
+**Done:** the Machine page has a **Which machine** switch. On **Sorter Mk2** it shows the five servos below with sliders and saveable angles (kept apart from Mk1's), Home goes doors shut, pushers centre, stop bar up, and **Bin 1-4** feed one card and run the sort sequence below. Its starting angles are guesses near 90, so set each one before trusting Home; going home at startup stays off for Mk2 until you switch it on. Sorting and tuning runs, the relay and the bin sensors are still to come.
+
+The rest of the plan:
 
 - **New parts:** `stop` (ch 0, up and down), `push1` (ch 1) and `push2` (ch 4), each with left, centre and right, plus `door_f` (ch 2) and `door_b` (ch 3), each open and closed. All of them are new mechanisms, so each gets calibrated on the Machine page. Your Mk1 angles don't carry over.
 - **Sort sequence:**

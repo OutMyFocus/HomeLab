@@ -163,6 +163,30 @@ SERVOS = {
 SERVO_HOME = {"door_r": "closed", "door_l": "closed", "chute": "centre", "pins": "up"}
 HOME_AT_STARTUP = True
 SERVO_HOME_SPEED = 60          # degrees a second when homing: a slow sweep, not a jump
+
+# --- Sorter Mk2 (hardware/mk2/MK2.md): five servos, picked with "Which machine" on the Machine page.
+# Mk1's angles above don't carry over: these are only starting points near the middle, for the
+# servos as fitted (horns and door couplers pressed on at 90). Set each one on the Machine page.
+SERVOS_MK2 = {
+    "stop":   (0, {"up": 90, "down": 108}),                   # stop bar: up stops the card, turns 18 degrees
+    "push1":  (1, {"centre": 90, "left": 50, "right": 130}),  # level 1 pusher: bins 1 (left) and 2 (right)
+    "door_f": (2, {"closed": 45, "open": 135}),               # front trapdoor (to level 2)
+    "door_b": (3, {"closed": 135, "open": 45}),               # back trapdoor
+    "push2":  (4, {"centre": 90, "left": 50, "right": 130}),  # level 2 pusher: bins 3 (left) and 4 (right)
+}
+# Home on Mk2: doors shut, pushers to the middle, then the stop bar up (MK2.md).
+SERVO_HOME_MK2 = {"door_f": "closed", "door_b": "closed", "push1": "centre", "push2": "centre", "stop": "up"}
+SERVO_KEEP_HOLDING_MK2 = ("stop", "door_f", "door_b")
+# Mk2 doesn't go home at startup until that's switched on for it: its angles start as guesses,
+# and a guessed "closed" could push a door into the frame.
+HOME_AT_STARTUP_MK2 = False
+# Mk2 bins: number -> (pusher, side). 1 and 2 are off level 1, 3 and 4 off level 2 (the card
+# drops through the trapdoors first).
+SORT_BINS_MK2 = {1: ("push1", "left"), 2: ("push1", "right"), 3: ("push2", "left"), 4: ("push2", "right")}
+MK2_STOP_SECONDS = 0.6        # stop bar down this long at most (the card lands on level 1 in about 0.3 s)
+MK2_DOORS_SECONDS = 0.8       # trapdoors open this long (the card drops in about 0.4 s)
+MK2_PUSH_SPEED = 130          # pusher servo degrees a second: about 120 mm/s at the paddle (MK2.md)
+MK2_PUSH_HOLD = 0.3           # the pusher waits at the side this long before coming back
 # Servo pulse widths in microseconds for 0 and 180 degrees. The first is ServoKit's
 # default, which turns an MG90S only about 130-140 real degrees. "Wider servo travel" on
 # the Machine page switches to the second for about the full 180 (some cheap servos buzz
