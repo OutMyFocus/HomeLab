@@ -307,6 +307,7 @@ LIGHTS_CARD_BRIGHTNESS = 60    # percent
 # The bars share the 5 V supply with the Pi, servos and feeder, so the app dims them if
 # they'd draw more than this (full white is about 60 mA per LED).
 LIGHTS_MAX_AMPS = 1.0
+LIGHTS_REFRESH_SECONDS = 1.0   # the same colors go out again this often, so a strip powered late still lights
 
 # The machine camera straightens its own picture (auto_straighten.py) from the cards it
 # recognizes for sure: it needs AUTO_STRAIGHT_SAMPLES of them (keeping the latest

@@ -272,14 +272,20 @@ class Lights:
                 self._thread.start()
 
     def _run(self):
-        last = None
+        last, sent_at = None, 0.0
         while True:
             with self.lock:
-                frame, moving = self.render(time.monotonic())
-                if last is None or frame.shape != last.shape or not np.array_equal(frame, last):
+                now = time.monotonic()
+                frame, moving = self.render(now)
+                # Unchanged colors are sent again every LIGHTS_REFRESH_SECONDS too: a strip that
+                # got its 5 V after the last send (the brick switched on later, a loose wire, a
+                # glitch on the data line) stayed dark until the colors changed, so the Lights
+                # page's switch needed flipping a couple of times (Mk2, 2026-11-24).
+                stale = now - sent_at >= float(getattr(config, "LIGHTS_REFRESH_SECONDS", 1.0))
+                if last is None or frame.shape != last.shape or not np.array_equal(frame, last) or stale:
                     self._send(frame)
-                    last = frame
-                elif self._out is None:
+                    last, sent_at = frame, now
+                if self._out is None:
                     self._device()   # keep retrying, so turning SPI on is picked up
             self._wake.wait(1 / 40 if moving else 1.0)
             self._wake.clear()
