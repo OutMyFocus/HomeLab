@@ -433,6 +433,8 @@ class Machine:
             raise ValueError(f"Unknown part or position: {part} {position}")
         moving = self.angles.get(channel) != angle
         start = self.angles.get(channel)
+        if start is None:   # let go (relaxed) or just started: sweep from where it was last sent
+            start = self.last_angles().get(str(channel))
         if part in getattr(config, "MK2_PUSHERS", ()) and self.model() == "mk2" and start is not None:
             self._sweep(channel, float(start), float(angle))      # slowly, so a card doesn't jam
         else:
