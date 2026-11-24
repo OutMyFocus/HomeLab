@@ -31,6 +31,21 @@ status() {
     as_nic mv "$STATUS.tmp" "$STATUS"
 }
 
+# The machine is in use: a run or a card being fed, or something moved in the last
+# IDLE_NEEDED seconds (someone testing it). Then an update doesn't restart the app under it:
+# it waits for the next timer run. Update now (a person asking) goes ahead anyway.
+IDLE_NEEDED=120
+machine_in_use() {
+    local state
+    state=$(curl -fsS -m 5 http://127.0.0.1:5000/api/machine 2>/dev/null) || return 1
+    python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+idle = d.get("idle_seconds")
+sys.exit(0 if d.get("busy") or (idle is not None and idle < int(sys.argv[1])) else 1)
+' "$IDLE_NEEDED" <<<"$state"
+}
+
 # Waits up to 90 seconds for the app to answer (loading a big card database takes a while).
 app_answers() {
     for _ in $(seq 45); do
@@ -73,6 +88,11 @@ main() {
     fi
     if [ "$force" = 0 ] && [ "$retry" = 0 ] && [ -e "$BAD" ] && [ "$(cat "$BAD")" = "$new" ]; then
         exit 0   # this version already failed to start; wait for a newer one (or Update now)
+    fi
+
+    if [ "$force" = 0 ] && [ "$retry" = 0 ] && machine_in_use; then
+        status waiting "A new version is ready; it goes in once the machine has been idle for 2 minutes."
+        exit 0
     fi
 
     # Edits made on the Pi block a fast-forward. Fix updates (force) sets them aside with

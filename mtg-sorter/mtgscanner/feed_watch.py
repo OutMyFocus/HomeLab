@@ -64,6 +64,67 @@ def changed_share(ref: np.ndarray, now: np.ndarray, zone) -> float:
     return float(np.count_nonzero(diff > config.FEED_DIFF_LEVEL)) / diff.size
 
 
+def hand_in_view(ref: np.ndarray, now: np.ndarray) -> bool:
+    """Something big has come into the picture where a card never goes (config.FEED_HAND_ZONES,
+    the light bars and rails either side of the bed's channel): a hand, most likely."""
+    share = float(getattr(config, "FEED_HAND_SHARE", 0.15))
+    for zone in getattr(config, "FEED_HAND_ZONES", None) or ():
+        zone = clean_zone(zone)
+        if zone and changed_share(ref, now, zone) >= share:
+            return True
+    return False
+
+
+def card_lie(ref: np.ndarray, now: np.ndarray, box) -> dict | None:
+    """How the card on the bed lies, from where the picture differs from the empty bed `ref`:
+    {"span": its height over the bed box's height, "tilt": the slope of its long edges in
+    degrees}. Only the columns inside the bed box are looked at, along the card's length (the
+    card lies across the picture, its long edges running left to right). None with no box, or
+    when too few columns show a card to measure it."""
+    box = clean_zone(box) if box is not None else None
+    if box is None or ref is None or now is None or ref.shape != now.shape:
+        return None
+    h, w = ref.shape
+    x0, y0, x1, y1 = box
+    # rows a little beyond the box, so a card standing up out of it is measured whole
+    top, bottom = max(0, int((y0 - 0.12) * h)), min(h, int((y1 + 0.12) * h) + 1)
+    diff = now.astype(np.int16) - ref.astype(np.int16)
+    # The light's overall shift, taken from the picture outside those rows only: a card
+    # standing up can cover over half the picture, and a median over all of it would then
+    # be the card itself.
+    outside = np.concatenate([diff[:top].ravel(), diff[bottom:].ravel()])
+    shift = int(np.median(outside)) if outside.size else 0
+    mask = np.abs(diff - shift) > config.FEED_DIFF_LEVEL
+    inset = 0.1 * (x1 - x0)
+    cols = range(int((x0 + inset) * w), max(int((x0 + inset) * w) + 1, int((x1 - inset) * w)))
+    xs, tops, bots = [], [], []
+    least = 0.3 * (y1 - y0) * h      # a column with less change than this has no card in it
+    for c in cols:
+        rows = np.flatnonzero(mask[top:bottom, c])
+        if rows.size < least:
+            continue
+        xs.append(c)
+        tops.append(top + float(np.percentile(rows, 3)))
+        bots.append(top + float(np.percentile(rows, 97)))
+    if len(xs) < 5:
+        return None
+    span = float(np.median(np.subtract(bots, tops))) / h / (y1 - y0)
+    slope = (np.polyfit(xs, tops, 1)[0] + np.polyfit(xs, bots, 1)[0]) / 2
+    return {"span": round(span, 3), "tilt": round(float(np.degrees(np.arctan(slope))), 1)}
+
+
+def lie_problem(lie) -> str | None:
+    """"raised", "crooked" or None, from card_lie's measure (None = fine, or not measured)."""
+    if not lie or not getattr(config, "FEED_CHECK_LIE", False):
+        return None
+    if lie["span"] > float(getattr(config, "FEED_RAISED_SPAN", 1.0)):
+        return "raised"
+    tilt = getattr(config, "FEED_MAX_TILT", None)
+    if tilt is not None and abs(lie["tilt"]) > float(tilt):
+        return "crooked"
+    return None
+
+
 class FrameTap:
     """The machine camera's latest picture, small and grey, handed over by the Scanner's
     loop (Scanner.tap). Only kept while a feed is watching, so it costs nothing otherwise."""
@@ -114,8 +175,40 @@ class FeedWatcher:
         self.scanner, self.machine = scanner, machine
         self.tap = FrameTap()
         self._bed_clear = False   # the last sort_one saw its card leave the bed
+        self._last_empty = None   # the bare bed, as the last feed saw it before its card came
         scanner.tap = self.tap
         self.busy = threading.Lock()
+        # The Machine page's Bin buttons drop through here, so the stop bar can wait for the card
+        # (machine.py's /api/machine/drop uses machine.watched_drop when there is one).
+        machine.watched_drop = self.drop
+
+    def _bed_box(self):
+        return getattr(self.scanner, "bed_box", None)
+
+    def _gone_check(self, empty, zone, latest):
+        """A card_gone for Machine.drop: has the landing zone gone back to the empty bed?"""
+        def card_gone():
+            latest["seq"], now = self.tap.next(latest["seq"], timeout=0.1)
+            if empty is None or now is None:
+                return False
+            return changed_share(empty, now, zone) < config.FEED_LAND_SHARE / 2
+        return card_gone
+
+    def drop(self, bin_no, pins_seconds=None, doors_seconds=None, tilt_seconds=None):
+        """Machine.drop, watching the camera so the stop bar (or the pins) stays down until the
+        card has left the landing zone, compared with the bare bed the last feed saw. Without
+        that picture (no feed since the app started) it is a plain timed drop."""
+        if self._last_empty is None:
+            return self.machine.drop(bin_no, pins_seconds, doors_seconds, tilt_seconds)
+        self.tap.watching += 1
+        self._hold_lights(True)
+        try:
+            latest = {"seq": self.tap.seq}
+            return self.machine.drop(bin_no, pins_seconds, doors_seconds, tilt_seconds,
+                                     card_gone=self._gone_check(self._last_empty, feed_zone(), latest))
+        finally:
+            self._hold_lights(False)
+            self.tap.watching -= 1
 
     def _hold_lights(self, on: bool):
         """The light bars stand still while the camera is watched (Lights.hold), since a
@@ -166,7 +259,8 @@ class FeedWatcher:
             seq, ref = self.tap.next(self.tap.seq, timeout=2.0)
             if ref is None:
                 raise RuntimeError("No camera picture to watch: is the Pi camera on and picked on the Scanner page?")
-            trace, landed_ms, stuck = [], None, False
+            self._last_empty = ref
+            trace, landed_ms, stuck, blocked, last = [], None, False, False, ref
             # The bed between the slot and the landing zone: a card held in the slot shows
             # here and then stops moving while the motor runs on.
             above = [zone[0], min(float(getattr(config, "FEED_STUCK_TOP", 0.3)), zone[1]), zone[2], zone[1]]
@@ -179,6 +273,10 @@ class FeedWatcher:
                     seq, now = self.tap.next(seq, timeout=0.5)
                     if now is None:
                         continue
+                    last = now
+                    if hand_in_view(ref, now):
+                        blocked = True       # something reached in: stop at once
+                        break
                     share = changed_share(ref, now, zone)
                     trace.append([round(1000 * (time.monotonic() - t0)), round(share, 3)])
                     if share >= config.FEED_LAND_SHARE:
@@ -193,7 +291,7 @@ class FeedWatcher:
                     else:
                         still_since = None
                     prev = now
-                if landed_ms is not None:
+                if landed_ms is not None and not blocked:
                     # Seen landing, but its tail may still be under the gate: the motor stops
                     # the moment the card shows in the zone, which sits above the pins. A
                     # little more push frees it, so it slides down onto the pins and the
@@ -207,7 +305,18 @@ class FeedWatcher:
             motor_ms = round(1000 * (time.monotonic() - t0))
             backoff = self._feeder_setting("backoff", backoff, config.FEED_BACKOFF_SECONDS,
                                            getattr(config, "FEED_BACKOFF_MAX", 1.0))
-            if landed_ms is not None and backoff:
+            mouth_share = None
+            mouth = clean_zone(getattr(config, "FEED_MOUTH_ZONE", None) or ())
+            if landed_ms is not None and backoff and mouth and not blocked:
+                # Only back off when the next card shows at the feeder's end: a back-off with
+                # nothing to fetch can only pull the landed card back up the bed.
+                seq, now = self.tap.next(seq, timeout=0.5)
+                if now is not None:
+                    last = now
+                    mouth_share = round(changed_share(ref, now, mouth), 3)
+                    if mouth_share < float(getattr(config, "FEED_MOUTH_SHARE", 0.2)):
+                        backoff = 0.0
+            if landed_ms is not None and backoff and not blocked:
                 # The wheels drive the next card out behind the one that landed (they touch it as
                 # soon as the first card's tail passes them). It ends up hanging over the landed
                 # card and pins it, so pull it back into the hopper: a short turn the other way.
@@ -217,20 +326,30 @@ class FeedWatcher:
             # Let it come to rest, then look again: still there, or did it go over the teeth?
             share = trace[-1][1] if trace else 0.0
             settle_end = time.monotonic() + float(config.FEED_SETTLE_SECONDS if settle is None else settle)
-            while time.monotonic() < settle_end:
+            while time.monotonic() < settle_end and not blocked:
                 seq, now = self.tap.next(seq, timeout=0.5)
                 if now is not None:
+                    last = now
+                    blocked = hand_in_view(ref, now)
                     share = changed_share(ref, now, zone)
                     trace.append([round(1000 * (time.monotonic() - t0)), round(share, 3)])
-            if stuck:
+            lie = None
+            if blocked:
+                result = "blocked"
+            elif stuck:
                 result = "stuck"
             elif landed_ms is None:
                 result = "landed" if share >= config.FEED_LAND_SHARE else "none"
             else:
                 result = "landed" if share >= config.FEED_LAND_SHARE / 2 else "over"
+            if result == "landed" and (config.FEED_SETTLE_SECONDS if settle is None else settle) > 0:
+                # At rest now: does it lie flat and square? (sort_one looks later, once read.)
+                lie = card_lie(ref, last, self._bed_box())
+                result = lie_problem(lie) or result
             return {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms,
                     "push_ms": round(1000 * (push if landed_ms is not None else 0)) if landed_ms is not None else 0,
-                    "backoff_ms": round(1000 * backoff) if landed_ms is not None else 0,
+                    "backoff_ms": round(1000 * backoff) if landed_ms is not None and not blocked else 0,
+                    "mouth_share": mouth_share, "lie": lie,
                     "zone": zone, "settled_share": round(share, 3), "trace": trace}
         finally:
             self._hold_lights(False)
@@ -290,7 +409,7 @@ class FeedWatcher:
                 # the retry's picture already had the held card in it).
                 fed = (again if again["result"] not in ("none", "stuck") else fed) | {"retried": fed["result"]}
             out = fed | {"bin": bin_no, "dropped": None, "drop_tries": 0}
-            if fed["result"] in ("none", "stuck"):
+            if fed["result"] in ("none", "stuck", "blocked"):
                 return out
             backoff = self._feeder_setting("backoff", backoff, config.FEED_BACKOFF_SECONDS,
                                            getattr(config, "FEED_BACKOFF_MAX", 1.0))
@@ -304,16 +423,20 @@ class FeedWatcher:
                 finally:
                     self.tap.watching += 1
                 out["bin"] = bin_no
+            # The card is at rest now: one that stands up off the bed or lies crooked isn't
+            # dropped (it climbs the stop bar or lands twisted, 2026-11-24): the run stops on it.
+            seq, now = self.tap.next(self.tap.seq, timeout=1.0)
+            if now is not None and empty is not None:
+                out["lie"] = card_lie(empty, now, self._bed_box())
+                problem = lie_problem(out["lie"])
+                if problem:
+                    out["result"] = problem
+                    return out
             check = clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95]
             latest = {"seq": seq}
-
-            def card_gone():
-                # Asked while the pins are down: has the landing band emptied, i.e. has the
-                # card slid off the teeth? Then the drop needn't wait the whole pins time.
-                latest["seq"], now = self.tap.next(latest["seq"], timeout=0.1)
-                if empty is None or now is None:
-                    return False
-                return changed_share(empty, now, fed["zone"]) < config.FEED_LAND_SHARE / 2
+            # Asked while the pins are down: has the landing band emptied, i.e. has the card
+            # slid off the teeth? Then the drop needn't wait the whole pins time.
+            card_gone = self._gone_check(empty, fed["zone"], latest)
 
             for attempt in range(1 + max(0, int(getattr(config, "SORT_RETRIES", 1)))):
                 self.machine.drop(bin_no, card_gone=card_gone, **drop)
@@ -350,7 +473,12 @@ MESSAGES = {
     "none": "No card reached the bed: check the feeder's grip, or a card stuck in the slot.",
     "stuck": "A card came part way out and stopped: the gate is holding it. Open the gate a little "
              "(one card should slide through by hand, two together shouldn't) and take the card off the bed.",
+    "blocked": "Stopped: something came into the picture (a hand?). Keep clear of the machine while it feeds.",
+    "raised": "A card came out but it isn't lying flat (standing up, or climbing the stop bar): "
+              "it wasn't dropped. Lay it flat or take it off.",
+    "crooked": "A card came out but it lies crooked on the bed: it wasn't dropped. Straighten it or take it off.",
 }
+NOT_DROPPED = ("none", "stuck", "blocked", "raised", "crooked")
 
 
 def add_feed_watch_routes(app, scanner, machine):
@@ -403,7 +531,7 @@ def add_feed_watch_routes(app, scanner, machine):
         except OSError as e:
             print(f"Machine: {LOST} ({e})")
             return jsonify(error=LOST), 503
-        if out.get("result") in ("none", "stuck"):
+        if out.get("result") in NOT_DROPPED:
             message = MESSAGES[out["result"]]
         elif out.get("dropped") is False:
             message = f"A card came out but it is still on the bed after {out['drop_tries']} drop(s): check the doors and the bin."

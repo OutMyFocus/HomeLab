@@ -195,9 +195,12 @@ class FakeCamera:
     teeth as soon as the motor stops; "shifts" = the pins push it up out of the landing
     band but it stays on the bed."""
 
-    def __init__(self, tap, machine, card_after=3, card_stays=True, stuck=False):
+    def __init__(self, tap, machine, card_after=3, card_stays=True, stuck=False,
+                 card_rect=(240, 290, 40, 260), hand_after=None):
         self.tap, self.machine = tap, machine
         self.card_after, self.card_stays = card_after, card_stays
+        self.card_rect = card_rect      # where the landed card shows: rows y0:y1, columns x0:x1
+        self.hand_after = hand_after    # a hand comes in over the top light bar after this many motor frames
         self.stuck = stuck      # the card shows above the landing zone and never moves on
         self.running = True
         threading.Thread(target=self.loop, daemon=True).start()
@@ -234,7 +237,10 @@ class FakeCamera:
             if landed and self.card_stays == "shifts" and moved:
                 frame[150:200, 60:280] = 230   # pushed up out of the landing band, still on the bed
             elif landed:
-                frame[240:290, 40:260] = 230   # a white card across the zone (y 0.6-0.72)
+                y0, y1, x0, x1 = self.card_rect
+                frame[y0:y1, x0:x1] = 230      # a white card across the zone (y 0.6-0.72)
+            if self.hand_after is not None and motor_frames >= self.hand_after:
+                frame[0:70, :] = 30            # a dark hand over the top band, above the bed
             self.tap.put(frame)
             time.sleep(0.02)
 
@@ -1304,3 +1310,105 @@ def test_mk2_sort_run_rests_its_own_parts_and_knows_bin_4(machine, mk2):
     assert SortRun.real_bin(4) == config.SORT_FALLBACK_BIN      # the first machine has no bin 4
     for part, position in run._resting():
         machine.move(part, position)                           # every one is a real Mk2 part
+
+
+# --- Checks before a drop: a hand in the way, how the card lies, the next card at the mouth ---
+
+def test_card_lie_measures_a_flat_a_raised_and_a_crooked_card():
+    import cv2
+    box = [0.1, 0.3, 0.9, 0.75]
+    ref = np.full((284, 160), 60, np.uint8)
+    flat = ref.copy()
+    flat[95:200, 10:150] = 220                    # about 0.37 of the height: inside the box
+    lie = feed_watch.card_lie(ref, flat, box)
+    assert lie and lie["span"] < 1.0 and abs(lie["tilt"]) < 1, lie
+    assert feed_watch.lie_problem(lie) is None
+    raised = ref.copy()
+    raised[50:250, 10:150] = 220                  # standing up: bigger than the box
+    assert feed_watch.lie_problem(feed_watch.card_lie(ref, raised, box)) == "raised"
+    crooked = ref.copy()
+    pts = np.array([[10, 90], [150, 120], [150, 225], [10, 195]], np.int32)   # about 12 degrees
+    cv2.fillPoly(crooked, [pts], 220)
+    lie = feed_watch.card_lie(ref, crooked, box)
+    assert lie["tilt"] > 8, lie
+    assert feed_watch.lie_problem(lie) is None          # the crooked check is off by default
+    config.FEED_MAX_TILT, saved = 4.0, config.FEED_MAX_TILT
+    try:
+        assert feed_watch.lie_problem(lie) == "crooked"
+    finally:
+        config.FEED_MAX_TILT = saved
+    assert feed_watch.card_lie(ref, ref, box) is None            # no card: nothing to say
+    assert feed_watch.card_lie(ref, flat, None) is None          # no bed box: no check
+
+
+def test_feed_one_stops_when_a_hand_comes_into_the_picture(watched):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=None, hand_after=2))
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2}).get_json()
+    assert out["result"] == "blocked", out
+    assert out["motor_ms"] < 1500 and not machine.feeding
+    assert "backward" not in [c[0] for c in machine._motor.calls]
+    assert "hand" in out["message"]
+
+
+def test_feed_one_says_when_the_card_does_not_lie_flat(watched):
+    client, scanner, machine, cams = watched
+    scanner.bed_box = [0.1, 0.55, 0.9, 0.78]
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3))
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2}).get_json()
+    assert out["result"] == "landed" and out["lie"]["span"] < 1, out
+    cams[0].running = False
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_rect=(120, 300, 40, 260)))
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2}).get_json()
+    assert out["result"] == "raised", out
+    assert "flat" in out["message"]
+
+
+def test_sort_one_does_not_drop_a_card_that_stands_up(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    scanner.bed_box = [0.1, 0.55, 0.9, 0.78]
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False, card_rect=(120, 300, 40, 260)))
+    out = client.post("/api/machine/sort_one", json={"bin": 1}).get_json()
+    assert out["result"] == "raised" and out["dropped"] is None and out["drop_tries"] == 0, out
+
+
+def test_feed_one_only_backs_off_when_the_next_card_shows_at_the_mouth(watched, monkeypatch):
+    client, scanner, machine, cams = watched
+    monkeypatch.setattr(config, "FEED_MOUTH_ZONE", (0.9, 0.55, 1.0, 0.78))
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3))
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2, "backoff": 0.3}).get_json()
+    assert out["result"] == "landed", out
+    assert out["mouth_share"] == 0 and out["backoff_ms"] == 0
+    assert "backward" not in [c[0] for c in machine._motor.calls]     # nothing to fetch back
+    cams[0].running = False
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_rect=(240, 290, 40, 300)))  # tail at the mouth
+    out = client.post("/api/machine/feed_one", json={"max_seconds": 2, "backoff": 0.3}).get_json()
+    assert out["mouth_share"] > 0.2 and out["backoff_ms"] == 300, out
+    assert "backward" in [c[0] for c in machine._motor.calls]
+
+
+def test_mk2_bin_button_keeps_the_stop_bar_down_until_the_card_has_gone(watched, monkeypatch):
+    """After a camera-watched feed, the Bin button's drop waits for the card to leave the bed
+    (here 0.4 s after the bar drops), longer than the fixed MK2_STOP_SECONDS, then a moment more."""
+    client, scanner, machine, cams = watched
+    monkeypatch.setattr(config, "MK2_STOP_SECONDS", 0.1)
+    monkeypatch.setattr(config, "MK2_STOP_AFTER_GONE", 0.1)
+    monkeypatch.setattr(config, "MK2_DOORS_SECONDS", 0.01)
+    monkeypatch.setattr(config, "MK2_PUSH_HOLD", 0.01)
+    monkeypatch.setattr(config, "MK2_PUSH_SPEED", 2000)
+    monkeypatch.setattr(config, "FEED_PINS_UP_SECONDS", 0.05)
+    client.post("/api/machine/save", json={"model": "mk2"})
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    assert client.post("/api/machine/feed_one", json={"max_seconds": 2}).get_json()["result"] == "landed"
+    r = client.post("/api/machine/drop", json={"bin": 1})
+    assert r.status_code == 200, r.get_json()
+    assert machine.last_gone_at is not None and machine.last_gone_at >= 0.4
+    assert machine.last_pins_seconds >= machine.last_gone_at + 0.08
+
+
+def test_machine_state_says_when_it_is_busy_or_was_just_used(client, machine):
+    state = client.get("/api/machine").get_json()
+    assert state["busy"] is None and state["idle_seconds"] is None
+    client.post("/api/machine/feed", json={"seconds": 0.05})
+    state = client.get("/api/machine").get_json()
+    assert state["idle_seconds"] is not None and state["idle_seconds"] < 5

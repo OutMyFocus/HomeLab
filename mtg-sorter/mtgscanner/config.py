@@ -189,6 +189,12 @@ HOME_AT_STARTUP_MK2 = False
 # drops through the trapdoors first).
 SORT_BINS_MK2 = {1: ("push1", "left"), 2: ("push1", "right"), 3: ("push2", "left"), 4: ("push2", "right")}
 MK2_STOP_SECONDS = 0.6        # stop bar down this long at most (the card lands on level 1 in about 0.3 s)
+# With the camera watching the drop (a Bin button after a camera-watched feed, or a sort), the
+# stop bar stays down until the card has left the bed, up to this long, then a little longer
+# so its tail is clear: a slow foil used to have its tail flicked by the bar coming back up
+# and land crooked (Nic, 2026-11-24).
+MK2_STOP_MAX_SECONDS = 2.0
+MK2_STOP_AFTER_GONE = 0.2
 MK2_DOORS_SECONDS = 0.8       # trapdoors open this long (the card drops in about 0.4 s)
 # Pushers move slowly so a card is eased off the floor, not shoved into a jam (Nic, 2026-11-24):
 # 45 degrees a second is about 40 mm/s at the paddle (it was 130). Every pusher move goes at
@@ -247,6 +253,29 @@ FEED_BACKOFF_MAX = 2.0
 FEED_STUCK_TOP = 0.3
 FEED_STUCK_SECONDS = 0.6
 FEED_STILL_SHARE = 0.02      # frame-to-frame change below this = the card isn't moving
+# A hand (or anything else) reaching into the machine changes the picture above and below
+# the bed's channel (the light bars and rails), where a card on the bed never goes. When this
+# much of either band looks different from the start of the feed, the motor stops and the
+# feed says "blocked" (2026-11-24: fingers in front of the camera were read as a card).
+FEED_HAND_ZONES = ((0.0, 0.0, 1.0, 0.2), (0.0, 0.8, 1.0, 1.0))
+FEED_HAND_SHARE = 0.15
+# Before a card is dropped, a look at how it lies (feed_watch.card_lie), measured against the
+# Scanner page's bed box: a card much taller than the box stands up off the bed (a curled
+# foil, a card climbing the stop bar) and one whose long edges slope more than FEED_MAX_TILT
+# degrees is crooked. Then it isn't dropped, and the feed says why (2026-11-24). False turns
+# the check off. On the day's real pictures flat cards measured 0.70-0.89 and raised ones
+# 1.24, but the tilt read +-4-6 degrees on straight cards (art and black borders on the dark
+# bed blur the edge), so the crooked check stays off (None) until it's measured better.
+FEED_CHECK_LIE = True
+FEED_RAISED_SPAN = 1.0       # the card's height over the bed box's
+FEED_MAX_TILT = None
+# The strip of picture at the feeder's end, beyond a landed card's tail ([x0, y0, x1, y1]
+# like FEED_ZONE). When set, the wheels only back off if something shows there once the card
+# has landed: the next card following it out. A back-off long enough to fetch that card back
+# also pulled the landed card back up the bed, a short one left the next card out (2026-11-24).
+# None: always back off, as before. Set it once the whole card fits in the picture.
+FEED_MOUTH_ZONE = None
+FEED_MOUTH_SHARE = 0.2
 # Dropping a landed card into a bin (Machine.drop, the Machine page's "Sort to bin" buttons,
 # and POST /api/machine/sort_one, which feeds a card first). Bins 1 and 3 are the tilted
 # tray's sides; bin 2 is under the trapdoors. The stop pins drop first and the card slides

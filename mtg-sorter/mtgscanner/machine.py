@@ -113,6 +113,7 @@ class Machine:
         self.run = None           # what drives the machine on its own right now (see claim)
         self._relay = None        # Mk2's power relay, once switched on
         self.relay_error = None
+        self.last_active = None   # when a servo or the feeder was last moved (time.monotonic())
 
     # --- connecting ---------------------------------------------------------
 
@@ -338,6 +339,7 @@ class Machine:
                 raise
             self.angles[channel] = angle
             if angle is not None:
+                self.last_active = time.monotonic()
                 self._remember(channel, angle)
             old = self._relax_timers.pop(channel, None)
             if old:
@@ -573,7 +575,9 @@ class Machine:
         for part in ("stop", pusher) + (("door_f", "door_b") if pusher == "push2" else ()):
             if part not in servos:
                 raise ValueError(f"Mk2 has no {part}")
-        stop_seconds = float(getattr(config, "MK2_STOP_SECONDS", 0.6))
+        # Watched: down until the card has gone (then a moment more for its tail), at most
+        # MK2_STOP_MAX_SECONDS. Unwatched: the fixed MK2_STOP_SECONDS.
+        stop_seconds = float(getattr(config, "MK2_STOP_MAX_SECONDS" if card_gone is not None else "MK2_STOP_SECONDS", 0.6))
         self.last_gone_at = None
         self.last_pins_seconds = 0.0
         try:
@@ -592,6 +596,7 @@ class Machine:
             while time.monotonic() < start + stop_seconds:
                 if card_gone is not None and time.monotonic() >= least and card_gone():
                     self.last_gone_at = round(time.monotonic() - start, 2)
+                    time.sleep(float(getattr(config, "MK2_STOP_AFTER_GONE", 0.0)))
                     break
                 time.sleep(0.05)
             self.last_pins_seconds = round(time.monotonic() - start, 2)
@@ -696,6 +701,7 @@ class Machine:
                 backward = not backward
             (motor.backward if backward else motor.forward)(speed)
             self.feeding = True
+            self.last_active = time.monotonic()
             self._stop_timer = threading.Timer(seconds, self.stop_feeder)
             self._stop_timer.daemon = True
             self._stop_timer.start()
@@ -736,6 +742,11 @@ class Machine:
                           "error": self.relay_error} if model == "mk2" else None,
                 "models": MODELS,
                 "bins": list(self.bins()),
+                # For deploy/update*.sh: an update doesn't restart the app under a run or a
+                # card being fed, nor while someone is testing the machine.
+                "busy": self.run,
+                "idle_seconds": (None if self.last_active is None
+                                 else round(time.monotonic() - self.last_active)),
             }
 
 
@@ -809,8 +820,11 @@ def add_machine_routes(app, machine: Machine, web_dir):
     def machine_drop():
         """Send the card on the bed to a bin (no feeding, no camera)."""
         body = request.get_json(silent=True) or {}
-        return answer(lambda: machine.drop(body.get("bin"), body.get("pins_seconds"),
-                                           body.get("doors_seconds"), body.get("tilt_seconds")), guard="claim")
+        # watched_drop (feed_watch.FeedWatcher.drop): the same drop, with the camera keeping the
+        # stop bar down until the card has left the bed.
+        drop = getattr(machine, "watched_drop", None) or machine.drop
+        return answer(lambda: drop(body.get("bin"), body.get("pins_seconds"),
+                                   body.get("doors_seconds"), body.get("tilt_seconds")), guard="claim")
 
     @app.post("/api/machine/save")
     def machine_save():

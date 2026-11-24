@@ -175,12 +175,19 @@ class SortRun:
                 card.update({"result": out["result"], "dropped": out.get("dropped"),
                              "drop_tries": out.get("drop_tries", 0), "left_share": out.get("left_share"),
                              "seconds": round(time.monotonic() - t0, 1)})
-                if out["result"] in ("none", "stuck"):
+                if out["result"] in ("none", "stuck", "blocked", "raised", "crooked"):
                     card["status"], card["bin"] = out["result"], None
                 with self.lock:
                     self.state["cards"].append(card)
                 if out["result"] == "stuck":
                     reason = "a card is held in the slot: open the gate a little and take the card off the bed"
+                    return
+                if out["result"] == "blocked":
+                    reason = "something came into the picture (a hand?): keep clear of the machine while it runs"
+                    return
+                if out["result"] in ("raised", "crooked"):
+                    reason = (f"the card on the bed lies {'crooked' if out['result'] == 'crooked' else 'raised off the bed'}"
+                              ", so it wasn't dropped: straighten it or take it off")
                     return
                 nothing_in_a_row = nothing_in_a_row + 1 if out["result"] == "none" else 0
                 if out.get("dropped") is False:
