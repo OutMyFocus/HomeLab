@@ -157,7 +157,7 @@ class SortRun:
                     self.scanner.forget_tracks()
                 # Held servos let go after SERVO_HOLD_LIMIT with no new move, and the
                 # trapdoors sag open once they do: tell them "closed" again for every card.
-                for part, position in (("door_l", "closed"), ("door_r", "closed"), ("pins", "up")):
+                for part, position in self._resting():
                     try:
                         self.machine.move(part, position)
                     except Exception:
@@ -221,10 +221,20 @@ class SortRun:
                 return True
         return False
 
+    def _resting(self):
+        """Where the held parts go before each card: the trapdoors shut and the stop up.
+        Mk2's are its two trapdoors and its stop bar (stop bar first: down, it rests on
+        level 1's pusher)."""
+        if getattr(self.machine, "model", lambda: "mk1")() == "mk2":
+            return (("stop", "up"), ("door_f", "closed"), ("door_b", "closed"))
+        return (("door_l", "closed"), ("door_r", "closed"), ("pins", "up"))
+
     @staticmethod
-    def real_bin(bin_no) -> int:
-        """The rules' bin 0 (unknown price) has no tray: config.SORT_FALLBACK_BIN instead."""
-        bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
+    def real_bin(bin_no, bins=None) -> int:
+        """The rules' bin 0 (unknown price) has no tray: config.SORT_FALLBACK_BIN instead.
+        `bins`: the machine's bins (Mk2 has 4), else config.SORT_BINS."""
+        if bins is None:
+            bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
         return int(bin_no) if int(bin_no) in bins else int(getattr(config, "SORT_FALLBACK_BIN", 1))
 
     @staticmethod
@@ -240,6 +250,12 @@ class SortRun:
         """The tray a card the rules give `bin_no` drops into (bin 0 has no tray)."""
         real = SortRun.real_bin(bin_no)
         return real if real == int(bin_no) else SortRun.unread_tray({**rules, "fallback": real})
+
+    def _bins(self):
+        try:
+            return self.machine.bins()
+        except Exception:
+            return None
 
     def _lights(self):
         lights = getattr(self.scanner, "lights", None)
@@ -417,7 +433,7 @@ class SortRun:
                 if wanted:
                     self.taken[wanted] = self.taken.get(wanted, 0) + 1
                     card["wanted"] = True
-                real = self.real_bin(bin_no)
+                real = self.real_bin(bin_no, self._bins())
                 if real != bin_no and not wanted:       # bin 0 → the tray for unread cards
                     real = self.unread_tray({**rules, "fallback": real})
                 card.update({"status": "saved", "name": shown.name, "set": shown.set_code,

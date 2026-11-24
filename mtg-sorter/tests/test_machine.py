@@ -1237,3 +1237,14 @@ def test_a_relay_that_cannot_be_switched_says_why(client, machine, monkeypatch):
     monkeypatch.setitem(sys.modules, "gpiozero", types.SimpleNamespace(OutputDevice=broken))
     state = client.post("/api/machine/save", json={"model": "mk2"}).get_json()
     assert state["relay"]["on"] is False and "pin busy" in state["relay"]["error"]
+
+
+def test_mk2_sort_run_rests_its_own_parts_and_knows_bin_4(machine, mk2):
+    from mtgscanner.sort_run import SortRun
+    run = SortRun(None, None, machine)
+    assert run._resting()[0] == ("stop", "up")
+    assert {p for p, _ in run._resting()} == {"stop", "door_f", "door_b"}
+    assert SortRun.real_bin(4, machine.bins()) == 4
+    assert SortRun.real_bin(4) == config.SORT_FALLBACK_BIN      # the first machine has no bin 4
+    for part, position in run._resting():
+        machine.move(part, position)                           # every one is a real Mk2 part
