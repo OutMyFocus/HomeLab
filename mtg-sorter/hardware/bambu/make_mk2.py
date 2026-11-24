@@ -204,6 +204,11 @@ if __name__ == "__main__":
         mp.PLATES = [("1 Stop bar (solid, tree supports under the bar)", P("stop_bar"))]
         mp.main()
         sys.exit(0)
+    if "--camarch" in sys.argv:     # the taller camera arch on its own (camera 135 mm over the card, 2026-11-24)
+        mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Camera_Arch.3mf")
+        mp.PLATES = [("1 Camera arch, taller (tree supports)", P("cam_arch"))]
+        mp.main()
+        sys.exit(0)
     if "--pimount" in sys.argv:     # the Pi 5 wall mount on its own (added after the rest was printed)
         mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Pi_Mount.3mf")
         mp.PLATES = [("1 Pi wall mount (black, no supports)", P("pi_mount"))]
