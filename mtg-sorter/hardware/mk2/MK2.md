@@ -151,7 +151,7 @@ Servo plugs: brown is GND, orange is 5 V, yellow is signal. Every servo reaches 
 
 ## Software changes Mk2 needs
 
-**Done:** the Machine page has a **Which machine** switch. On **Sorter Mk2** it shows the five servos below with sliders and saveable angles (kept apart from Mk1's), Home goes doors shut, pushers centre, stop bar up, and **Bin 1-4** feed one card and run the sort sequence below. Its starting angles are guesses near 90, so set each one before trusting Home; going home at startup stays off for Mk2 until you switch it on. On Mk2 the app also closes the power relay (GPIO22) as it starts, and when you switch to Mk2. Sorting and tuning runs and the bin sensors are still to come.
+**Done:** the Machine page has a **Which machine** switch. On **Sorter Mk2** it shows the five servos below with sliders and saveable angles (kept apart from Mk1's), Home goes stop bar up, doors shut, pushers centre (the stop bar always goes up before any pusher moves, because down it rests on the pushers), and **Bin 1-4** feed one card and run the sort sequence below. Its starting angles are guesses near 90, so set each one before trusting Home; going home at startup stays off for Mk2 until you switch it on. On Mk2 the app also closes the power relay (GPIO22) as it starts, and when you switch to Mk2. Sorting and tuning runs and the bin sensors are still to come.
 
 The rest of the plan:
 
@@ -163,7 +163,7 @@ The rest of the plan:
   4. For bin 1 or 2: push1 goes to that side and back to centre.
   5. For bin 3 or 4: both doors open, the card drops (about 0.4 s), the doors close, then push2 goes to that side and back.
 - **Pusher speed:** about 120 mm/s, so about 0.6 s per stroke. The scotch-yoke lever already slows the paddle at both ends of its travel. Move the servo at a steady rate through ±80°.
-- **Relay:** GPIO22 high at start, low at shutdown. Home moves the doors shut, the pushers to centre and the stop bar up.
+- **Relay:** GPIO22 high at start, low at shutdown. Home moves the stop bar up, the doors shut and the pushers to centre.
 - **Feeder:** the 60 RPM motor feeds the card at about 90 mm/s, so start with `FEEDER_SECONDS` around 1.0 and let the camera's landing check stop it, as now.
 - **Bin sensors:** pause a run if a bin is pulled out (its hall sensor) or full (its IR sensor), and say which on the Run page.
 

@@ -317,6 +317,8 @@ class Machine:
         if angle is not None:
             angle = max(0.0, min(180.0, float(angle)))
         parts = self.parts()
+        if angle is not None and parts is config.SERVOS_MK2:
+            self._stop_up_before_push(channel, angle)
         held = getattr(config, "SERVO_KEEP_HOLDING_MK2" if parts is config.SERVOS_MK2 else "SERVO_KEEP_HOLDING", ())
         keep = {parts[p][0] for p in held if p in parts}
         with self.lock:
@@ -350,6 +352,22 @@ class Machine:
                 t.token = token
                 self._relax_timers[channel] = t
                 t.start()
+
+    def _stop_up_before_push(self, channel: int, angle: float):
+        """Mk2: down, the stop bar rests on the pushers, so a pusher never moves until the
+        stop bar is up. Any pusher move (a sort, Home, a test button, a slider) first sends
+        the stop bar up and waits config.FEED_PINS_UP_SECONDS for it to get there."""
+        servos = self.servos()
+        pushers = {servos[p][0] for p in getattr(config, "MK2_PUSHERS", ("push1", "push2")) if p in servos}
+        if channel not in pushers or self.angles.get(channel) == angle or "stop" not in servos:
+            return
+        stop_ch, stop_pos = servos["stop"]
+        up = stop_pos.get("up")
+        if up is None or self.angles.get(stop_ch) == float(up):
+            return
+        self.set_angle(stop_ch, up)
+        self.pins_up_at = time.monotonic()
+        time.sleep(float(getattr(config, "FEED_PINS_UP_SECONDS", 0.6)))
 
     def _remember(self, channel: int, angle: float):
         """Keep the last angle sent to each servo in data/servo_last.json, so homing after
@@ -570,8 +588,8 @@ class Machine:
                 time.sleep(0.3)
             self._push(servos[pusher], side)
         finally:
-            for part, position in (("door_f", "closed"), ("door_b", "closed"), ("push1", "centre"),
-                                   ("push2", "centre"), ("stop", "up")):
+            for part, position in (("stop", "up"), ("door_f", "closed"), ("door_b", "closed"),
+                                   ("push1", "centre"), ("push2", "centre")):
                 if part in servos:
                     self.move(part, position)
 
