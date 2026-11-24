@@ -120,7 +120,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
                                     └─ Wago GND ─ everything's ground (Pi, PCA, DRV, strip, sensors)
 ```
 
-- **Power button.** It's a 16 mm momentary button on Pi 5's **J2** pads, which means soldering a 2-pin header onto J2. That is the only soldering in Mk2. Press it to boot, press it to shut down cleanly, and hold it to force off.
+- **Power button.** It's a 16 mm momentary button with no soldering: one switch tab goes to GPIO23 (pin 16), the other to GND (pin 30), on push-on jumper wires. Add `dtoverlay=gpio-shutdown,gpio_pin=23,active_low=1,gpio_pull=up` to `/boot/firmware/config.txt` and reboot once. A press then shuts the Pi down cleanly. On a Pi 5 a GPIO pin can't power it back on, so turn it on again by unplugging and replugging the brick, or with the Pi's own power button. (The Pi 5's J2 pads would also wake it, but they need a soldered header and are very small.)
 - **Relay.** It's driven by **GPIO22**, with the module's trigger jumper on HIGH. The app closes it once it has started and opens it when the Pi shuts down. Until then the servos, motor and lights have no power, so nothing twitches at boot.
 - **The Pi 5 on a non-PD supply.** Run `sudo rpi-eeprom-config --edit` and add `PSU_MAX_CURRENT=5000`. That stops the "power supply not capable of 5A" warning, and the brick does supply it.
 - **Never use 12 V.** Mk2 has no regulator.
@@ -145,7 +145,7 @@ The heat comes from the Pi 5 (with its Active Cooler) and the relay in the elect
 | Bin seated (hall A3144), bins 1 to 4 | GPIO5, 6, 13, 26 | new, pull-ups on |
 | Bin full (TCRT5000), bins 1 to 4 | GPIO16, 20, 21, 12 | new |
 | Beam (spare IR input) | GPIO24 | optional |
-| Power button | Pi 5 J2 | new |
+| Power button | GPIO23 (pin 16) + GND (pin 30) | new, gpio-shutdown overlay |
 
 Servo plugs: brown is GND, orange is 5 V, yellow is signal. Every servo reaches the PCA9685 through a 300 mm extension in the wall trunk.
 
