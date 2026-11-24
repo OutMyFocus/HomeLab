@@ -17,8 +17,9 @@
 //              The arms are 4.5 x 9.3 mm and the part prints flat on their undersides, so the layers
 //              run along the arms (the first version stood on end and snapped across its layers).
 //   cam_arch   two posts and a beam over the bed, riding the same rail as the carrier and keyed to
-//              it. The Camera Module 3 clicks onto two pegs, square to the bed, 120 mm over the
-//              card's centre; a twist-on hood holds a polarizer disc in front of the lens.
+//              it. The Camera Module 3 clicks onto two pegs, square to the bed, 135 mm over the
+//              card's centre (the whole card and its collector number in view, with ~6 mm to
+//              spare at each end); a twist-on hood holds a polarizer disc in front of the lens.
 //   lightbar   x2, white diffusers: 5 LEDs of the WS2812B strip each, 27 degrees above the card,
 //              outside the angle where foil glare bounces into the lens; a slot in front of each
 //              takes a strip of polarizer film turned 90 degrees to the lens disc.

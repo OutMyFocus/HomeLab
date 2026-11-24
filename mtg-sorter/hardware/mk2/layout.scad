@@ -73,10 +73,12 @@ bed_drop = 44;                 // bed front edge over level 1's floor (sim: land
 bed_e    = [50, lv1_z + bed_drop];   // front edge of the card surface (y, z)
 function bedpt(s, n = 0) = [bed_e[0] + s * cos(bed_a) - n * sin(bed_a), bed_e[1] + s * sin(bed_a) + n * cos(bed_a)];
 card_s   = 2 + card_l / 2;     // card centre, measured up the slope from the front edge
-cam_dist = 120;                // lens above the card centre, square to the bed
+cam_dist = 135;                // lens above the card centre, square to the bed (120 until 2026-11-24:
+                               // the picture was ~90 mm along the card, too short for its 88 mm and the
+                               // collector number; 135 gives ~101 mm)
 
 // ---- top ------------------------------------------------------------------------------------
-top_z    = 580;                // top of the walls; the lid sits flush between them (camera 516, magazine to the top)
+top_z    = 580;                // top of the walls; the lid sits flush between them (camera 529, magazine to the top)
 seam_y   = 88;                 // side walls are 2 x 3 tiles
 seam_z   = [150, 330];         // tile rows: 3..150, 150..330, 330..580 (each under the A1's 256, none on a rail)
 
