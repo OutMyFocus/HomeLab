@@ -280,6 +280,19 @@ module back_beam(L) {
     translate([-sv_w / 2 - 2.5, beam[0][0], L + beam[1][0] - 12]) cube([sv_w + 5, beam[0][1] - beam[0][0], 12.02]);
 }
 
+// Gate plugs (2026-11-24): the pushers' right-hand stroke (71 mm) runs the lugs over the gates
+// (50 mm), so a carriage could lift off there. Once the carriage is on, press one plug into each
+// gate from above: it fills the gate down to the slot, so the lip is whole again. Push it out
+// from below with a pin to take the carriage off.
+module gate_plug() {
+    g = [lug_len + 1, 3 + lug_h + 3 * fit_dove, lug_h + 1];
+    difference() {
+        translate([0.05, 0.05, 0]) cube([g[0] - 0.1, g[1] - 0.1, lug_h + fit_dove]);
+        // the lug's slot runs under it
+        translate([-1, 1.5 + lug_h + 2 * fit_dove, lug_h + fit_dove]) along_x(g[0] + 2) lug_2d(fit_dove);
+    }
+}
+
 // ================================ LEVEL 1 ====================================================
 // Fascia (the machine's face over bins 1 and 2), front wall (the card from the bed stops on it),
 // the hinge bars front and back (left: the door servos; right: the doors' pins), back rail,
@@ -495,3 +508,4 @@ if (part == "lever") lever();
 if (part == "col_front") col_front();
 if (part == "liner_back") liner_back();
 if (part == "ir_holder") ir_holder();
+if (part == "gate_plug") gate_plug();

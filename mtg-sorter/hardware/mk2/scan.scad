@@ -52,7 +52,10 @@ skid_t = 6;  skid_z = [rail_scan[0] - 7, rail_scan[0] + 15];   // (the magnet si
 skid_y = [48, 162];     // the camera arch's feet ride the rail in front of them; the skids reach its end
 // ---- stop bar -----------------------------------------------------------------------------
 stop_axis = [60, -11];           // (s, n): far up the slope, so the bar's face drops nearly straight down
-stop_half = 41.5;  stop_face = 2;  stop_n = [-6, 10];  stop_t = 3.7;
+stop_half = 41.5;  stop_face = 2;  stop_n = [-6, 13];  stop_t = 3.7;
+stop_lip = 2;      // (2026-11-24) a hood leaning back over the card at the top, so a nose-up card can't climb over
+// a foil hold-down cap on each channel wall (2026-11-24): its lip overhangs the card edge 2 mm
+hd_s = [6, 45];  hd_over = 2;  hd_top = 1.2;
 arm_x = [37, 41.5];  arm_n = [-16.8, -7.5];   // the arms run under the carrier plate, outside the light box
 stop_turn = 18;
 // ---- MG90S -----------------------------------------------------------------------------------
@@ -84,6 +87,21 @@ module bed() {
         for (m = [-1, 1]) for (s = aruco) translate([m * (chan_in + chan_wall / 2) - 2.7, s[0] - 2.7, chan_h - 0.4]) cube([5.4, 5.4, 1]);
         // chamfer the front edge so the card leaves cleanly
         translate([-bed_half - 1, bed_s[0], 0]) rotate([45, 0, 0]) cube([2 * bed_half + 2, 1, 1]);
+    }
+}
+
+// ================================ FOIL HOLD-DOWN ===========================================
+// A cap pressed onto each centring channel wall near the stop: its lip overhangs the card's edge
+// by hd_over, chan_h - land_h (3.2 mm) over the card, so a curled foil can't stand up. Its outer
+// skirt wedges between the wall and the carrier's rim, so it stays without glue.
+module holddown(m = 1) {
+    on_bed() mirror([m < 0 ? 1 : 0, 0, 0]) difference() {
+        union() {
+            translate([chan_in - hd_over, hd_s[0], chan_h]) cube([chan_wall + hd_over + bed_half + 0.35 - chan_in - chan_wall, hd_s[1] - hd_s[0], hd_top]);
+            translate([chan_in + chan_wall + 0.05, hd_s[0], 0.2]) cube([bed_half + 0.35 - chan_in - chan_wall - 0.05, hd_s[1] - hd_s[0], chan_h - 0.19]);
+        }
+        // lead-in at the top end, so a card coming down slides under the lip
+        translate([chan_in - hd_over - 0.01, hd_s[1] - 4, chan_h]) rotate([0, 0, 0]) rotate([-14, 0, 0]) translate([0, 0, -2]) cube([hd_over + 0.5, 6, 2]);
     }
 }
 
@@ -177,6 +195,12 @@ module stop_bar(d = stop_down) {
                 translate([-stop_half, stop_face - stop_t, stop_n[0]]) cube([2 * stop_half, stop_t, stop_n[1] - stop_n[0] - 1.5]);
                 for (s = [stop_face - stop_t + 1.5, stop_face - 1.5]) translate([-stop_half, s, stop_n[1] - 1.5]) rotate([0, 90, 0]) cylinder(r = 1.5, h = 2 * stop_half, $fn = 24);
             }
+            // the hood: a short lip from the bar's top back over the card (up the slope), its
+            // underside sloped so a card nose rising into it is turned back down
+            hull() {
+                translate([-stop_half, stop_face - 1.5, stop_n[1] - 3]) cube([2 * stop_half, 1.5, 3]);
+                translate([-stop_half, stop_face + stop_lip - 0.8, stop_n[1] - 1.6]) cube([2 * stop_half, 0.8, 1.6]);
+            }
             for (m = [0, 1]) mirror([m, 0, 0]) {
                 // the arm: down from the bar's end, then up the slope under the plate to the axis
                 translate([arm_x[0], stop_face - stop_t, arm_n[0]]) cube([arm_x[1] - arm_x[0], stop_t, stop_n[0] - arm_n[0] + 0.01]);
@@ -267,4 +291,5 @@ if (part == "scan") scan_assembly();
 if (part == "carrier") carrier();
 if (part == "bed") bed();
 if (part == "stop_bar") stop_bar();
+if (part == "holddown") { holddown(1); holddown(-1); bed(); }
 if (part == "cam_arch") cam_arch();
