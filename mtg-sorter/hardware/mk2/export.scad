@@ -35,6 +35,7 @@ if (part == "lever") rotate([180, 0, 0]) lever();
 if (part == "col_front") rotate([180, 0, 0]) col_front();         // standing on its end (brim)
 if (part == "liner_back") rotate([90, 0, 0]) liner_back();
 if (part == "ir_holder") rotate([90, 0, 0]) ir_holder();               // its front face on the plate, the tongue standing up
+if (part == "gate_plug") rotate([180, 0, 0]) gate_plug();            // the lip's top face on the plate (x6)
 
 // scan module: the bed and the carrier lie flat (turned back by the bed's slope)
 if (part == "scan_carrier") rotate([-90, 0, 0]) carrier();  // standing on the skids' back ends, which are flat (brim, tree supports)
@@ -50,6 +51,7 @@ if (part == "fd_hopper") hopper();
 if (part == "fd_shoe") rotate([0, 90, 0]) rotate([-90, 0, 0]) shoe();   // on its long edge (brim)
 if (part == "fd_roller") rotate([0, 90, 0]) roller();              // standing on its motor end
 if (part == "fd_motor_lid") rotate([180, 0, 0]) motor_lid();
+if (part == "fd_weight") stack_weight();                          // flat, 100 % infill
 
 // electronics
 if (part == "etray") etray();

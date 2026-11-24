@@ -20,7 +20,7 @@
 //     lid holds it in. The hopper drops onto the stand's ridge (as v4). The cartridge's wings carry
 //     dovetail tongues on the walls' feed rail and a magnet holds it home.
 //
-// Parts (set `part`): stand, hopper, shoe, roller, motor_lid; "feeder" = all of it in place.
+// Parts (set `part`): stand, hopper, shoe, roller, motor_lid, stack_weight; "feeder" = all of it in place.
 include <joints.scad>
 include <layout.scad>
 part = "feeder";
@@ -276,9 +276,20 @@ module feeder_assembly(cards = 40) {
     color("#c9a46a") for (i = [0 : cards - 1]) translate([-card_w / 2, Y0 + 0.5, floor_top + poke + 0.32 * i]) cube([card_w, card_l, 0.3]);
 }
 
+// Stack weight: a solid block that lies on top of the cards in the magazine, so the bottom card
+// is pressed onto the wheels the same whether the stack is 10 cards or 400. With only a few cards
+// left the wheels slipped under the bottom card and fed nothing (2026-11-24). Smaller than a card,
+// so it can't catch on the walls or the shoe; two notches to lift it out by. Print it 100 % infill.
+weight_h = 25;
+module stack_weight() difference() {
+    translate([-(card_w - 1) / 2, -(card_l - 2) / 2, 0]) cube([card_w - 1, card_l - 2, weight_h]);
+    for (m = [0, 1]) mirror([m, 0, 0]) translate([(card_w - 1) / 2 - 7, -12, weight_h - 12]) cube([8, 24, 13]);
+}
+
 if (part == "feeder") feeder_assembly();
 if (part == "stand") stand();
 if (part == "hopper") hopper();
 if (part == "shoe") shoe();
 if (part == "roller") roller();
 if (part == "motor_lid") motor_lid();
+if (part == "stack_weight") stack_weight();

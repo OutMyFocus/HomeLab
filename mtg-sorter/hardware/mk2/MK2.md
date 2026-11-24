@@ -12,7 +12,7 @@ A full redesign of the sorter. It's one solid box, 244 mm wide, 308 mm deep and 
 
 1. **Magazine and feeder** (top back). This is the feeder v4 that worked (0 doubles in 125 feeds), with a magazine 2.3 times as tall. The shoe rests on the wheels by its own weight, with a cork pad over each wheel, so nothing needs adjusting. A stronger 60 RPM N20 drives it, and two PTFE strips under the stack let the bottom card slide out.
 2. **Scan bed.** It slopes at 30°, with the camera 135 mm above the card and square to it, so the whole card, collector number included, is in the picture. The card slides down on four PTFE lands into a 65 mm centring channel and stops on the **stop bar**. Light comes up through the white bed from a light box underneath, and from two side light bars that sit outside the angle where foil glare reaches the lens. Polarizer film goes in front of the lens and the bars.
-3. **The stop bar drops.** It pivots 58 mm up the slope and turns 18°, so its face drops almost straight down, about 9 mm below the bed. It never pushes the card back up the slope. The card slides off the edge on its own and lands flat on **level 1**.
+3. **The stop bar drops.** It pivots 58 mm up the slope and turns 18°, so its face (14 mm tall, so a card riding up on it can't climb over) drops almost straight down, about 5 mm below the bed. It never pushes the card back up the slope. The card slides off the edge on its own and lands flat on **level 1**.
 4. **Sorting:**
    - **Bin 1 (left) or bin 2 (right):** level 1's pusher slides the card sideways, slowly, off the floor into the bin.
    - **Bin 3 or bin 4:** level 1's two trapdoors open together, and the card falls flat down the shaft onto **level 2**. Level 2's pusher then moves it left or right.
@@ -60,6 +60,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
 3. **Level 2** (do this on the bench, before it goes in):
    - Press the lever's horn into its pocket and a 3 x 16 mm pin through the lever's end, so 5 mm stands out of its flat face.
    - Lay the carriage on the frame's guide, slide it to the middle, and lower the lever in from above so its pin drops into the fork at the top of the crossbar.
+   - With the carriage on, press a **gate plug** into each of the three gaps in the beam's front lip, lip face up, with a drop of superglue. The gaps are only there to get the carriage's hooks in. Left open, a hook can lift out of one as the pusher goes right and the carriage comes off its rail. Pick the plugs out to take the carriage off again.
    - Slide the pusher servo in from the back of its box, shaft first into the lever's horn, until the latch clicks over the back of its body. To take it out, lift the latch finger with a fingernail and pull.
    - Lay a hall sensor flat in each shelf's pocket, legs back along the groove (it reads the bin's magnet through the bin's floor).
    - Slide the frame in from the front on the lowest rail until its magnet clicks.
@@ -85,6 +86,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
    - Lay the motor in its pod and snap the motor lid over it. Fit the roller on the shaft.
    - Drop the magazine onto the stand's ridge.
    - Stick the two PTFE strips in the magazine floor's tracks and the cork pads on the shoe.
+   - Load cards against the shoe and lay the **stack weight** on top (print it 100 % infill). It keeps the bottom card pressed onto the wheels however few cards are left.
    - Slide the cartridge in from the back on the top rail. The upper back panel comes out to let it in.
 7. **Electronics tray:**
    - Fit the boards on their pegs, the relay and DRV8833 in their cradles, and the Wagos in their holder.

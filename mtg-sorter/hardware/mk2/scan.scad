@@ -11,7 +11,7 @@
 //              through it round the card, so the card's outline is sharp whatever its border or foil.
 //   stop_bar   one full-width bar on two long arms that pivot 58 mm up the slope, under the bed;
 //              the right arm takes the servo's own horn, the left turns on a 3 mm steel pin. Up: the
-//              card rests on it. Down (18 degrees): the bar drops almost straight down, 9 mm below
+//              card rests on it, its face 14 mm tall. Down (18 degrees): the bar drops almost straight down, 5 mm below
 //              the bed's surface, so it never pushes the card back up the slope, and the card
 //              slides off the edge on its own.
 //              The arms are 4.5 x 9.3 mm and the part prints flat on their undersides, so the layers
@@ -52,7 +52,8 @@ skid_t = 6;  skid_z = [rail_scan[0] - 7, rail_scan[0] + 15];   // (the magnet si
 skid_y = [48, 162];     // the camera arch's feet ride the rail in front of them; the skids reach its end
 // ---- stop bar -----------------------------------------------------------------------------
 stop_axis = [60, -11];           // (s, n): far up the slope, so the bar's face drops nearly straight down
-stop_half = 41.5;  stop_face = 2;  stop_n = [-6, 10];  stop_t = 3.7;
+stop_half = 41.5;  stop_face = 2;  stop_n = [-6, 14];  stop_t = 3.7;   // face 14 over the bed (10 until
+                                // 2026-11-24: cards riding up on it climbed over it); down, its top is 5 below the bed
 arm_x = [37, 41.5];  arm_n = [-16.8, -7.5];   // the arms run under the carrier plate, outside the light box
 stop_turn = 18;
 // ---- MG90S -----------------------------------------------------------------------------------

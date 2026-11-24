@@ -202,6 +202,20 @@ module carriage(lv = 1) {
 }
 module carriage_at(L, lv, p = 0) translate([p * push_stroke, 0, L]) carriage(lv);
 
+// Gate plug: puts back the piece of the beam's front lip that a gate takes out, once the carriage
+// is in. The gates sit inside the push (the lugs pass over them on every push right), and with the
+// lip open there a lug could lift out and the carriage come off its rail (2026-11-24). Six per
+// machine (three gates per beam). Press one into each gate, lip face up; a drop of superglue keeps
+// it there (pick it out to take the carriage off again). Drawn at the origin, as it prints.
+module gate_plug() translate([-(lug_x[0] + gate_dx), -xbar_c, -beam[1][1]]) intersection() {
+    translate([lug_x[0] + gate_dx - lug_len / 2 - 0.5 + 0.05, xbar_c - 1.5 - lug_h - 2 * fit_dove + 0.05, beam[1][1] - lug_h - fit_dove])
+        cube([lug_len + 1 - 0.1, 3 + lug_h + 3 * fit_dove - 0.1, lug_h + 1]);
+    difference() {
+        translate([-web_x, beam[0][0], beam[1][0]]) cube([2 * web_x, beam[0][1] - beam[0][0], beam[1][1] - beam[1][0]]);
+        translate([-web_x - 1, xbar_c, beam[1][1]]) along_x(2 * web_x + 2) lug_2d(fit_dove + 0.1);   // the lugs run under it
+    }
+}
+
 // the lever: servo horn pocket at its hub, a 3 mm steel pin at its tip
 // It is 2.5 thick where it passes the servo's box and 7 thick beyond it, so the pin is pressed
 // through 7 mm of plastic and can't work loose. Prints with its flat (carriage) face down.
@@ -495,3 +509,4 @@ if (part == "lever") lever();
 if (part == "col_front") col_front();
 if (part == "liner_back") liner_back();
 if (part == "ir_holder") ir_holder();
+if (part == "gate_plug") gate_plug();
