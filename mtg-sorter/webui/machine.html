@@ -81,11 +81,6 @@
     <h2><span class="dot" id="servoDot"></span>Servos</h2>
     <p class="err" id="servoErr" hidden></p>
     <p class="sub" id="remoteNote" hidden></p>
-    <div class="row" id="modelRow" hidden>
-      <span class="sub">Which machine:</span>
-      <button class="btn" data-model="mk1">First machine</button>
-      <button class="btn" data-model="mk2">Sorter Mk2</button>
-    </div>
     <p class="sub" id="mk2Note" hidden><b>Mk2:</b> its angles start as guesses. Set each servo before you trust Home:
       drag its slider slowly until the part sits right, then press the position under it to save. Stop bar up holds
       the card, down lets it go. Each pusher's centre is the paddle in the middle, left and right the two ends.
@@ -142,10 +137,6 @@
     <p class="sub" id="binMk2" hidden><b>Bin 1-4</b> on Mk2 feeds a card as above, drops the stop bar so the card lands
       on level 1, and puts the stop bar back up. Bin 1 and 2: level 1's pusher slides it off to the left or right. Bin 3
       and 4: both trapdoors open, the card falls to level 2, the doors shut, and level 2's pusher slides it left or right.</p>
-    <p class="sub" id="binMk1"><b>Bin 1/2/3</b> feeds a card as above. Then it drops the stop pins with the tray level, so the
-      card slides onto the tray. It waits until the camera sees the card leave the stop teeth, or the pins time at
-      most. Then it opens the trapdoors (bin 2), or raises the pins and tilts and shakes the tray to that side
-      (bins 1 and 3), and puts everything back. If the camera still sees the card on the bed, it drops it once more.</p>
     <figure class="binmap" id="binMapMk2" hidden aria-label="Mk2 bins, seen from the front">
       <svg viewBox="0 0 560 300" role="img">
         <title>Mk2 bins from the front: bins 1 and 2 beside level 1, bins 3 and 4 beside level 2</title>
@@ -181,31 +172,6 @@
         <li><b>Bin 2</b>: stop bar drops, level 1's pusher slides the card right.</li>
         <li><b>Bin 3</b>: stop bar drops, the trapdoors open, the card falls to level 2, its pusher slides it left.</li>
         <li><b>Bin 4</b>: the same as bin 3, but level 2's pusher slides it right.</li>
-      </ul>
-    </figure>
-    <figure class="binmap" id="binMapMk1" hidden aria-label="First machine bins, seen from the front">
-      <svg viewBox="0 0 560 230" role="img">
-        <title>First machine bins from the front: bin 1 left, bin 2 under the trapdoors, bin 3 right</title>
-        <rect class="floor" x="225" y="8" width="110" height="30" rx="6" />
-        <text class="lbl" x="280" y="28" text-anchor="middle">feeder</text>
-        <rect class="floor" x="205" y="54" width="150" height="10" rx="3" />
-        <rect class="paddle" x="205" y="64" width="150" height="5" />
-        <text class="lbl" x="365" y="64">scan bed + stop pins</text>
-        <path class="path" d="M280 38 V50" />
-        <path class="path" d="M280 72 V96" />
-        <path class="floor" d="M170 104 H250 V114 H170 Z M310 104 H390 V114 H310 Z" />
-        <path class="door" d="M250 109 H310" />
-        <text class="lbl" x="280" y="132" text-anchor="middle">tray · trapdoors</text>
-        <path class="path" d="M168 109 L152 124" /><path class="path" d="M392 109 L408 124" />
-        <path class="path" d="M280 138 V156" />
-        <g class="bin" data-bin="1"><path d="M30 104 V190 H150 V104" /><text x="90" y="156" text-anchor="middle">Bin 1</text></g>
-        <g class="bin" data-bin="2"><path d="M220 162 V220 H340 V162" /><text x="280" y="198" text-anchor="middle">Bin 2</text></g>
-        <g class="bin" data-bin="3"><path d="M410 104 V190 H530 V104" /><text x="470" y="156" text-anchor="middle">Bin 3</text></g>
-      </svg>
-      <ul class="sub">
-        <li><b>Bin 1</b>: the pins drop, the card slides onto the tray, the tray tilts left.</li>
-        <li><b>Bin 2</b>: the pins drop, the trapdoors open and the card falls straight down.</li>
-        <li><b>Bin 3</b>: the pins drop, the tray tilts right.</li>
       </ul>
     </figure>
     <div class="row">
@@ -306,7 +272,6 @@ function lockOut() {
   const mk2 = last && last.model === "mk2";
   $("sortStart").disabled = !!run || manualBusy;
   $("tuneStart").disabled = !!run || manualBusy || mk2;
-  for (const el of document.querySelectorAll("[data-model]")) el.disabled = !!run;
   $("runNote").hidden = !run;
   if (run) $("runNote").textContent = `The ${run} is using the machine. The move and feed buttons come back when it stops. Relax all and Stop still work.`;
 }
@@ -339,13 +304,10 @@ function show(s) {
   if (s.remote) $("remoteNote").textContent = `This page drives the sorter's Pi at ${s.remote}: moves and saved angles happen there.`;
   lockOut();
 }
-// Which machine: the switch, Mk2's notes and its bin buttons
+// Mk2's notes and its bin buttons
 function showModel(s) {
   const mk2 = s.model === "mk2";
-  $("modelRow").hidden = !s.models || !Object.keys(s.models).length;
-  for (const b of document.querySelectorAll("[data-model]")) b.classList.toggle("primary", b.dataset.model === s.model);
-  $("mk2Note").hidden = !mk2; $("binMk2").hidden = !mk2; $("binMk1").hidden = mk2;
-  $("binMapMk2").hidden = !mk2; $("binMapMk1").hidden = mk2;
+  $("mk2Note").hidden = !mk2; $("binMk2").hidden = !mk2; $("binMapMk2").hidden = !mk2;
   const bins = (s.bins && s.bins.length ? s.bins : [1, 2, 3]).join();
   const row = $("binRow");
   if (row.dataset.bins !== bins) {
@@ -474,12 +436,6 @@ $("feedOne").onclick = async () => {
   } catch (e) { $("feedResult").textContent = "Couldn't reach the sorter."; }
   manualBusy = false; lockOut();
 };
-$("modelRow").addEventListener("click", async (e) => {
-  const b = e.target.closest("button[data-model]");
-  if (!b || (last && b.dataset.model === last.model)) return;
-  if (await call("/api/machine/save", { model: b.dataset.model }))
-    toast(`Saved: this page now drives the ${b.textContent}. Every servo let go first.`);
-});
 $("binRow").addEventListener("click", async (e) => {
   const b = e.target.closest("button[data-sort]");
   if (!b) return;

@@ -1223,6 +1223,21 @@ def test_runs_do_not_drive_mk2_yet(watched):
     assert machine.run is None
 
 
+def test_a_fresh_install_drives_mk2_and_the_page_has_no_machine_switch(client, monkeypatch):
+    # Nic, 2026-11-24: only the Sorter Mk2 is left, so no "First machine / Sorter Mk2" choice.
+    from mtgscanner import config as real_config
+    import importlib.util, pathlib
+    spec = importlib.util.spec_from_file_location("cfg", pathlib.Path(real_config.__file__))
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+    assert fresh.MACHINE_MODEL == "mk2"
+    monkeypatch.setattr(config, "MACHINE_MODEL", "mk2")
+    state = client.get("/api/machine").get_json()
+    assert state["model"] == "mk2" and sorted(state["parts"]) == sorted(config.SERVOS_MK2)
+    page = client.get("/machine").get_data(as_text=True)
+    assert "First machine" not in page and "data-model" not in page
+
+
 def test_reset_keeps_which_machine_it_is(client, mk2):
     client.post("/api/machine/save", json={"part": "stop", "position": "down", "angle": 112})
     state = client.post("/api/machine/reset", json={}).get_json()
