@@ -111,3 +111,10 @@ if (what == "pi_mount_wall") intersection() { union() { pi_mount(false); pi_on_m
 if (what == "pi_mount") intersection() { union() { pi_mount(); pi_on_mount(); }
     union() { wall_l(); base_full(); bins(); frames(); shaft(); servos_at(); doors_shut(); doors_open(); movers(-1); movers(0); movers(1);
               scan_fixed(); stop_bar(0); stop_bar(1); feeder_fixed(); etray(); covers_all(); ir_holders_at(); } }
+// 2026-11-24: the foil hold-down caps against the bed, the stop bar's travel, the carrier and the lights
+module holddowns() { holddown(1); holddown(-1); }
+if (what == "holddown") intersection() { holddowns(); union() { bed(); stop_bar(0); stop_bar(0.5); stop_bar(1); lightbar(1); mirror([1, 0, 0]) lightbar(1); } }
+// the card under the caps and the stop bar's hood
+if (what == "holddown_card") intersection() { card_on_bed(); union() { holddowns(); stop_bar(0); } }
+// the skirt presses on the rim on purpose (0.05 mm), nothing else may touch the carrier
+if (what == "holddown_latch") intersection() { holddowns(); carrier(); }

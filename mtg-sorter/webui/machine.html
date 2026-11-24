@@ -205,6 +205,19 @@
     <p class="sub" id="sortTally"></p>
     <table id="sortTable" hidden><thead><tr><th>#</th><th>Card</th><th>Price</th><th>Bin</th><th>Result</th><th>Time</th></tr></thead><tbody></tbody></table>
   </section>
+  <section class="panel" id="testPanel">
+    <h2>Test run</h2>
+    <p class="sub">Feeds a card and drops it, bin 1, 2, 3, 4 in turn, without reading it, for the number of cards you
+      pick. It stops at the first problem (nothing came out, a card over the stop bar, a hand or two cards on the bed, a
+      card left behind) and says why. Keep your hands out while it runs.</p>
+    <div class="row">
+      <label class="inline">Cards <input type="number" id="testCount" min="1" max="100" value="10"></label>
+      <button class="btn primary" id="testStart">Start test</button>
+      <button class="btn ghost" id="testStop">Stop</button>
+    </div>
+    <p class="sub" id="testStatus"></p>
+    <table id="testTable" hidden><thead><tr><th>#</th><th>Bin</th><th>Result</th><th>Landed</th><th>In bin</th><th>Time</th></tr></thead><tbody></tbody></table>
+  </section>
   <section class="panel">
     <h2>Tuning run</h2>
     <p class="sub"><b>A mechanical test, not sorting:</b> it feeds and drops each card straight away without reading it.
@@ -378,10 +391,20 @@ function build(s) {
     const sv = e.target.closest("button[data-save]");
     if (sv) {
       const part = sv.dataset.save, angle = +$("r-" + part).value;
-      if (await call("/api/machine/save", { part, position: sv.dataset.pos, angle }))
+      const got = await call("/api/machine/save", { part, position: sv.dataset.pos, angle });
+      if (!got) return;
+      // Check the sorter really kept it: read the angle back from what it answered.
+      const kept = got.parts && got.parts[part] && got.parts[part].positions
+        ? got.parts[part].positions[sv.dataset.pos] : undefined;
+      const where = got.remote ? "on the sorter's Pi" : "on this sorter";
+      if (kept == null || Math.abs(+kept - angle) > 0.5) {
+        toast(`Not saved! The sorter still has ${kept == null ? "nothing" : kept + "°"} for ${NAMES[part] || part} "${sv.dataset.pos}". Open the Pi's own page (http://10.0.0.247:5000/machine?stay=1) and save it there.`);
+        return;
+      }
+      if (got)
         toast(angle < SAFE[0] || angle > SAFE[1]
           ? `Saved ${angle}°, but that's at the servo's end: it strains and wears out there. Put the horn back on so this position is between ${SAFE[0]} and ${SAFE[1]}.`
-          : `Saved: ${NAMES[part] || part} "${sv.dataset.pos}" is now ${angle}°`);
+          : `Saved ${where}: ${NAMES[part] || part} "${sv.dataset.pos}" is now ${angle}°`);
     }
   });
   $("centreAll").onclick = async () => {
@@ -521,6 +544,36 @@ try {   // same theme and accent as the scanner page (its Customize panel)
   if (look.accent) document.documentElement.style.setProperty("--accent", look.accent);
 } catch (e) {}
 call("/api/machine");
+// --- Test run ---------------------------------------------------------------------------
+let testTimer = null;
+function showTest(t) {
+  const rows = t.rows || [];
+  const body = $("testTable").querySelector("tbody");
+  body.innerHTML = "";
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    for (const v of [r.n, r.bin, r.ok ? "OK" : r.result, r.landed_ms != null ? (r.landed_ms / 1000).toFixed(2) + " s" : "-",
+                     r.dropped === true ? "yes" : r.dropped === false ? "NO" : "?", r.seconds + " s"]) {
+      const td = document.createElement("td"); td.textContent = v; tr.appendChild(td);
+    }
+    if (!r.ok) tr.style.color = "var(--bad, #d33)";
+    body.appendChild(tr);
+  }
+  $("testTable").hidden = !rows.length;
+  const good = rows.filter(r => r.ok).length;
+  $("testStatus").textContent = t.running ? `Running: ${rows.length} of ${t.count} cards, ${good} OK`
+    : (t.reason ? `${good} of ${rows.length} OK. ${t.reason}` : "");
+  if (!t.running && testTimer) { clearInterval(testTimer); testTimer = null; }
+}
+async function pollTest() {
+  try { showTest(await answerOf(await fetch("/api/machine/test_run"))); } catch (e) {}
+}
+$("testStart").onclick = async () => {
+  const t = await call("/api/machine/test_run", { count: +$("testCount").value || 10 });
+  if (t) { showTest(t); if (!testTimer) testTimer = setInterval(pollTest, 1000); }
+};
+$("testStop").onclick = () => call("/api/machine/test_run", { stop: true });
+pollTest();
 </script>
 </body>
 </html>

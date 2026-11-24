@@ -588,10 +588,12 @@ class Machine:
             time.sleep(float(getattr(config, "MK2_DOORS_SECONDS", 0.8)))
             self.move("stop", "down")
             start = time.monotonic()
-            least = start + float(getattr(config, "SORT_PINS_MIN_SECONDS", 0.5))
+            least = start + float(getattr(config, "MK2_STOP_MIN_SECONDS", 0.8))
+            clear = float(getattr(config, "MK2_STOP_CLEAR_SECONDS", 0.3))
             while time.monotonic() < start + stop_seconds:
-                if card_gone is not None and time.monotonic() >= least and card_gone():
+                if card_gone is not None and self.last_gone_at is None and card_gone():
                     self.last_gone_at = round(time.monotonic() - start, 2)
+                if self.last_gone_at is not None and time.monotonic() >= max(least, start + self.last_gone_at + clear):
                     break
                 time.sleep(0.05)
             self.last_pins_seconds = round(time.monotonic() - start, 2)

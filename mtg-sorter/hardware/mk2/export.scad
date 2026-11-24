@@ -34,6 +34,9 @@ if (part == "carriage2") carriage(2);
 if (part == "lever") rotate([180, 0, 0]) lever();
 if (part == "col_front") rotate([180, 0, 0]) col_front();         // standing on its end (brim)
 if (part == "liner_back") rotate([90, 0, 0]) liner_back();
+if (part == "gate_plug") gate_plug();                                 // x6, flat side down
+if (part == "holddown_l") rotate([-bed_a, 0, 0]) rotate([0, 0, 0]) holddown(-1);
+if (part == "holddown_r") rotate([-bed_a, 0, 0]) holddown(1);
 if (part == "ir_holder") rotate([90, 0, 0]) ir_holder();               // its front face on the plate, the tongue standing up
 
 // scan module: the bed and the carrier lie flat (turned back by the bed's slope)
