@@ -174,8 +174,9 @@ SERVOS_MK2 = {
     "door_b": (3, {"closed": 135, "open": 45}),               # back trapdoor
     "push2":  (4, {"centre": 90, "left": 50, "right": 130}),  # level 2 pusher: bins 3 (left) and 4 (right)
 }
-# Home on Mk2: doors shut, pushers to the middle, then the stop bar up (MK2.md).
-SERVO_HOME_MK2 = {"door_f": "closed", "door_b": "closed", "push1": "centre", "push2": "centre", "stop": "up"}
+# Home on Mk2 (MK2.md): the stop bar up first (down, it hangs over level 1's pusher, so no
+# pusher moves before it's up), then the doors shut and the pushers to the middle.
+SERVO_HOME_MK2 = {"stop": "up", "door_f": "closed", "door_b": "closed", "push1": "centre", "push2": "centre"}
 SERVO_KEEP_HOLDING_MK2 = ("stop", "door_f", "door_b")
 # Mk2 doesn't go home at startup until that's switched on for it: its angles start as guesses,
 # and a guessed "closed" could push a door into the frame.

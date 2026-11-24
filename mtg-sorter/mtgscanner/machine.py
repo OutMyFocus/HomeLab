@@ -41,6 +41,8 @@ def load_saved() -> dict:
 
 
 MODELS = {"mk1": "First machine", "mk2": "Sorter Mk2"}
+# Mk2's pushers: neither moves until the stop bar is up (it hangs over level 1's pusher when down).
+MK2_PUSHERS = ("push1", "push2")
 
 
 def model_of(saved: dict) -> str:
@@ -319,6 +321,8 @@ class Machine:
         parts = self.parts()
         held = getattr(config, "SERVO_KEEP_HOLDING_MK2" if parts is config.SERVOS_MK2 else "SERVO_KEEP_HOLDING", ())
         keep = {parts[p][0] for p in held if p in parts}
+        if angle is not None and channel in {parts[p][0] for p in MK2_PUSHERS if p in parts}:
+            self._stop_bar_up_first()
         with self.lock:
             kit = self._fresh_servos()
             if kit is None:
@@ -427,6 +431,21 @@ class Machine:
             return 0.0
         time.sleep(left)
         return round(left, 2)
+
+    def _stop_bar_up_first(self):
+        """Mk2: down, the stop bar hangs over level 1's pusher. So before a pusher moves at
+        all (a sort, Home, a button or a slider on the Machine page), the stop bar goes up and
+        gets all the way there (config.FEED_PINS_UP_SECONDS after it was sent up). No wait
+        when it's already up and settled."""
+        servos = self.servos()
+        if "stop" not in servos:
+            return
+        channel, positions = servos["stop"]
+        settle = float(getattr(config, "FEED_PINS_UP_SECONDS", 0.6))
+        rising = self.pins_up_at is not None and time.monotonic() - self.pins_up_at < settle
+        if self.angles.get(channel) == positions.get("up") and not rising:
+            return
+        self.pins_up()
 
     def relax_all(self):
         for channel, _ in self.parts().values():
@@ -559,8 +578,7 @@ class Machine:
                     break
                 time.sleep(0.05)
             self.last_pins_seconds = round(time.monotonic() - start, 2)
-            self.move("stop", "up")
-            time.sleep(float(getattr(config, "FEED_PINS_UP_SECONDS", 0.6)))
+            self.pins_up()          # all the way up before the doors or a pusher move
             if pusher == "push2":
                 self.move("door_f", "open")
                 self.move("door_b", "open")
@@ -570,8 +588,8 @@ class Machine:
                 time.sleep(0.3)
             self._push(servos[pusher], side)
         finally:
-            for part, position in (("door_f", "closed"), ("door_b", "closed"), ("push1", "centre"),
-                                   ("push2", "centre"), ("stop", "up")):
+            for part, position in (("stop", "up"), ("door_f", "closed"), ("door_b", "closed"),
+                                   ("push1", "centre"), ("push2", "centre")):
                 if part in servos:
                     self.move(part, position)
 

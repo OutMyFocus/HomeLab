@@ -1106,20 +1106,86 @@ def test_switching_machines_lets_every_servo_go(client, machine):
     assert machine._kit.servo[0].angle is None
 
 
-def test_mk2_home_shuts_the_doors_centres_the_pushers_then_raises_the_stop_bar(client, logged, mk2):
+def test_mk2_home_raises_the_stop_bar_then_shuts_the_doors_and_centres_the_pushers(client, logged, mk2):
     assert client.post("/api/machine/home", json={}).status_code == 200
     homed = [ch for ch in range(5) if logged.angles.get(ch) is not None]
     assert homed == [0, 1, 2, 3, 4]
     parts = config.SERVOS_MK2
     assert logged.angles[parts["stop"][0]] == parts["stop"][1]["up"]
     assert logged.angles[parts["door_f"][0]] == parts["door_f"][1]["closed"]
+    assert list(config.SERVO_HOME_MK2)[0] == "stop"
+
+
+def angle_log(machine, monkeypatch):
+    """Every (channel, angle) sent to a servo, in the order they reach the board (logged
+    after the send, so a stop bar move made first inside set_angle comes first)."""
+    sent = []
+    real = machine.set_angle
+    monkeypatch.setattr(machine, "set_angle", lambda ch, a: (real(ch, a), sent.append((ch, a)))[0])
+    return sent
+
+
+def pusher_moves_with_the_stop_bar_not_up(sent):
+    stop_ch, stop_pos = config.SERVOS_MK2["stop"]
+    pushers = {config.SERVOS_MK2[p][0] for p in ("push1", "push2")}
+    stop, bad = None, []
+    for ch, angle in sent:
+        if ch == stop_ch:
+            stop = angle
+        elif ch in pushers and angle is not None and stop != stop_pos["up"]:
+            bad.append((ch, angle, stop))
+    return bad
+
+
+@pytest.mark.parametrize("press", ["bin 1", "bin 2", "bin 3", "bin 4", "home"])
+def test_mk2_no_pusher_moves_until_the_stop_bar_is_up(client, machine, mk2, monkeypatch, press):
+    # Down, the stop bar hangs over level 1's pusher (Nic, 2026-11-24: up before the pusher moves at all).
+    monkeypatch.setattr(config, "FEED_PINS_UP_SECONDS", 0.05)
+    client.post("/api/machine/move", json={"part": "stop", "position": "down"})
+    sent = angle_log(machine, monkeypatch)
+    if press == "home":
+        r = client.post("/api/machine/home", json={})
+    else:
+        r = client.post("/api/machine/drop", json={"bin": int(press[-1])})
+    assert r.status_code == 200, r.get_json()
+    assert any(ch in (1, 4) for ch, _ in sent)
+    assert pusher_moves_with_the_stop_bar_not_up(sent) == []
+
+
+@pytest.mark.parametrize("body", [{"part": "push1", "position": "left"}, {"channel": 1, "angle": 70},
+                                  {"part": "push2", "position": "right"}])
+def test_mk2_a_pusher_button_or_slider_raises_the_stop_bar_first_and_waits(client, machine, mk2, monkeypatch, body):
+    monkeypatch.setattr(config, "FEED_PINS_UP_SECONDS", 0.2)
+    client.post("/api/machine/move", json={"part": "stop", "position": "down"})
+    sent = angle_log(machine, monkeypatch)
+    started = time.monotonic()
+    assert client.post("/api/machine/move", json=body).status_code == 200
+    stop_ch, stop_pos = config.SERVOS_MK2["stop"]
+    assert sent[0] == (stop_ch, stop_pos["up"])
+    assert time.monotonic() - started >= 0.18          # it waited for the bar to get there
+    assert pusher_moves_with_the_stop_bar_not_up(sent) == []
+    # Already up and settled: no extra wait and no extra stop bar move.
+    sent.clear()
+    time.sleep(0.25)
+    started = time.monotonic()
+    client.post("/api/machine/move", json={"part": "push1", "position": "centre"})
+    assert [ch for ch, _ in sent] == [1] and time.monotonic() - started < 0.15
+
+
+def test_mk1_moves_are_not_held_up_by_a_stop_bar(client, machine, monkeypatch):
+    monkeypatch.setattr(config, "FEED_PINS_UP_SECONDS", 5)
+    started = time.monotonic()
+    client.post("/api/machine/move", json={"part": "pins", "position": "down"})
+    client.post("/api/machine/move", json={"channel": 1, "angle": 70})
+    assert time.monotonic() - started < 1
 
 
 def test_mk2_side_bin_drops_the_stop_bar_raises_it_then_pushes(client, logged, mk2):
     r = client.post("/api/machine/drop", json={"bin": 2})
     assert r.status_code == 200, r.get_json()
     m = moves(logged)
-    down, up = m.index(("stop", "down")), m.index(("stop", "up"))
+    down = m.index(("stop", "down"))
+    up = m.index(("stop", "up"), down)
     assert down < up
     assert ("door_f", "open") not in m
     ch, pos = config.SERVOS_MK2["push1"]
@@ -1130,9 +1196,10 @@ def test_mk2_side_bin_drops_the_stop_bar_raises_it_then_pushes(client, logged, m
 def test_mk2_level_2_bin_opens_both_doors_after_the_stop_bar_is_back_up(client, logged, mk2):
     client.post("/api/machine/drop", json={"bin": 3})
     m = moves(logged)
-    assert m.index(("stop", "up")) < m.index(("door_f", "open"))
+    down = m.index(("stop", "down"))
+    assert m.index(("stop", "up"), down) < m.index(("door_f", "open"))
     assert m.index(("door_b", "open")) < m.index(("door_f", "closed"))
-    assert m[-1] == ("stop", "up")
+    assert ("stop", "up") in m[-5:]                    # everything put back, stop bar included
 
 
 def test_mk2_pusher_sweeps_steadily_to_the_side_and_back(machine, mk2, monkeypatch):
