@@ -137,8 +137,9 @@
   </section>
   <section class="panel" id="sortPanel">
     <h2>Start sorting</h2>
-    <p class="err" id="sortNote" hidden>Sorting and tuning runs don't drive Mk2 yet. Set its angles above and try
-      the Bin buttons first.</p>
+    <p class="err" id="sortNote" hidden>On Mk2, set every servo's angles above and try each Bin button with a card
+      before you start a run. The Bins page rules use bins 1 to 3 (bin 4 isn't in the rules yet). Tuning runs are
+      for the first machine only.</p>
     <p class="sub">The machine on its own: it feeds a card, the scanner recognizes it, it is saved to the collection
       and dropped into the bin your <a href="/bins">Bins</a> rules give it, then the next one, until the hopper is empty
       or you press Stop. The stop pins only drop for a card that is recognized: one the scanner isn't sure of, or
@@ -225,7 +226,7 @@ function lockOut() {
   for (const el of moving) el.disabled = !!run;
   for (const el of [...document.querySelectorAll("[data-sort]"), $("feedOne")]) el.disabled = !!run || manualBusy;
   const mk2 = last && last.model === "mk2";
-  $("sortStart").disabled = !!run || manualBusy || mk2;
+  $("sortStart").disabled = !!run || manualBusy;
   $("tuneStart").disabled = !!run || manualBusy || mk2;
   for (const el of document.querySelectorAll("[data-model]")) el.disabled = !!run;
   $("runNote").hidden = !run;
@@ -278,6 +279,9 @@ function showModel(s) {
   }
   $("sortNote").hidden = !mk2;
 }
+// Servos strain against their own stops at 0 and 180 (a level 1 pusher wore out there, 2026-11-24):
+// saving outside this range warns, and the slider shows the safe band.
+const SAFE = [10, 170];
 function buildParts(s) {
   const box = $("parts");
   box.innerHTML = "";
@@ -288,9 +292,16 @@ function buildParts(s) {
       <div class="row" id="pos-${part}"></div>
       <div class="slider"><input type="range" min="0" max="180" step="1" value="90" id="r-${part}" aria-label="${NAMES[part]} angle">
       <output id="o-${part}">90</output></div>
+      <p class="err" id="w-${part}" hidden></p>
       <div class="row"><span class="sub">Save the slider's angle as:</span>${Object.keys(p.positions).map((pos) =>
         `<button class="btn ghost small" data-save="${part}" data-pos="${pos}">${pos}</button>`).join("")}</div>`;
     box.append(el);
+    const atEnd = Object.entries(p.positions).filter(([, a]) => a < SAFE[0] || a > SAFE[1]);
+    if (atEnd.length) {
+      const w = $("w-" + part); w.hidden = false;
+      w.textContent = `Saved at the servo's end: ${atEnd.map(([pos, a]) => `${pos} ${a}°`).join(", ")}. ` +
+        `It strains and wears out there: put the horn back on so these land between ${SAFE[0]} and ${SAFE[1]}, then save them again.`;
+    }
     const range = el.querySelector("input");
     // The servo follows while you drag: at most one move in flight, always ending on where you let go.
     let busy = false, pending = null;
@@ -300,7 +311,13 @@ function buildParts(s) {
       try { await call("/api/machine/move", { channel: p.channel, angle }); } finally { busy = false; }
       if (pending != null) { const next = pending; pending = null; send(next); }
     };
-    range.addEventListener("input", () => { $("o-" + part).value = range.value; send(+range.value); });
+    range.addEventListener("input", () => {
+      $("o-" + part).value = range.value; send(+range.value);
+      const w = $("w-" + part);
+      if (+range.value < SAFE[0] || +range.value > SAFE[1]) {
+        w.hidden = false; w.textContent = `Near the servo's end (keep it ${SAFE[0]}-${SAFE[1]}): it buzzes and wears out there.`;
+      }
+    });
     range.addEventListener("change", () => send(+range.value));
   }
 }
@@ -313,7 +330,9 @@ function build(s) {
     if (sv) {
       const part = sv.dataset.save, angle = +$("r-" + part).value;
       if (await call("/api/machine/save", { part, position: sv.dataset.pos, angle }))
-        toast(`Saved: ${NAMES[part] || part} "${sv.dataset.pos}" is now ${angle}°`);
+        toast(angle < SAFE[0] || angle > SAFE[1]
+          ? `Saved ${angle}°, but that's at the servo's end: it strains and wears out there. Put the horn back on so this position is between ${SAFE[0]} and ${SAFE[1]}.`
+          : `Saved: ${NAMES[part] || part} "${sv.dataset.pos}" is now ${angle}°`);
     }
   });
   $("centreAll").onclick = async () => {
