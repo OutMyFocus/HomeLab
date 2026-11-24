@@ -174,6 +174,9 @@ SERVOS_MK2 = {
     "door_b": (3, {"closed": 135, "open": 45}),               # back trapdoor
     "push2":  (4, {"centre": 90, "left": 50, "right": 130}),  # level 2 pusher: bins 3 (left) and 4 (right)
 }
+# The machine the app drives when nothing else was saved. Nic only has the Sorter Mk2 now, so the
+# Machine page no longer offers a switch; the first machine's code stays for its tests.
+MACHINE_MODEL = "mk2"
 # Home on Mk2: doors shut, pushers to the middle, then the stop bar up (MK2.md).
 # Stop bar up FIRST: down, it rests on the pushers (machine.py lifts it before any pusher move anyway).
 SERVO_HOME_MK2 = {"stop": "up", "door_f": "closed", "door_b": "closed", "push1": "centre", "push2": "centre"}

@@ -44,7 +44,10 @@ MODELS = {"mk1": "First machine", "mk2": "Sorter Mk2"}
 
 
 def model_of(saved: dict) -> str:
-    return saved.get("model") if saved.get("model") in MODELS else "mk1"
+    """The machine this is: what was saved, else config.MACHINE_MODEL (Mk2; Nic only has that one now)."""
+    if saved.get("model") in MODELS:
+        return saved["model"]
+    return getattr(config, "MACHINE_MODEL", "mk2")
 
 
 def parts_for(model: str) -> dict:

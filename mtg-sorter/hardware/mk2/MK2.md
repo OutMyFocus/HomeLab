@@ -151,7 +151,7 @@ Servo plugs: brown is GND, orange is 5 V, yellow is signal. Every servo reaches 
 
 ## Software changes Mk2 needs
 
-**Done:** the Machine page has a **Which machine** switch. On **Sorter Mk2** it shows the five servos below with sliders and saveable angles (kept apart from Mk1's), Home goes stop bar up, doors shut, pushers centre (the stop bar always goes up before any pusher moves, because down it rests on the pushers), and **Bin 1-4** feed one card and run the sort sequence below. Its starting angles are guesses near 90, so set each one before trusting Home; going home at startup stays off for Mk2 until you switch it on. On Mk2 the app also closes the power relay (GPIO22) as it starts, and when you switch to Mk2. Sorting and tuning runs and the bin sensors are still to come.
+**Done:** the Machine page drives the Sorter Mk2 (the app starts on it; the old first-machine switch is gone). It shows the five servos below with sliders and saveable angles, Home goes stop bar up, doors shut, pushers centre (the stop bar always goes up before any pusher moves, because down it rests on the pushers), and **Bin 1-4** feed one card and run the sort sequence below. Its starting angles are guesses near 90, so set each one before trusting Home; going home at startup stays off for Mk2 until you switch it on. On Mk2 the app also closes the power relay (GPIO22) as it starts. Sorting and tuning runs and the bin sensors are still to come.
 
 The rest of the plan:
 
