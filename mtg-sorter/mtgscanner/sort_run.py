@@ -125,7 +125,7 @@ class SortRun:
                 tally[str(c["bin"])] = tally.get(str(c["bin"]), 0) + 1
         s["tally"] = [{"bin": int(b), "label": names.get(b, f"Bin {b}"), "cards": n} for b, n in sorted(tally.items())]
         s["counts"] = {k: sum(1 for c in cards if c.get("status") == k)
-                       for k in ("saved", "unsure", "unknown", "none", "stuck", "double")}
+                       for k in ("saved", "unsure", "unknown", "none", "stuck", "double", "over", "crowded")}
         want = sort_rules.wanted_counts(rules)
         s["wanted"] = {"bin": rules["wanted"]["bin"], "cards": sum(want.values()),
                        "found": sum(min(self.taken.get(k, 0), q) for k, q in want.items()),
@@ -175,12 +175,18 @@ class SortRun:
                 card.update({"result": out["result"], "dropped": out.get("dropped"),
                              "drop_tries": out.get("drop_tries", 0), "left_share": out.get("left_share"),
                              "seconds": round(time.monotonic() - t0, 1)})
-                if out["result"] in ("none", "stuck"):
+                if out["result"] in ("none", "stuck") or (out["result"] in ("over", "crowded") and not out.get("drop_tries")):
                     card["status"], card["bin"] = out["result"], None
                 with self.lock:
                     self.state["cards"].append(card)
                 if out["result"] == "stuck":
                     reason = "a card is held in the slot: open the gate a little and take the card off the bed"
+                    return
+                if card.get("status") == "over":
+                    reason = "a card went over the stop bar: take it off and start again"
+                    return
+                if card.get("status") == "crowded":
+                    reason = "the camera saw more than one flat card (a hand, two cards or a card standing up): clear the bed"
                     return
                 nothing_in_a_row = nothing_in_a_row + 1 if out["result"] == "none" else 0
                 if out.get("dropped") is False:

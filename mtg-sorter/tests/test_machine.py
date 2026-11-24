@@ -1304,3 +1304,45 @@ def test_mk2_sort_run_rests_its_own_parts_and_knows_bin_4(machine, mk2):
     assert SortRun.real_bin(4) == config.SORT_FALLBACK_BIN      # the first machine has no bin 4
     for part, position in run._resting():
         machine.move(part, position)                           # every one is a real Mk2 part
+
+
+# --- Checks before the drop and the test run (2026-11-24) ---------------------------
+
+def test_sort_one_does_not_drop_a_card_that_went_over_the_stop(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=2, card_stays="over"))
+    out = client.post("/api/machine/sort_one", json={"bin": 1}).get_json()
+    assert out["result"] == "over" and out["drop_tries"] == 0, out
+    assert "over the stop bar" in out["message"]
+
+
+def test_sort_one_stops_when_much_more_than_one_card_shows(watched, quick_sort, monkeypatch):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    real = feed_watch.FeedWatcher.bed_check
+    monkeypatch.setattr(feed_watch.FeedWatcher, "bed_check",
+                        lambda self, e, z: (setattr(self, "_card_shares", [0.01, 0.01, 0.01]), real(self, e, z))[1])
+    out = client.post("/api/machine/sort_one", json={"bin": 1}).get_json()
+    assert out["result"] == "crowded" and out["drop_tries"] == 0, out
+    assert "more than one" in out["message"]
+
+
+def test_two_empty_feeds_in_a_row_say_reload(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=None))
+    client.post("/api/machine/sort_one", json={"bin": 1})
+    out = client.post("/api/machine/sort_one", json={"bin": 1}).get_json()
+    assert out["result"] == "none" and "Reload the stack" in out["message"], out
+
+
+def test_test_run_feeds_and_drops_round_the_bins_and_stops_at_a_problem(watched, quick_sort):
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=None))
+    assert client.post("/api/machine/test_run", json={"count": 3, "bins": [1, 2]}).status_code == 200
+    for _ in range(200):
+        t = client.get("/api/machine/test_run").get_json()
+        if not t["running"]:
+            break
+        time.sleep(0.05)
+    assert t["rows"] and t["rows"][0]["ok"] is False and t["rows"][0]["bin"] == 1
+    assert "No card came out" in t["reason"] or "twice" in t["reason"]
