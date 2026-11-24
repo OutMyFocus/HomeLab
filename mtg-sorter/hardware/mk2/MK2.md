@@ -160,7 +160,7 @@ The rest of the plan:
   1. Stop bar down.
   2. The card lands on level 1 (about 0.3 s).
   3. **Stop bar up again before anything else moves.** When it's down it hangs over level 1's pusher, so the pusher must stay at the centre until it's back up.
-  4. For bin 1 or 2: push1 goes to that side and back to centre.
+  4. For bin 1 or 2: push1 goes to that side and back to centre, slowly (config.MK2_PUSH_SPEED, 45° a second), so the card is eased off rather than shoved into a jam.
   5. For bin 3 or 4: both doors open, the card drops (about 0.4 s), the doors close, then push2 goes to that side and back.
 - **Pusher speed:** about 120 mm/s, so about 0.6 s per stroke. The scotch-yoke lever already slows the paddle at both ends of its travel. Move the servo at a steady rate through ±80°.
 - **Relay:** GPIO22 high at start, low at shutdown. Home moves the stop bar up, the doors shut and the pushers to centre.
