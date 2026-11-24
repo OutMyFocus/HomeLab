@@ -1148,12 +1148,24 @@ def test_mk2_side_bin_drops_the_stop_bar_raises_it_then_pushes(client, logged, m
     assert logged._kit.servo[ch].angle in (None, pos["centre"])
 
 
+def test_mk2_drop_shuts_the_doors_before_the_card_comes_down(client, logged, mk2):
+    # Nic, 2026-11-24: the doors had let go (hold limit), hung loose, and a bin 1 card fell
+    # straight through to level 2. Every drop shuts both doors before the stop bar drops.
+    for bin_no in (1, 3):
+        logged._moves.clear()
+        client.post("/api/machine/drop", json={"bin": bin_no})
+        m = moves(logged)
+        down = m.index(("stop", "down"))
+        assert ("door_f", "closed") in m[:down] and ("door_b", "closed") in m[:down]
+
+
 def test_mk2_level_2_bin_opens_both_doors_after_the_stop_bar_is_back_up(client, logged, mk2):
     client.post("/api/machine/drop", json={"bin": 3})
     m = moves(logged)
     assert m.index(("stop", "up")) < m.index(("door_f", "open"))
-    assert m.index(("door_b", "open")) < m.index(("door_f", "closed"))
-    assert ("stop", "up") in m[m.index(("door_f", "closed")) - 3:]
+    opened = m.index(("door_b", "open"))
+    shut = m.index(("door_f", "closed"), opened)                       # shut again after opening
+    assert ("stop", "up") in m[shut - 3:]
 
 
 def test_mk2_pusher_sweeps_steadily_to_the_side_and_back(machine, mk2, monkeypatch):

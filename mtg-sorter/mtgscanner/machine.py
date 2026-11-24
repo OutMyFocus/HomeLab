@@ -577,6 +577,13 @@ class Machine:
         try:
             self.move("push1", "centre")
             self.move("push2", "centre")
+            # The doors let go after SERVO_HOLD_LIMIT with no new move and then hang loose:
+            # a card dropped onto them falls straight through to level 2 (Nic, 2026-11-24).
+            # Shut them, and give them time to get there, before the card comes down.
+            for door in ("door_f", "door_b"):
+                if door in servos:
+                    self.move(door, "closed")
+            time.sleep(float(getattr(config, "MK2_DOORS_SECONDS", 0.8)))
             self.move("stop", "down")
             start = time.monotonic()
             least = start + float(getattr(config, "SORT_PINS_MIN_SECONDS", 0.5))
