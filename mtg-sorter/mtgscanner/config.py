@@ -195,6 +195,14 @@ MK2_STOP_SECONDS = 0.6        # stop bar down this long at most (the card lands 
 # and land crooked (Nic, 2026-11-24).
 MK2_STOP_MAX_SECONDS = 2.0
 MK2_STOP_AFTER_GONE = 0.2
+# Mk2's bin sensors (MK2.md, the wiring table): under each bin a hall sensor (A3144: pulls its
+# pin low while the bin's magnet sits over it, so the bin is in place) and behind it a
+# TCRT5000 module (its digital out goes low when it sees cards close in front of it, so the
+# bin is full). With them on, a drop into a bin that's out or full is refused and says so,
+# and /api/machine shows each bin. Off until they're wired, since an unwired pin reads anything.
+BIN_SENSORS = False
+BIN_SEATED_PINS = {1: 5, 2: 6, 3: 13, 4: 26}
+BIN_FULL_PINS = {1: 16, 2: 20, 3: 21, 4: 12}
 MK2_DOORS_SECONDS = 0.8       # trapdoors open this long (the card drops in about 0.4 s)
 # Pushers move slowly so a card is eased off the floor, not shoved into a jam (Nic, 2026-11-24):
 # 45 degrees a second is about 40 mm/s at the paddle (it was 130). Every pusher move goes at

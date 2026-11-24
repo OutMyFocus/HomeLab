@@ -1412,3 +1412,40 @@ def test_machine_state_says_when_it_is_busy_or_was_just_used(client, machine):
     client.post("/api/machine/feed", json={"seconds": 0.05})
     state = client.get("/api/machine").get_json()
     assert state["idle_seconds"] is not None and state["idle_seconds"] < 5
+
+
+class FakeInput:
+    """gpiozero.DigitalInputDevice: is_active is True while the pin is pulled low."""
+    low = set()
+
+    def __init__(self, pin, pull_up=True):
+        self.pin = pin
+
+    @property
+    def is_active(self):
+        return self.pin in FakeInput.low
+
+
+def test_mk2_bin_sensors_refuse_a_bin_that_is_out_or_full(client, machine, monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, "gpiozero", types.SimpleNamespace(OutputDevice=FakeRelay, DigitalInputDevice=FakeInput))
+    monkeypatch.setattr(config, "MK2_STOP_SECONDS", 0.01)
+    monkeypatch.setattr(config, "MK2_DOORS_SECONDS", 0.01)
+    monkeypatch.setattr(config, "MK2_PUSH_HOLD", 0.01)
+    monkeypatch.setattr(config, "MK2_PUSH_SPEED", 2000)
+    monkeypatch.setattr(config, "FEED_PINS_UP_SECONDS", 0.01)
+    state = client.post("/api/machine/save", json={"model": "mk2"}).get_json()
+    machine._kit = FakeKit()          # closing the relay made it look for the board again
+    assert state["bin_sensors"] is None                 # off until they're wired
+    monkeypatch.setattr(config, "BIN_SENSORS", True)
+    FakeInput.low = {config.BIN_SEATED_PINS[n] for n in (1, 2, 3)} | {config.BIN_FULL_PINS[2]}
+    state = client.get("/api/machine").get_json()
+    assert state["bin_sensors"]["1"] == {"seated": True, "full": False}
+    assert state["bin_sensors"]["2"]["full"] is True and state["bin_sensors"]["4"]["seated"] is False
+    r = client.post("/api/machine/drop", json={"bin": 2})
+    assert r.status_code == 503 and "full" in r.get_json()["error"]
+    r = client.post("/api/machine/drop", json={"bin": 4})
+    assert r.status_code == 503 and "in place" in r.get_json()["error"]
+    r = client.post("/api/machine/drop", json={"bin": 1})
+    assert r.status_code == 200, r.get_json()

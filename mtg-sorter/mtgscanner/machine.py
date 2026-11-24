@@ -114,6 +114,8 @@ class Machine:
         self._relay = None        # Mk2's power relay, once switched on
         self.relay_error = None
         self.last_active = None   # when a servo or the feeder was last moved (time.monotonic())
+        self._bin_inputs = None   # Mk2's bin sensors: {bin: (seated input, full input)}, once set up
+        self.bin_sensor_error = None
 
     # --- connecting ---------------------------------------------------------
 
@@ -156,6 +158,35 @@ class Machine:
             # The servo board was without power until now: it wakes up asleep, so set it up again.
             self._kit = None
         return True
+
+    def bin_sensors(self) -> dict | None:
+        """Mk2 with config.BIN_SENSORS on: {bin: {"seated": bool, "full": bool}} from each bin's
+        hall sensor and IR module (both pull their pin low when they see something). None when
+        they're off, on the first machine, or can't be read (bin_sensor_error says why)."""
+        if self.model() != "mk2" or not getattr(config, "BIN_SENSORS", False):
+            return None
+        if self._bin_inputs is None:
+            try:
+                from gpiozero import DigitalInputDevice
+                self._bin_inputs = {n: (DigitalInputDevice(config.BIN_SEATED_PINS[n], pull_up=True),
+                                        DigitalInputDevice(config.BIN_FULL_PINS[n], pull_up=True))
+                                    for n in config.BIN_SEATED_PINS}
+                self.bin_sensor_error = None
+            except Exception as e:   # not a Pi, or a pin is taken
+                self.bin_sensor_error = f"Couldn't read the bin sensors ({e})."
+                return None
+        return {n: {"seated": bool(seated.is_active), "full": bool(full.is_active)}
+                for n, (seated, full) in self._bin_inputs.items()}
+
+    def check_bin_ready(self, bin_no: int):
+        """Raises RuntimeError when the bin sensors say this bin is out or full."""
+        sensors = self.bin_sensors()
+        if not sensors or int(bin_no) not in sensors:
+            return
+        if not sensors[int(bin_no)]["seated"]:
+            raise RuntimeError(f"Bin {bin_no} isn't in place: slide it all the way in until it clicks.")
+        if sensors[int(bin_no)]["full"]:
+            raise RuntimeError(f"Bin {bin_no} is full: empty it, then try again.")
 
     # --- settings: config.py, with what was saved on the page on top ---------
 
@@ -575,6 +606,7 @@ class Machine:
         for part in ("stop", pusher) + (("door_f", "door_b") if pusher == "push2" else ()):
             if part not in servos:
                 raise ValueError(f"Mk2 has no {part}")
+        self.check_bin_ready(int(bin_no))
         # Watched: down until the card has gone (then a moment more for its tail), at most
         # MK2_STOP_MAX_SECONDS. Unwatched: the fixed MK2_STOP_SECONDS.
         stop_seconds = float(getattr(config, "MK2_STOP_MAX_SECONDS" if card_gone is not None else "MK2_STOP_SECONDS", 0.6))
@@ -744,6 +776,8 @@ class Machine:
                 "bins": list(self.bins()),
                 # For deploy/update*.sh: an update doesn't restart the app under a run or a
                 # card being fed, nor while someone is testing the machine.
+                "bin_sensors": self.bin_sensors(),
+                "bin_sensor_error": self.bin_sensor_error,
                 "busy": self.run,
                 "idle_seconds": (None if self.last_active is None
                                  else round(time.monotonic() - self.last_active)),
