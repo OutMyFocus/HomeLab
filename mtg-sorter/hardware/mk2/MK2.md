@@ -120,7 +120,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
                                     └─ Wago GND ─ everything's ground (Pi, PCA, DRV, strip, sensors)
 ```
 
-- **Power button.** It's a 16 mm momentary button on Pi 5's **J2** pads, which means soldering a 2-pin header onto J2. That is the only soldering in Mk2. Press it to boot, press it to shut down cleanly, and hold it to force off.
+- **Power button.** It's a 16 mm momentary button with no soldering: one switch tab goes to GPIO23 (pin 16), the other to GND (pin 30), on push-on jumper wires. Add `dtoverlay=gpio-shutdown,gpio_pin=23,active_low=1,gpio_pull=up` to `/boot/firmware/config.txt` and reboot once. A press then shuts the Pi down cleanly. On a Pi 5 a GPIO pin can't power it back on, so turn it on again by unplugging and replugging the brick, or with the Pi's own power button. (The Pi 5's J2 pads would also wake it, but they need a soldered header and are very small.)
 - **Relay.** It's driven by **GPIO22**, with the module's trigger jumper on HIGH. The app closes it once it has started and opens it when the Pi shuts down. Until then the servos, motor and lights have no power, so nothing twitches at boot.
 - **The Pi 5 on a non-PD supply.** Run `sudo rpi-eeprom-config --edit` and add `PSU_MAX_CURRENT=5000`. That stops the "power supply not capable of 5A" warning, and the brick does supply it.
 - **Never use 12 V.** Mk2 has no regulator.
@@ -145,13 +145,13 @@ The heat comes from the Pi 5 (with its Active Cooler) and the relay in the elect
 | Bin seated (hall A3144), bins 1 to 4 | GPIO5, 6, 13, 26 | new, pull-ups on |
 | Bin full (TCRT5000), bins 1 to 4 | GPIO16, 20, 21, 12 | new |
 | Beam (spare IR input) | GPIO24 | optional |
-| Power button | Pi 5 J2 | new |
+| Power button | GPIO23 (pin 16) + GND (pin 30) | new, gpio-shutdown overlay |
 
 Servo plugs: brown is GND, orange is 5 V, yellow is signal. Every servo reaches the PCA9685 through a 300 mm extension in the wall trunk.
 
 ## Software changes Mk2 needs
 
-**Done:** the Machine page has a **Which machine** switch. On **Sorter Mk2** it shows the five servos below with sliders and saveable angles (kept apart from Mk1's), Home goes doors shut, pushers centre, stop bar up, and **Bin 1-4** feed one card and run the sort sequence below. Its starting angles are guesses near 90, so set each one before trusting Home; going home at startup stays off for Mk2 until you switch it on. On Mk2 the app also closes the power relay (GPIO22) as it starts, and when you switch to Mk2. Sorting and tuning runs and the bin sensors are still to come.
+**Done:** the Machine page has a **Which machine** switch. On **Sorter Mk2** it shows the five servos below with sliders and saveable angles (kept apart from Mk1's), Home goes stop bar up, doors shut, pushers centre (the stop bar always goes up before any pusher moves, because down it rests on the pushers), and **Bin 1-4** feed one card and run the sort sequence below. Its starting angles are guesses near 90, so set each one before trusting Home; going home at startup stays off for Mk2 until you switch it on. On Mk2 the app also closes the power relay (GPIO22) as it starts, and when you switch to Mk2. Sorting and tuning runs and the bin sensors are still to come.
 
 The rest of the plan:
 
@@ -163,7 +163,7 @@ The rest of the plan:
   4. For bin 1 or 2: push1 goes to that side and back to centre.
   5. For bin 3 or 4: both doors open, the card drops (about 0.4 s), the doors close, then push2 goes to that side and back.
 - **Pusher speed:** about 120 mm/s, so about 0.6 s per stroke. The scotch-yoke lever already slows the paddle at both ends of its travel. Move the servo at a steady rate through ±80°.
-- **Relay:** GPIO22 high at start, low at shutdown. Home moves the doors shut, the pushers to centre and the stop bar up.
+- **Relay:** GPIO22 high at start, low at shutdown. Home moves the stop bar up, the doors shut and the pushers to centre.
 - **Feeder:** the 60 RPM motor feeds the card at about 90 mm/s, so start with `FEEDER_SECONDS` around 1.0 and let the camera's landing check stop it, as now.
 - **Bin sensors:** pause a run if a bin is pulled out (its hall sensor) or full (its IR sensor), and say which on the Run page.
 

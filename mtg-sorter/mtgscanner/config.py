@@ -175,7 +175,9 @@ SERVOS_MK2 = {
     "push2":  (4, {"centre": 90, "left": 50, "right": 130}),  # level 2 pusher: bins 3 (left) and 4 (right)
 }
 # Home on Mk2: doors shut, pushers to the middle, then the stop bar up (MK2.md).
-SERVO_HOME_MK2 = {"door_f": "closed", "door_b": "closed", "push1": "centre", "push2": "centre", "stop": "up"}
+# Stop bar up FIRST: down, it rests on the pushers (machine.py lifts it before any pusher move anyway).
+SERVO_HOME_MK2 = {"stop": "up", "door_f": "closed", "door_b": "closed", "push1": "centre", "push2": "centre"}
+MK2_PUSHERS = ("push1", "push2")
 SERVO_KEEP_HOLDING_MK2 = ("stop", "door_f", "door_b")
 # Mk2 doesn't go home at startup until that's switched on for it: its angles start as guesses,
 # and a guessed "closed" could push a door into the frame.

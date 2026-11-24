@@ -1106,13 +1106,34 @@ def test_switching_machines_lets_every_servo_go(client, machine):
     assert machine._kit.servo[0].angle is None
 
 
-def test_mk2_home_shuts_the_doors_centres_the_pushers_then_raises_the_stop_bar(client, logged, mk2):
+def test_mk2_home_raises_the_stop_bar_shuts_the_doors_and_centres_the_pushers(client, logged, mk2):
     assert client.post("/api/machine/home", json={}).status_code == 200
     homed = [ch for ch in range(5) if logged.angles.get(ch) is not None]
     assert homed == [0, 1, 2, 3, 4]
     parts = config.SERVOS_MK2
     assert logged.angles[parts["stop"][0]] == parts["stop"][1]["up"]
     assert logged.angles[parts["door_f"][0]] == parts["door_f"][1]["closed"]
+
+
+def test_mk2_stop_bar_goes_up_before_any_pusher_moves(client, machine, mk2):
+    """Down, the stop bar rests on the pushers: a pusher move (test button, slider, Home)
+    sends the stop bar up first."""
+    stop_ch, stop = config.SERVOS_MK2["stop"]
+    push_ch, push = config.SERVOS_MK2["push1"]
+    sent = []
+    real = machine.set_angle
+    machine.set_angle = lambda ch, a: real(ch, a) or sent.append((ch, a))    # in the order they finish
+    client.post("/api/machine/move", json={"part": "stop", "position": "down"})
+    assert machine.angles[stop_ch] == stop["down"]
+    sent.clear()
+    assert client.post("/api/machine/move", json={"part": "push1", "position": "left"}).status_code == 200
+    assert machine.angles[stop_ch] == stop["up"] and machine.angles[push_ch] == push["left"]
+    order = [ch for ch, _ in sent]
+    assert order.index(stop_ch) < order.index(push_ch)
+    # with the stop bar already up, a pusher move doesn't touch it
+    sent.clear()
+    client.post("/api/machine/move", json={"channel": push_ch, "angle": push["right"]})
+    assert stop_ch not in [ch for ch, _ in sent]
 
 
 def test_mk2_side_bin_drops_the_stop_bar_raises_it_then_pushes(client, logged, mk2):
@@ -1132,7 +1153,7 @@ def test_mk2_level_2_bin_opens_both_doors_after_the_stop_bar_is_back_up(client, 
     m = moves(logged)
     assert m.index(("stop", "up")) < m.index(("door_f", "open"))
     assert m.index(("door_b", "open")) < m.index(("door_f", "closed"))
-    assert m[-1] == ("stop", "up")
+    assert ("stop", "up") in m[m.index(("door_f", "closed")) - 3:]
 
 
 def test_mk2_pusher_sweeps_steadily_to_the_side_and_back(machine, mk2, monkeypatch):
