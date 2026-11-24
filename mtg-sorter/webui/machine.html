@@ -38,12 +38,28 @@
     .changed { color: var(--accent); }
     label.inline { display: flex; gap: 8px; align-items: center; }
     label.inline input[type=number] { width: 5.5em; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); }
+    /* Bin map: a front view of where each bin is and how a card gets there. */
+    .binmap { margin: 0; display: grid; gap: 8px; }
+    .binmap svg { width: 100%; max-width: 560px; height: auto; display: block; }
+    .binmap .wall { fill: none; stroke: var(--line-strong); stroke-width: 2; }
+    .binmap .floor { fill: var(--raised); stroke: var(--line-strong); stroke-width: 1.5; }
+    .binmap .door { fill: none; stroke: var(--line-strong); stroke-width: 2; stroke-dasharray: 5 4; }
+    .binmap .paddle { fill: var(--muted); }
+    .binmap .path { fill: none; stroke: var(--muted); stroke-width: 2; marker-end: url(#bm-arrow); }
+    .binmap .bin path { fill: var(--panel-solid); stroke: var(--line-strong); stroke-width: 2; }
+    .binmap .bin text { fill: var(--text); font: 700 20px var(--font); }
+    .binmap .lbl { fill: var(--muted); font: 500 13px var(--font); }
+    .binmap .bin.hl path { stroke: var(--accent); fill: color-mix(in srgb, var(--accent) 18%, var(--panel-solid)); }
+    .binmap .bin.hl text { fill: var(--accent); }
+    .binmap ul { margin: 0; padding-left: 1.1em; display: grid; gap: 2px; }
     #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--panel-solid);
              border: 1px solid var(--line-strong); padding: 10px 16px; border-radius: 12px; max-width: calc(100% - 32px); }
   </style>
 </head>
 <body>
 <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+  <marker id="bm-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0 0 L10 5 L0 10 Z" fill="var(--muted)" /></marker>
   <symbol id="i-logo" viewBox="0 0 24 24">
       <rect x="3.6" y="4.2" width="9" height="13" rx="1.9" transform="rotate(-14 8.1 10.7)" fill="currentColor" opacity=".38" />
       <rect x="6.2" y="4.6" width="9" height="13" rx="1.9" transform="rotate(-4 10.7 11.1)" fill="currentColor" opacity=".62" />
@@ -130,6 +146,68 @@
       card slides onto the tray. It waits until the camera sees the card leave the stop teeth, or the pins time at
       most. Then it opens the trapdoors (bin 2), or raises the pins and tilts and shakes the tray to that side
       (bins 1 and 3), and puts everything back. If the camera still sees the card on the bed, it drops it once more.</p>
+    <figure class="binmap" id="binMapMk2" hidden aria-label="Mk2 bins, seen from the front">
+      <svg viewBox="0 0 560 300" role="img">
+        <title>Mk2 bins from the front: bins 1 and 2 beside level 1, bins 3 and 4 beside level 2</title>
+        <rect class="floor" x="225" y="8" width="110" height="30" rx="6" />
+        <text class="lbl" x="280" y="28" text-anchor="middle">feeder</text>
+        <rect class="floor" x="205" y="54" width="150" height="10" rx="3" />
+        <rect class="paddle" x="205" y="64" width="150" height="5" />
+        <text class="lbl" x="365" y="64">scan bed + stop bar</text>
+        <path class="path" d="M280 38 V50" />
+        <path class="path" d="M280 72 V96" />
+        <!-- level 1 -->
+        <rect class="paddle" x="274" y="104" width="12" height="30" rx="2" />
+        <path class="path" d="M266 116 H214" /><path class="path" d="M294 116 H346" />
+        <path class="floor" d="M180 134 H250 V144 H180 Z M310 134 H380 V144 H310 Z" />
+        <path class="door" d="M250 139 H310" />
+        <text class="lbl" x="280" y="160" text-anchor="middle">level 1 · trapdoors</text>
+        <path class="path" d="M178 128 H158" /><path class="path" d="M382 128 H402" />
+        <path class="path" d="M280 166 V196" />
+        <!-- level 2 -->
+        <rect class="paddle" x="274" y="204" width="12" height="30" rx="2" />
+        <path class="path" d="M266 216 H214" /><path class="path" d="M294 216 H346" />
+        <rect class="floor" x="180" y="234" width="200" height="10" rx="3" />
+        <text class="lbl" x="280" y="262" text-anchor="middle">level 2</text>
+        <path class="path" d="M178 228 H158" /><path class="path" d="M382 228 H402" />
+        <g class="bin" data-bin="1"><path d="M30 92 V170 H150 V92" /><text x="90" y="140" text-anchor="middle">Bin 1</text></g>
+        <g class="bin" data-bin="2"><path d="M410 92 V170 H530 V92" /><text x="470" y="140" text-anchor="middle">Bin 2</text></g>
+        <g class="bin" data-bin="3"><path d="M30 192 V270 H150 V192" /><text x="90" y="240" text-anchor="middle">Bin 3</text></g>
+        <g class="bin" data-bin="4"><path d="M410 192 V270 H530 V192" /><text x="470" y="240" text-anchor="middle">Bin 4</text></g>
+        <text class="lbl" x="280" y="290" text-anchor="middle">seen from the front</text>
+      </svg>
+      <ul class="sub">
+        <li><b>Bin 1</b>: stop bar drops, level 1's pusher slides the card left.</li>
+        <li><b>Bin 2</b>: stop bar drops, level 1's pusher slides the card right.</li>
+        <li><b>Bin 3</b>: stop bar drops, the trapdoors open, the card falls to level 2, its pusher slides it left.</li>
+        <li><b>Bin 4</b>: the same as bin 3, but level 2's pusher slides it right.</li>
+      </ul>
+    </figure>
+    <figure class="binmap" id="binMapMk1" hidden aria-label="First machine bins, seen from the front">
+      <svg viewBox="0 0 560 230" role="img">
+        <title>First machine bins from the front: bin 1 left, bin 2 under the trapdoors, bin 3 right</title>
+        <rect class="floor" x="225" y="8" width="110" height="30" rx="6" />
+        <text class="lbl" x="280" y="28" text-anchor="middle">feeder</text>
+        <rect class="floor" x="205" y="54" width="150" height="10" rx="3" />
+        <rect class="paddle" x="205" y="64" width="150" height="5" />
+        <text class="lbl" x="365" y="64">scan bed + stop pins</text>
+        <path class="path" d="M280 38 V50" />
+        <path class="path" d="M280 72 V96" />
+        <path class="floor" d="M170 104 H250 V114 H170 Z M310 104 H390 V114 H310 Z" />
+        <path class="door" d="M250 109 H310" />
+        <text class="lbl" x="280" y="132" text-anchor="middle">tray · trapdoors</text>
+        <path class="path" d="M168 109 L152 124" /><path class="path" d="M392 109 L408 124" />
+        <path class="path" d="M280 138 V156" />
+        <g class="bin" data-bin="1"><path d="M30 104 V190 H150 V104" /><text x="90" y="156" text-anchor="middle">Bin 1</text></g>
+        <g class="bin" data-bin="2"><path d="M220 162 V220 H340 V162" /><text x="280" y="198" text-anchor="middle">Bin 2</text></g>
+        <g class="bin" data-bin="3"><path d="M410 104 V190 H530 V104" /><text x="470" y="156" text-anchor="middle">Bin 3</text></g>
+      </svg>
+      <ul class="sub">
+        <li><b>Bin 1</b>: the pins drop, the card slides onto the tray, the tray tilts left.</li>
+        <li><b>Bin 2</b>: the pins drop, the trapdoors open and the card falls straight down.</li>
+        <li><b>Bin 3</b>: the pins drop, the tray tilts right.</li>
+      </ul>
+    </figure>
     <div class="row">
       <label class="inline">Landing zone <input id="feedZone" size="22" title="x0, y0, x1, y1 as shares of the camera picture: a band across the bed just above the stop teeth"></label>
       <button class="btn ghost" id="feedZoneSave">Save zone</button>
@@ -267,6 +345,7 @@ function showModel(s) {
   $("modelRow").hidden = !s.models || !Object.keys(s.models).length;
   for (const b of document.querySelectorAll("[data-model]")) b.classList.toggle("primary", b.dataset.model === s.model);
   $("mk2Note").hidden = !mk2; $("binMk2").hidden = !mk2; $("binMk1").hidden = mk2;
+  $("binMapMk2").hidden = !mk2; $("binMapMk1").hidden = mk2;
   const bins = (s.bins && s.bins.length ? s.bins : [1, 2, 3]).join();
   const row = $("binRow");
   if (row.dataset.bins !== bins) {
@@ -279,6 +358,14 @@ function showModel(s) {
   }
   $("sortNote").hidden = !mk2;
 }
+// Bin map: pointing at a Bin button lights that bin up in the picture.
+function lightBin(n) {
+  for (const g of document.querySelectorAll(".binmap .bin")) g.classList.toggle("hl", g.dataset.bin === n);
+}
+for (const type of ["mouseover", "focusin"]) {
+  $("binRow").addEventListener(type, (e) => { const b = e.target.closest("[data-sort]"); lightBin(b ? b.dataset.sort : null); });
+}
+for (const type of ["mouseleave", "focusout"]) $("binRow").addEventListener(type, () => lightBin(null));
 // Servos strain against their own stops at 0 and 180 (a level 1 pusher wore out there, 2026-11-24):
 // saving outside this range warns, and the slider shows the safe band.
 const SAFE = [10, 170];
