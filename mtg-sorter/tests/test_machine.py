@@ -1167,6 +1167,35 @@ def test_mk2_pusher_sweeps_steadily_to_the_side_and_back(machine, mk2, monkeypat
     assert all(abs(b - a) <= 4.01 for a, b in zip(angles, angles[1:]))
 
 
+def test_mk2_pushers_move_slowly_by_default():
+    # Nic, 2026-11-24: slow pushers so a card doesn't jam (it was 130 degrees a second).
+    assert config.MK2_PUSH_SPEED <= 60 and config.MK2_PUSH_STEP <= 2
+
+
+def test_mk2_pusher_buttons_sweep_slowly_instead_of_jumping(client, machine, mk2, monkeypatch):
+    monkeypatch.setattr(config, "MK2_PUSH_SPEED", 400)
+    monkeypatch.setattr(config, "FEED_PINS_UP_SECONDS", 0.01)
+    client.post("/api/machine/move", json={"part": "push1", "position": "centre"})
+    sent = []
+    real = machine.set_angle
+    monkeypatch.setattr(machine, "set_angle", lambda ch, a: (real(ch, a), sent.append((ch, a)))[0])
+    started = time.monotonic()
+    assert client.post("/api/machine/move", json={"part": "push1", "position": "left"}).status_code == 200
+    took = time.monotonic() - started
+    ch, pos = config.SERVOS_MK2["push1"]
+    angles = [a for c, a in sent if c == ch]
+    assert angles[-1] == pos["left"] and len(angles) >= 10
+    assert all(abs(b - a) <= 2.01 for a, b in zip(angles, angles[1:]))
+    assert took >= abs(pos["centre"] - pos["left"]) / 400 * 0.9      # it took its time
+
+
+def test_mk2_first_pusher_move_with_no_known_angle_goes_straight_there(client, machine, mk2, monkeypatch):
+    monkeypatch.setattr(config, "FEED_PINS_UP_SECONDS", 0.01)
+    assert client.post("/api/machine/move", json={"part": "push2", "position": "right"}).status_code == 200
+    ch, pos = config.SERVOS_MK2["push2"]
+    assert machine.angles[ch] == pos["right"]
+
+
 def test_mk2_has_no_bin_5_and_mk1_has_no_bin_4(client, mk2):
     assert client.post("/api/machine/drop", json={"bin": 5}).status_code == 400
     client.post("/api/machine/save", json={"model": "mk1"})

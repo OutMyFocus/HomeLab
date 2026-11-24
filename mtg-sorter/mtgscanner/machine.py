@@ -429,7 +429,11 @@ class Machine:
         except KeyError:
             raise ValueError(f"Unknown part or position: {part} {position}")
         moving = self.angles.get(channel) != angle
-        self.set_angle(channel, angle)
+        start = self.angles.get(channel)
+        if part in getattr(config, "MK2_PUSHERS", ()) and self.model() == "mk2" and start is not None:
+            self._sweep(channel, float(start), float(angle))      # slowly, so a card doesn't jam
+        else:
+            self.set_angle(channel, angle)
         if part in ("pins", "stop") and position == "up" and moving:
             self.pins_up_at = time.monotonic()
 
@@ -463,11 +467,13 @@ class Machine:
                 continue
             channel, target = servos[part][0], float(servos[part][1][position])
             start = last.get(str(channel))
-            if isinstance(start, (int, float)) and speed > 0:
+            # Pushers no faster than a sort moves them (MK2_PUSH_SPEED).
+            part_speed = min(speed, float(getattr(config, "MK2_PUSH_SPEED", speed)))                 if part in getattr(config, "MK2_PUSHERS", ()) else speed
+            if isinstance(start, (int, float)) and part_speed > 0:
                 steps = int(abs(target - start) // 2)            # 2 degree steps
                 for i in range(1, steps + 1):
                     self.set_angle(channel, start + (target - start) * i / (steps + 1))
-                    time.sleep(2 / speed)
+                    time.sleep(2 / part_speed)
             self.set_angle(channel, target)
             time.sleep(pause)
 
@@ -593,21 +599,24 @@ class Machine:
                 if part in servos:
                     self.move(part, position)
 
+    def _sweep(self, channel, a, b, speed=None):
+        """Turn a pusher from angle a to b at a steady, slow speed (config.MK2_PUSH_SPEED
+        degrees a second) in small steps, so it eases the card along instead of shoving it
+        into a jam (Nic, 2026-11-24)."""
+        speed = float(speed or getattr(config, "MK2_PUSH_SPEED", 45))
+        step = float(getattr(config, "MK2_PUSH_STEP", 2))
+        steps = max(1, int(round(abs(b - a) / step)))
+        for i in range(1, steps + 1):
+            self.set_angle(channel, a + (b - a) * i / steps)
+            time.sleep(abs(b - a) / steps / speed)
+
     def _push(self, pusher, side, speed=None):
         """Sweep a pusher from the centre to one side at a steady speed, wait, and sweep back."""
         channel, positions = pusher
-        speed = float(speed or getattr(config, "MK2_PUSH_SPEED", 130))
         centre, end = float(positions["centre"]), float(positions[side])
-
-        def sweep(a, b):
-            steps = max(1, int(abs(b - a) // 4))           # 4 degree steps
-            for i in range(1, steps + 1):
-                self.set_angle(channel, a + (b - a) * i / steps)
-                time.sleep(abs(b - a) / steps / speed)
-
-        sweep(centre, end)
+        self._sweep(channel, centre, end, speed)
         time.sleep(float(getattr(config, "MK2_PUSH_HOLD", 0.3)))
-        sweep(end, centre)
+        self._sweep(channel, end, centre, speed)
 
     def _shake(self, chute, position, shakes=None, seconds=None):
         """Rock the tilted tray half way back towards level and tilt it again, a few times

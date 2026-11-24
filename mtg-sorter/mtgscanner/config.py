@@ -187,7 +187,11 @@ HOME_AT_STARTUP_MK2 = False
 SORT_BINS_MK2 = {1: ("push1", "left"), 2: ("push1", "right"), 3: ("push2", "left"), 4: ("push2", "right")}
 MK2_STOP_SECONDS = 0.6        # stop bar down this long at most (the card lands on level 1 in about 0.3 s)
 MK2_DOORS_SECONDS = 0.8       # trapdoors open this long (the card drops in about 0.4 s)
-MK2_PUSH_SPEED = 130          # pusher servo degrees a second: about 120 mm/s at the paddle (MK2.md)
+# Pushers move slowly so a card is eased off the floor, not shoved into a jam (Nic, 2026-11-24):
+# 45 degrees a second is about 40 mm/s at the paddle (it was 130). Every pusher move goes at
+# this speed in MK2_PUSH_STEP degree steps: a sort, the page's buttons, and Home (no faster).
+MK2_PUSH_SPEED = 45           # pusher servo degrees a second
+MK2_PUSH_STEP = 2             # degrees per step
 MK2_PUSH_HOLD = 0.3           # the pusher waits at the side this long before coming back
 # Mk2's power relay (MK2.md, Power): servos, feeder motor and lights get their 5 V through it.
 # The app closes it (pin high, the module's trigger jumper on HIGH) when it starts on Mk2; when
