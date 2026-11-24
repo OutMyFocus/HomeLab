@@ -188,7 +188,9 @@ HOME_AT_STARTUP_MK2 = False
 # Mk2 bins: number -> (pusher, side). 1 and 2 are off level 1, 3 and 4 off level 2 (the card
 # drops through the trapdoors first).
 SORT_BINS_MK2 = {1: ("push1", "left"), 2: ("push1", "right"), 3: ("push2", "left"), 4: ("push2", "right")}
-MK2_STOP_SECONDS = 0.6        # stop bar down this long at most (the card lands on level 1 in about 0.3 s)
+MK2_STOP_SECONDS = 1.2        # stop bar down this long at most (the card lands on level 1 in about 0.3 s)
+MK2_STOP_MIN_SECONDS = 0.8    # and at least this long: rising sooner caught card tails and left them crooked (Nic, 2026-11-24)
+MK2_STOP_CLEAR_SECONDS = 0.3  # after the camera sees the bed empty, wait this much more before raising it
 MK2_DOORS_SECONDS = 0.8       # trapdoors open this long (the card drops in about 0.4 s)
 # Pushers move slowly so a card is eased off the floor, not shoved into a jam (Nic, 2026-11-24):
 # 45 degrees a second is about 40 mm/s at the paddle (it was 130). Every pusher move goes at
