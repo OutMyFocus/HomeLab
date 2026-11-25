@@ -26,6 +26,12 @@ else if (what == "cap") bridge_cap3();
 else if (what == "back") bridge_tile(1);
 else if (what == "div") for (m = [0, 1]) mirror([m, 0, 0]) place_divider();
 else if (what == "tiltbr") tilt_bracket();
+else if (what == "old_front") bridge_tile(0);
+else if (what == "splices") for (x = [-26, 26]) translate([x, bridge_seam_y, bridge_top - bridge_t]) rotate([0, 0, 90]) splice();
+else if (what == "walls") { bed_side(false); mirror([1, 0, 0]) bed_side(true); }
+else if (what == "legs") for (x = [-1, 1]) translate([x * (bridge_half - 7), bridge_y1 - 8, floor_t]) leg();
+else if (what == "floor") for (xi = [0, 1], yi = [0, 1]) floor_tile(xi, yi);
+else if (what == "feeder") translate([-feeder_out_w / 2, stand_y0, bridge_top]) cube([feeder_out_w, stand_l, stand_h]);
 else if (what == "tiltservo") translate([0, tilt_bracket_y + 6 + 1, pivot_z]) rotate([90, 0, 0]) {
     translate([-sv_shaft_off, -sv_w / 2, -1]) cube([sv_len, sv_w, sv_top + 1]);
     translate([-sv_shaft_off - (sv_tab_len - sv_len) / 2, -sv_w / 2, sv_top]) cube([sv_tab_len, sv_w, 2.5]);

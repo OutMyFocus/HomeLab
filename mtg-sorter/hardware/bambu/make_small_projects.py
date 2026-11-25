@@ -43,6 +43,7 @@ mp.PER_PART.update({
     "bed_chute_servo_crank3_left": SOLID,
     "bed_chute_door_link3": SOLID,
     "enc_bridge_cap": SOLID,
+    "enc_splice": SOLID,
     # organizer units stand 231 mm tall on their backs: a brim keeps them down
     "bins_organizer_2x2": {"brim_type": "outer_only", "brim_width": "5"},
     "bins_organizer_1x2": {"brim_type": "outer_only", "brim_width": "5"},
@@ -77,7 +78,8 @@ PROJECTS = {
                                                         "bed_chute_door3", "bed_chute_door3_left",
                                                         "bed_chute_door_crank3", "bed_chute_door_crank3_left",
                                                         "bed_chute_servo_crank3", "bed_chute_servo_crank3_left",
-                                                        "bed_chute_door_link3", "bed_chute_door_link3"]),
+                                                        "bed_chute_door_link3", "bed_chute_door_link3",
+                                                        "enc_splice", "enc_splice"]),
     ],
     "MTG_Sorter_Bins_And_Organizer.3mf": [
         ("1 Trays (3)", ["bins_tray"] * 3),
