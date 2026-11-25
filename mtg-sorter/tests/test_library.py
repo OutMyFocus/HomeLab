@@ -563,3 +563,72 @@ def test_delete_many_bad_requests(client):
 def test_delete_many_needs_the_edit_permission():
     from mtgscanner import logins
     assert logins.needed("POST", "/api/collection/delete") == "edit"
+
+
+# --- Condition, language, price paid and tags ------------------------------------------------
+
+def test_condition_and_language_codes():
+    assert [library.condition_code(x) for x in ["near_mint", "Lightly Played", "excellent", "played", "poor", ""]] \
+        == ["NM", "LP", "LP", "MP", "DMG", "NM"]
+    assert [library.language_code(x) for x in ["ja", "Japanese", "zh_CN", "", "klingon"]] == ["JA", "JA", "ZHS", "EN", "EN"]
+    assert library.clean_tag("  Cube,  pile \n") == "Cube pile"
+
+
+def test_details_for_one_card(client):
+    client.post("/api/add", json={"id": "id1"})
+    client.post("/api/add", json={"id": "id1"})
+    js = client.post("/api/collection/details", json={"keys": ["id1#normal"], "condition": "lp", "language": "JA",
+                                                       "paid": 2.5, "tags": ["Cube", "cube", "Trade, maybe"]}).get_json()
+    c = js["cards"][0]
+    assert (c["condition"], c["language"], c["paid"], c["paid_qty"]) == ("LP", "JA", 2.5, 2)
+    assert c["tags"] == ["Cube", "Trade maybe"]
+    assert c["gain"] == round((c["price"] - 2.5) * 2, 2)
+    assert js["summary"]["paid"] == 5.0 and js["summary"]["tags"][0]["tag"] == "Cube"
+    assert {r["Condition"] for r in rows()} == {"LP"} and rows()[0]["Tags"] == "Cube, Trade maybe"
+    # back to near mint and English writes blanks; null clears the price paid
+    c = client.post("/api/collection/details", json={"keys": ["id1#normal"], "condition": "NM", "language": "EN",
+                                                     "paid": None}).get_json()["cards"][0]
+    assert (c["condition"], c["language"], c["paid"], c["gain"]) == ("NM", "EN", None, None)
+    assert rows()[0]["Condition"] == "" and rows()[0]["Purchase price"] == ""
+
+
+def test_tags_for_many_cards(client):
+    for card_id in ["id1", "id2"]:
+        client.post("/api/add", json={"id": card_id})
+    keys = ["id1#normal", "id2#normal"]
+    js = client.post("/api/collection/details", json={"keys": keys, "add_tag": "Binder 2"}).get_json()
+    assert all(c["tags"] == ["Binder 2"] for c in js["cards"])
+    js = client.post("/api/collection/details", json={"keys": ["id2#normal"], "remove_tag": "binder 2"}).get_json()
+    assert {c["key"]: c["tags"] for c in js["cards"]} == {"id1#normal": ["Binder 2"], "id2#normal": []}
+
+
+def test_details_bad_requests(client):
+    client.post("/api/add", json={"id": "id1"})
+    post = lambda js: client.post("/api/collection/details", json=js).status_code   # noqa: E731
+    assert post({"keys": ["id1#normal"]}) == 400                       # nothing to change
+    assert post({"keys": [], "condition": "NM"}) == 400
+    assert post({"keys": ["id1#normal"], "condition": "Shiny"}) == 400
+    assert post({"keys": ["id1#normal"], "language": "XX"}) == 400
+    assert post({"keys": ["id1#normal"], "paid": "lots"}) == 400
+    assert post({"keys": ["id1#normal"], "paid": -1}) == 400
+    assert post({"keys": ["id9#normal"], "condition": "LP"}) == 404
+    from mtgscanner import logins
+    assert logins.needed("POST", "/api/collection/details") == "edit"
+
+
+def test_exports_carry_condition_language_tags_and_price_paid(client):
+    client.post("/api/add", json={"id": "id1"})
+    client.post("/api/collection/details", json={"keys": ["id1#normal"], "condition": "MP", "language": "DE",
+                                                 "paid": 3, "tags": ["Cube"]})
+    mox = client.get("/api/collection/export?format=moxfield").get_data(as_text=True).splitlines()[1]
+    assert "Moderately Played,German" in mox and "Cube" in mox and mox.endswith(",3.00")
+    mb = client.get("/api/collection/export?format=manabox").get_data(as_text=True).splitlines()[1]
+    assert mb.endswith("good,de,3.00,CAD")
+
+
+def test_new_columns_are_added_to_an_old_file(client):
+    old = ",".join(library.COLUMNS[:13])
+    config.COLLECTION_CSV.write_text(old + "\nCard 1,1,SET,,1,normal,rare,id1,1.00,,,2026-11-01T10:00:00,\n")
+    client.post("/api/add", json={"id": "id2"})                      # a scan rewrites the header first
+    assert list(rows()[0]) == library.COLUMNS and len(rows()) == 2
+    assert client.get("/api/collection").get_json()["cards"][0]["condition"] == "NM"

@@ -43,6 +43,7 @@
     <symbol id="i-left" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
     <symbol id="i-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
     <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 9h13l-3.5-3.5M19 15H6l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7a1 1 0 0 1 .7.3l8 8a1 1 0 0 1 0 1.4l-7.7 7.7a1 1 0 0 1-1.4 0l-8-8a1 1 0 0 1-.3-.7Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /><circle cx="8" cy="8" r="1.6" fill="currentColor" /></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
   </svg>
 
@@ -71,7 +72,7 @@
         <div class="panel-head">
           <h3>Breakdown</h3>
           <div class="seg small" id="breakSeg">
-            <button data-v="color" aria-pressed="true">Color</button><button data-v="rarity" aria-pressed="false">Rarity</button><button data-v="bin" aria-pressed="false">Bin</button><button data-v="set" aria-pressed="false">Set</button>
+            <button data-v="color" aria-pressed="true">Color</button><button data-v="rarity" aria-pressed="false">Rarity</button><button data-v="bin" aria-pressed="false">Bin</button><button data-v="set" aria-pressed="false">Set</button><button data-v="tag" aria-pressed="false">Tag</button><button data-v="condition" aria-pressed="false">Condition</button>
           </div>
         </div>
         <div class="seg small measure" id="measureSeg">
@@ -99,6 +100,9 @@
         <select id="fRarity" aria-label="Rarity"><option value="">All rarities</option></select>
         <select id="fSet" aria-label="Set"><option value="">All sets</option></select>
         <select id="fBin" aria-label="Bin"><option value="">All bins</option></select>
+        <select id="fTag" aria-label="Tag"><option value="">All tags</option></select>
+        <select id="fCond" aria-label="Condition"><option value="">Any condition</option></select>
+        <select id="fLang" aria-label="Language"><option value="">Any language</option></select>
         <select id="fFoil" aria-label="Finish">
           <option value="">Foil and normal</option><option value="foil">Foil only</option><option value="normal">Normal only</option>
         </select>
@@ -116,6 +120,8 @@
           <option value="qty">Most copies first</option>
           <option value="up">Price went up most</option>
           <option value="down">Price went down most</option>
+          <option value="gain">Gained most on what I paid</option>
+          <option value="loss">Lost most on what I paid</option>
         </select>
       </div>
       <div class="chips" id="chips" hidden></div>
@@ -135,6 +141,7 @@
       <div class="select-bar" id="selectBar" hidden role="region" aria-label="Selected cards">
         <span class="sel-count"><b id="selCount">0 picked</b><small id="selValue"></small></span>
         <button class="btn ghost" id="selAll">Pick all showing</button>
+        <button class="btn ghost" id="selEdit"><svg><use href="#i-tag" /></svg>Tag, condition…</button>
         <button class="btn ghost" id="selTrade">For trade</button>
         <button class="btn ghost" id="selExport"><svg><use href="#i-download" /></svg>Export</button>
         <button class="btn ghost danger" id="selDelete"><svg><use href="#i-trash" /></svg>Delete</button>
@@ -177,6 +184,16 @@
             <button class="icon-btn" id="dPlus" aria-label="One more"><svg><use href="#i-plus" /></svg></button>
             <span class="sub">copies</span>
           </div>
+          <div class="copy-details">
+            <span class="cd-label">Condition</span>
+            <div class="seg small cond-seg" id="dCond" role="group" aria-label="Condition"></div>
+            <span class="cd-label">Language</span>
+            <select id="dLang" aria-label="Language"></select>
+            <span class="cd-label">Paid</span>
+            <div class="paid-row"><label class="paid">$<input id="dPaid" type="number" min="0" step="0.01" inputmode="decimal" placeholder="each" aria-label="What you paid for each copy"></label><small id="dGain"></small></div>
+            <span class="cd-label">Tags</span>
+            <div class="tag-edit"><span id="dTags"></span><input id="dTagInput" list="tagList" placeholder="Add a tag" aria-label="Add a tag" maxlength="30" enterkeyhint="done"></div>
+          </div>
           <div class="detail-acts">
             <button class="toggle" id="dFoil" aria-pressed="false"><svg><use href="#i-sparkle" /></svg>Foil</button>
             <button class="btn ghost" id="dPrintings">Different printing?</button>
@@ -187,6 +204,31 @@
           </div>
           <div class="printings" id="dPrintList" hidden></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <datalist id="tagList"></datalist>
+
+  <!-- change the picked cards (Select) -->
+  <div class="modal" id="bulk" hidden>
+    <div class="modal-box bulk-box" role="dialog" aria-modal="true" aria-labelledby="bulkTitle">
+      <div class="modal-head">
+        <h3 id="bulkTitle">Change the picked cards</h3>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-close" /></svg></button>
+      </div>
+      <div class="bulk-body">
+        <span class="cd-label">Add a tag</span>
+        <div class="bulk-row"><input class="field" id="bTagInput" list="tagList" placeholder="Like Binder 2, Cube or To sell" maxlength="30" aria-label="Tag to add"><button class="btn primary" id="bTagAdd">Add</button></div>
+        <span class="cd-label" id="bTagsLabel">Take a tag off</span>
+        <div class="bulk-row" id="bTags"></div>
+        <span class="cd-label">Condition</span>
+        <div class="seg small cond-seg" id="bCond" role="group" aria-label="Condition of all the picked cards"></div>
+        <span class="cd-label">Language</span>
+        <div class="bulk-row"><select id="bLang" aria-label="Language of all the picked cards"></select></div>
+        <span class="cd-label">Paid each</span>
+        <div class="bulk-row"><label class="paid">$<input id="bPaid" type="number" min="0" step="0.01" inputmode="decimal" placeholder="each" aria-label="What you paid for each"></label><button class="btn ghost" id="bPaidSet">Set</button><button class="link-btn" id="bPaidClear">Clear it</button></div>
+        <p class="sub" id="bNote"></p>
       </div>
     </div>
   </div>

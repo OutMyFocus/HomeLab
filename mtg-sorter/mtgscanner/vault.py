@@ -25,7 +25,7 @@ from flask import jsonify, request, send_from_directory
 
 from . import accounts, ca_prices, carddb, config, decks, exchange, play, wishlist
 from .collection import COLLECTION_LOCK, append_rows, ensure_columns
-from .library import read_rows, write_rows
+from .library import condition_code, language_code, read_rows, write_rows
 from .live import API, card_from_scryfall
 from .montreal import add_montreal_routes
 from .sorting import card_price
@@ -123,6 +123,11 @@ def to_rows(scanner, cards: list[dict], source: str, added: str) -> list[dict]:
             price, how = None, ""
         if c.get("pr") is not None:
             price, how = float(c["pr"]), "Price when it was imported"
+            row["Purchase price"] = f"{float(c['pr']):.2f}"   # ManaBox's purchase price: what you paid
+        if c.get("cond") and c["cond"] != "NM":
+            row["Condition"] = c["cond"]
+        if c.get("lang") and c["lang"] != "EN":
+            row["Language"] = c["lang"]
         if price is not None:
             row["Price CAD"], row["Price source"] = f"{price:.2f}", how
         rows.append(row)
@@ -143,6 +148,7 @@ def manabox_cards(text: str) -> list[dict]:
     i_name, i_qty, i_set = col("name", "card name"), col("quantity", "count", "qty"), col("set code", "edition", "set")
     i_cn, i_foil = col("collector number", "card number", "number"), col("foil", "finish")
     i_price, i_cur, i_proxy = col("purchase price", "price cad"), col("purchase price currency"), col("proxy")
+    i_cond, i_lang = col("condition"), col("language")
     if i_name < 0:
         raise ValueError("This doesn't look like a ManaBox export: it has no Name column")
     cards = []
@@ -165,6 +171,10 @@ def manabox_cards(text: str) -> list[dict]:
                 "f": 1 if cell(i_foil).lower() not in ("", "normal", "nonfoil", "no", "false", "0") else 0}
         if price is not None:
             card["pr"] = price
+        if cell(i_cond):
+            card["cond"] = condition_code(cell(i_cond))
+        if cell(i_lang):
+            card["lang"] = language_code(cell(i_lang))
         cards.append(card)
     if not cards:
         raise ValueError("The file has no card rows")

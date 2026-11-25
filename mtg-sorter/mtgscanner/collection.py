@@ -17,7 +17,11 @@ from pathlib import Path
 from .database import Card
 
 COLUMNS = ["Name", "Quantity", "Set code", "Set name", "Collector number", "Foil", "Rarity",
-           "Scryfall ID", "Price CAD", "Price source", "Bin", "Scanned at", "Source"]
+           "Scryfall ID", "Price CAD", "Price source", "Bin", "Scanned at", "Source",
+           # Filled in on the Collection page (blank: near mint, English, price not known, no tags)
+           "Condition", "Language", "Purchase price", "Tags"]
+# The columns the scanner fills in itself, in order (add_card writes these, the rest blank).
+SCANNED_COLUMNS = COLUMNS[:13]
 
 # Every change to a collection file goes through this one lock. Each phone has a scanner
 # (and a lock) of its own, so the scanner locks alone let a phone's scan land while the
@@ -171,5 +175,5 @@ def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[fl
                 bin_label,
                 scanned_at,
                 origin,
-            ])
+            ] + [""] * (len(COLUMNS) - len(SCANNED_COLUMNS)))
     return scanned_at

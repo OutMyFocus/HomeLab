@@ -137,7 +137,12 @@ Then open **http://localhost:5000** in your browser. You get:
   each filter shows as a chip you can take off, and the page's address keeps them, so Back or a
   bookmark comes back to the same cards. **Select** (S) ticks several cards to put in the trade
   binder, export or delete together. In a card's details, the arrows (or ← →, or a swipe on
-  the picture) go to the next card. Tap a card to change how many you have, mark it foil, pick a different
+  the picture) go to the next card. Each card also keeps its **condition** (NM to damaged),
+  **language**, what you **paid** for each copy (the page then shows what they gained, card by card
+  and in total) and **tags** of your own (Binder 2, Cube, To sell...), all in `collection.csv`, with
+  filters, sorts and a breakdown for them. With **Select**, **Tag, condition…** changes all the
+  picked cards at once. ManaBox imports bring their condition, language and purchase price, and the
+  Moxfield, Archidekt, Deckbox and ManaBox exports send them back out. Tap a card to change how many you have, mark it foil, pick a different
   printing or delete it. **Add a card** adds one you didn't scan. It shows the total value,
   how much it changed since you scanned the cards, a value-over-time chart, a breakdown by
   color, rarity, bin and set, and your 10 most valuable cards. **Refresh prices** gets today's
