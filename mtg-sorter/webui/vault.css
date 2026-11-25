@@ -172,3 +172,13 @@ a.cardlink { text-decoration: none; }
 #bNote:empty { display: none; }
 .coll.vault > .panel { padding: var(--pad); }
 .lc-tools select { border: 1px solid var(--line); background: var(--raised); color: var(--text); border-radius: calc(var(--radius) * .6); padding: 8px 10px; font: inherit; }
+
+/* A phone: the search box gets its own full-width line (it was squeezed to an icon next to
+   Random and Search tips), and the card jobs are one row that scrolls sideways. */
+@media (max-width: 600px) {
+  .coll.vault .toolbar > .search { flex: 1 1 100%; }
+  .coll.vault .toolbar > .search ~ .btn { flex: 1 1 0; }
+  .vault .roles { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(var(--pad) * -1); padding-inline: var(--pad); }
+  .vault .roles::-webkit-scrollbar { display: none; }
+  .vault .roles > * { flex: 0 0 auto; white-space: nowrap; }
+}

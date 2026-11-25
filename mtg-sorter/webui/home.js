@@ -163,7 +163,7 @@
   }
 
   const tile = c => `<a class="tile${c.foil ? " foil" : ""}" href="/collection?q=${encodeURIComponent(c.name)}" title="${esc(c.name)}">
-      <div class="art">${c.image ? `<img src="${esc(small(c.image))}" alt="" loading="lazy">` : `<span class="noimg">${esc(c.name)}</span>`}</div>
+      <div class="art">${c.image ? `<img src="${esc(small(c.image))}" srcset="${esc(small(c.image))} 146w, ${esc(c.image)} 488w" sizes="150px" alt="" loading="lazy">` : `<span class="noimg">${esc(c.name)}</span>`}</div>
       <b>${esc(c.name)}</b><span>${esc(c.set)}${c.foil ? " · foil" : ""}<em>${money(c.price)}</em></span></a>`;
 
   const row = (c, end, i) => `<a class="rank-row" href="/collection?q=${encodeURIComponent(c.name)}">

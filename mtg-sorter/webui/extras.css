@@ -25,6 +25,11 @@
 
 /* wishlist */
 .wish-add { padding: var(--pad); }
+@media (max-width: 600px) {
+  /* the card name box gets the whole first line, the price, Foil and Add go under it */
+  .wish-add .toolbar > .search { flex: 1 1 100%; }
+  .wish-add .price-range { flex: 1 1 auto; }
+}
 .wish-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .wish-card { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 10px; border-radius: calc(var(--radius) * .7); background: var(--raised);
   border: 1px solid var(--line); }
