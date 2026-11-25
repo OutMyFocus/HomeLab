@@ -574,3 +574,24 @@ def test_partner_commanders_share_their_colors(tmp_path):
     assert all(level == "ok" for level, _ in got["checks"]), got["checks"]   # Swords is in Tymna's colors
     assert "tymna the weaver" in got["index"]
     assert got["text"].startswith("Commander\n1 Thrasios, Triton Hero\n1 Tymna the Weaver\n")
+
+
+def test_sixty_card_deck_checks(tmp_path):
+    got = run_vault_js(tmp_path, """
+      const S = V.S, card = (n, t, lg, o = "") => ({ n, t, lg, o, ci: "", v: 1, m: "" });
+      S.cards = [card("Lightning Bolt", "Instant", "mlvuc"), card("Monastery Swiftspear", "Creature", "spmlvuc"),
+                 card("Relentless Rats", "Creature", "spmlvc", "A deck can have any number of cards named Relentless Rats."),
+                 card("Duress", "Sorcery", "spmlvuc"), card("Mountain", "Basic Land — Mountain", "spmlvuc")];
+      S.byName = new Map(S.cards.map(c => [V.norm(c.n), c]));
+      const ok = V.constructedChecks(V.parseDeck("4 Lightning Bolt\\n4 Monastery Swiftspear\\n20 Mountain\\n12 Relentless Rats\\n20 Mountain\\n\\nSideboard\\n3 Duress"));
+      const bad = V.constructedChecks(V.parseDeck("5 Lightning Bolt\\n35 Mountain\\n\\nSideboard\\n16 Duress\\n1 Black Lotus"));
+      console.log(JSON.stringify({ ok, bad: { ...bad, bad: [...bad.bad] } }));""")
+    ok, bad = got["ok"], got["bad"]
+    assert ok["count"] == 60 and ok["legal"] == ["Modern", "Legacy", "Vintage"]   # Bolt isn't in Standard or Pioneer
+    assert all(level == "ok" for level, msg in ok["checks"] if "Not legal" not in msg), ok["checks"]
+    assert any(m.startswith("Not legal in Standard: Lightning Bolt") for _, m in ok["checks"])
+    levels = dict((m.split(" ")[0] + " " + m.split(" ")[1], lvl) for lvl, m in bad["checks"])
+    assert levels["40 cards:"] == "warn"                 # Limited size
+    assert levels["17 cards"] == "bad"                   # sideboard over 15
+    assert bad["bad"] == ["lightning bolt", "duress"]    # 5 and 16 copies; 35 Mountains are fine
+    assert any("Black Lotus" in m and lvl == "warn" for lvl, m in bad["checks"])   # not in the database

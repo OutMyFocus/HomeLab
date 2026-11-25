@@ -18,6 +18,7 @@ from pathlib import Path
 from flask import jsonify, request, send_from_directory
 
 from . import accounts, config
+from .ca_prices import BASICS
 from .database import Card
 from .library import holdings, read_rows
 from .live import card_from_scryfall
@@ -92,15 +93,17 @@ def check(text: str, rows: list[dict], matcher, vault=None, live=None) -> dict:
     left = {k: sum(i["qty"] for i in v) for k, v in owned.items()}
     lookups = {}
     short = [w["name"] for w in wanted if left.get(name_key(w["name"]), 0) < w["qty"]
-             and w["section"] not in EXTRA_SECTIONS]
+             and w["section"] not in EXTRA_SECTIONS and name_key(w["name"]) not in BASICS]
     if live and short:
         lookups = live.by_names(short)
     lines = []
     for w in wanted:
         extra = w["section"] in EXTRA_SECTIONS
         key = name_key(w["name"])
-        have = min(w["qty"], left.get(key, 0))
-        if not extra:   # Maybeboard and Tokens rows don't use up copies the deck needs
+        # Basic lands are free and everyone has a pile, so they're never missing or bought.
+        basic = key in BASICS
+        have = w["qty"] if basic else min(w["qty"], left.get(key, 0))
+        if not extra and not basic:   # Maybeboard and Tokens rows don't use up copies the deck needs
             left[key] = left.get(key, 0) - have
         mine = owned.get(key, [])
         card, price = None, None
@@ -109,6 +112,10 @@ def check(text: str, rows: list[dict], matcher, vault=None, live=None) -> dict:
             image, display, found = first["image"], first["name"], True
         else:
             image, display, found = "", w["name"], False
+            if basic:   # a picture of the land even when none were scanned
+                land, _ = _cheapest_known(matcher, w["name"], None, None)
+                if land:
+                    image, display = f"https://api.scryfall.com/cards/{land.id}?format=image&version=normal", land.name
         if have < w["qty"] and not extra:
             js = lookups.get(w["name"].lower()) or lookups.get(key)
             if js:
@@ -124,7 +131,7 @@ def check(text: str, rows: list[dict], matcher, vault=None, live=None) -> dict:
         missing = 0 if extra else w["qty"] - have
         lines.append({
             "name": display, "asked": w["name"], "section": w["section"], "need": w["qty"], "have": have,
-            "missing": missing, "found": found, "image": image, "extra": extra,
+            "missing": missing, "found": found or basic, "image": image, "extra": extra, "basic": basic,
             "price": price if missing else None,
             "cost": round(price * missing, 2) if missing and price is not None else None,
             "where": [{"set": i["set"], "number": i["number"], "foil": i["foil"], "qty": i["qty"],

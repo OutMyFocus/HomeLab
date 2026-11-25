@@ -152,7 +152,7 @@ Then open **http://localhost:5000** in your browser. You get:
   **Sources and imports** (at the bottom) lists where your cards came from. Import a ManaBox
   CSV as its own source, and remove a bad import with all its cards in one step. **For trade**
   on a card puts it in your trade binder.
-- **Sets**: how complete each set in the card database is, with a ring per set. Open a set to
+- **Sets**: how complete each set in the card database is, with a ring and the set's symbol per set. Open a set to
   see every card in collector-number order, the missing ones greyed out, what they'd cost today,
   and a count by rarity. **Add the missing cards to my wishlist** or **Copy the missing list**.
   **Spare copies** lists what you have beyond a playset (or however many you keep), cheapest
@@ -170,6 +170,11 @@ Then open **http://localhost:5000** in your browser. You get:
   are missing, what they'd cost at today's prices, and which bin your copies are in. **Copy the
   missing cards** gives a shopping list for TCGplayer's Mass Entry or any shop. Save decks to
   check them again later. **Add the missing cards to my wishlist** puts them on your wishlist.
+  **Pictures** shows the deck as card pictures, with the cards you still need dimmed and
+  marked. Basic lands always count as owned and are never on the shopping list.
+  A 60-card deck (40 or more, no commander) gets the deck builder too, with its own checks: deck
+  size, sideboard of 15 at most, 4 copies at most, and which formats (Standard, Pioneer, Modern,
+  Legacy, Vintage, Pauper) every card is legal in.
   A Commander deck (one with a `Commander` line, or 90+ cards) also gets the deck builder:
   deck checks (size, singleton, color identity, lands, ramp, draw, removal), the mana curve,
   Canadian prices, which cards you own, need to buy or proxy, suggestions that fit, a playtest
