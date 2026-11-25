@@ -214,11 +214,14 @@ if __name__ == "__main__":
         mp.PLATES = [("1 Camera arch, taller (tree supports)", P("cam_arch"))]
         mp.main()
         sys.exit(0)
-    if "--gate" in sys.argv:     # 2026-11-25: fixed feeder gate with hinged flaps, camera turned 90 degrees, heavier pushers
+    if "--gate" in sys.argv or "--gate3" in sys.argv:   # 2026-11-25: fixed feeder gate with hinged flaps, camera turned 90 degrees, heavier pushers
         mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Overnight.3mf")
-        mp.PLATES = [("1 Fixed feeder gate and 2 flaps (solid, brim)", P("fd_gate", "fd_flap*2")),
-                     ("2 Camera arch, camera turned 90 degrees (tree supports)", P("cam_arch")),
-                     ("3 Pushers with ballast slots (solid, tree supports), 6 gate plugs", P("carriage1", "carriage2", "gate_plug*6"))]
+        if "--gate3" in sys.argv:    # the same parts on three plates
+            mp.PLATES = [("1 Fixed feeder gate and 2 flaps (solid, brim)", P("fd_gate", "fd_flap*2")),
+                         ("2 Camera arch, camera turned 90 degrees (tree supports)", P("cam_arch")),
+                         ("3 Pushers with ballast slots (solid, tree supports), 6 gate plugs", P("carriage1", "carriage2", "gate_plug*6"))]
+        else:                        # all on one plate, to print in one go overnight
+            mp.PLATES = [("1 Gate, 2 flaps, camera arch, 2 pushers, 6 gate plugs", P("cam_arch", "carriage1", "carriage2", "fd_gate", "fd_flap*2", "gate_plug*6"))]
         mp.main()
         sys.exit(0)
     if "--pimount" in sys.argv:     # the Pi 5 wall mount on its own (added after the rest was printed)
