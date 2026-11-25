@@ -24,6 +24,7 @@ import requests
 from flask import request
 
 from . import config
+from .machine import Busy
 
 TIMEOUT = (2, 6)      # seconds to connect, then to answer; a move answers in well under one
 DOWN_PAUSE = 20       # after the Pi didn't answer, report it as down this long without asking again
@@ -64,6 +65,9 @@ class RemoteMachine:
                                "data/machine_key in MTG_MACHINE_KEY on this server (deploy/PI_DOCKER.md).")
         if r.status_code == 400:
             raise ValueError(data.get("error") or "The Pi didn't accept that.")
+        if r.status_code == 409:     # a run or a feed drives the machine there: wait for it
+            raise Busy(data.get("error") if isinstance(data, dict) and data.get("error")
+                       else "The sorter is busy: wait for it to stop, then try again.")
         if r.status_code >= 300 or not isinstance(data, dict):
             raise RuntimeError(data.get("error") if isinstance(data, dict) and data.get("error")
                                else f"The sorter's Pi answered with an error ({r.status_code}).")
@@ -88,7 +92,8 @@ class RemoteMachine:
                     "feeder_defaults": {"seconds": config.FEEDER_SECONDS, "speed": config.FEEDER_SPEED,
                                         "reverse": False, "backoff": config.FEED_BACKOFF_SECONDS,
                                         "push": getattr(config, "FEED_PUSH_SECONDS", 0.0)},
-                    "wide_travel": config.SERVO_WIDE_TRAVEL, "home_at_startup": config.HOME_AT_STARTUP}
+                    "wide_travel": config.SERVO_WIDE_TRAVEL, "home_at_startup": config.HOME_AT_STARTUP,
+                    "model": None, "models": {}, "bins": list(getattr(config, "SORT_BINS", {}))}
         self._down_until = 0.0
         s["remote"] = self.url
         return s
@@ -164,6 +169,9 @@ class RemoteMachine:
     def sort_stop(self) -> dict:
         return self._call("/api/machine/sort/stop", {})
 
+    def sort_decide(self, action) -> dict:
+        return self._call("/api/machine/sort/decide", {"action": action})
+
     def feed_zone(self) -> list:
         return self._call("/api/machine/feed_zone")["zone"]
 
@@ -182,8 +190,21 @@ class RemoteMachine:
     def set_wide_travel(self, on: bool):
         self._call("/api/machine/save", {"wide_travel": bool(on)})
 
+    def set_model(self, model: str):
+        self._call("/api/machine/save", {"model": model})
+
+    def model(self) -> str:
+        return self.state().get("model", "mk1")
+
     def reset_saved(self):
         self._call("/api/machine/reset", {})
+
+    # the Machine health page (health.py): the Pi keeps the record, the server shows it
+    def health(self) -> dict:
+        return self._call("/api/machine/health", timeout=(2, 10))
+
+    def set_bin_sensors(self, kind: str, fitted: bool):
+        self._call("/api/machine/health/sensors", {"kind": kind, "fitted": bool(fitted)})
 
     def self_test(self, pause: float = 0.6) -> list[dict]:
         try:

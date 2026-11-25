@@ -108,7 +108,7 @@ def straighten_from(frame, corners=None):
         quad = _order_corners(pts)
     else:
         try:
-            cards = find_cards(frame)
+            cards = find_cards(frame, rebuild=False)   # the card on the bed, as the camera finds it
         except Exception:
             return None
         if not cards:

@@ -1,6 +1,11 @@
 # Hardware
 
-Step-by-step build: [ASSEMBLY.md](ASSEMBLY.md).
+**Building the sorter now? Go to [Mk2](mk2/MK2.md).** It's the screwless rebuild: print file
+`bambu/MTG_Sorter_Mk2.3mf`, fit coupon first. Everything below is **Mk1** (the enclosure
+machine), out of service since its tilting bed broke on 2026-11-09. It's kept for reference
+and for the parts Mk2 reuses (the feeder v4 and the scan bed ideas).
+
+Mk1 step-by-step build: [ASSEMBLY.md](ASSEMBLY.md).
 
 - [Feeder test rig](#feeder-test-rig): the first piece of the full sifter
 - [Scan bed and chute](#scan-bed-and-chute): the middle of the sifter: stops the card for its photo, then sorts it into a bin
@@ -23,6 +28,11 @@ edge sits just over one card's thickness above the floor. One card fits under it
 and a thumb screw, and a weight sits on the stack. See [MECHANISM_V2.md](MECHANISM_V2.md);
 everything prints from `bambu/MTG_Sorter_Feeder_And_Bed_v2.3mf`. The STLs below are the v2
 parts. `feeder_test.scad` is the first test rig, kept for reference.
+
+**v4 (feeder4.scad), the one to build now:** wheels right at the mouth on fixed bearings, a
+self-setting separator shoe with cork pads over the wheels instead of the gap gate, and the card
+leaves along the bed's 20°. See [FEEDER_V4.md](FEEDER_V4.md); everything prints from
+`bambu/MTG_Sorter_Feeder_Box_v4.3mf`.
 
 | File | Print | Notes |
 |---|---|---|

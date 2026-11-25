@@ -19,6 +19,8 @@ IMAGE=ghcr.io/outmyfocus/mtg-sorter:latest
 RUN=mtg-sorter:run
 STATUS=$APP/data/update_status.json
 BAD=$APP/data/update_bad_image
+FORCE=/run/mtg-sorter-force-update
+RETRY=/run/mtg-sorter-retry-update   # Update now (or mtg update): try an image that failed before
 as_nic() { runuser -u nic -- "$@"; }
 
 image_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
@@ -47,6 +49,11 @@ app_answers() {
 }
 
 main() {
+    # Asked for by a person? Read once, so a leftover can't make a later timer run retry.
+    retry=0
+    if [ -e "$FORCE" ] || [ -e "$RETRY" ]; then retry=1; fi
+    rm -f "$FORCE" "$RETRY"
+
     # 1. System files. A failed pull here only means older helper scripts, so carry on.
     if as_nic git -C "$REPO" fetch -q origin main 2>/dev/null; then
         as_nic git -C "$REPO" merge -q --ff-only origin/main 2>/dev/null \
@@ -68,10 +75,9 @@ main() {
         status "up to date" "Up to date (same image as the server, version $(image_version "$RUN"))."
         exit 0
     fi
-    if [ -e "$BAD" ] && [ "$(cat "$BAD")" = "$new" ] && [ ! -e /run/mtg-sorter-force-update ]; then
+    if [ -e "$BAD" ] && [ "$(cat "$BAD")" = "$new" ] && [ "$retry" = 0 ]; then
         exit 0   # this image already failed to start; wait for a newer one (or Update now)
     fi
-    rm -f /run/mtg-sorter-force-update
 
     docker tag "$IMAGE" "$RUN"
     systemctl restart mtg-sorter
@@ -89,7 +95,11 @@ main() {
     if [ -n "$old" ]; then
         docker tag "$old" "$RUN"
         systemctl restart mtg-sorter
-        status "rolled back" "The newest image didn't start, so the Pi went back to version $(image_version "$RUN"). It tries again when there's a newer one."
+        if app_answers; then
+            status "rolled back" "The newest image didn't start, so the Pi went back to version $(image_version "$RUN"). It tries again when there's a newer one, or press Update now."
+        else
+            status failed "The newest image didn't start, and going back to version $(image_version "$RUN") didn't start either. See: mtg logs app"
+        fi
     else
         status failed "The image didn't start. See the app log."
     fi

@@ -4,6 +4,7 @@
   let data = null, shown = 20, open = new Set();
   const day = iso => new Date(iso).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
   const clock = iso => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const dur = m => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
 
   async function load() {
     try { data = await api("/api/history"); render(); } catch (e) { toast(e.message); }
@@ -56,7 +57,7 @@
     const s = data.sessions.slice(0, shown);
     $("sessions").innerHTML = s.length ? s.map(x => `<div class="session-row${open.has(x.start) ? " open" : ""}" data-start="${esc(x.start)}">
       <button class="session-sum" aria-expanded="${open.has(x.start)}">
-        <span class="when"><b>${esc(day(x.start))}</b><small>${esc(clock(x.start))} to ${esc(clock(x.end))}${x.minutes ? ` · ${x.minutes} min` : ""}</small></span>
+        <span class="when"><b>${esc(day(x.start))}</b><small>${esc(clock(x.start))} to ${esc(clock(x.end))}${x.minutes ? ` · ${dur(x.minutes)}` : ""}</small></span>
         <span class="nums"><b>${x.cards.toLocaleString()}</b><small>cards</small></span>
         <span class="nums"><b>${money(x.value)}</b><small>when scanned</small></span>
         <span class="topcard hide-sm">${x.top.price ? `Best: <b>${esc(x.top.name)}</b> ${money(x.top.price)}` : ""}</span>

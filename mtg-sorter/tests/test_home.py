@@ -114,6 +114,20 @@ def test_pages_have_one_header_and_no_old_menus(client):
         assert len(ids) == len(set(ids)), (page, sorted({i for i in ids if ids.count(i) > 1}))
 
 
+def test_every_page_can_be_added_to_a_phone_home_screen(client):
+    import json
+    for page in sorted(WEB.glob("*.html")):
+        html = page.read_text(encoding="utf-8")
+        assert 'rel="manifest" href="/static/manifest.json"' in html, page.name
+        assert 'rel="apple-touch-icon"' in html, page.name
+        assert "viewport-fit=cover" in html, page.name
+    manifest = json.loads(client.get("/static/manifest.json").data)
+    assert manifest["start_url"] == "/" and manifest["display"] == "standalone"
+    for icon in manifest["icons"]:
+        assert client.get(icon["src"]).status_code == 200, icon["src"]
+    assert client.get("/static/icon-180.png").status_code == 200
+
+
 def test_menu_is_short_and_has_every_page_once():
     js = (WEB / "shell.js").read_text()
     keys = re.findall(r'\{ key: "([a-z]+)", href:', js)

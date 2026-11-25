@@ -45,8 +45,10 @@ def oracle(name, **extra):
 def test_card_rows_keep_what_the_builder_needs():
     row = carddb.card_row(oracle("Elf", game_changer=True))
     assert row == {"n": "Elf", "m": "{1}{G}", "v": 2, "t": "Creature — Elf", "o": "Draw a card.", "ci": "G", "r": "r",
-                   "pt": "2/1", "gc": 1, "e": 5}
-    assert carddb.card_row(oracle("Banned", legalities={"commander": "banned"}))["b"] == 1
+                   "pt": "2/1", "gc": 1, "e": 5, "lg": "c"}
+    banned = carddb.card_row(oracle("Banned", legalities={"commander": "banned", "modern": "legal",
+                                                          "vintage": "restricted", "legacy": "banned"}))
+    assert banned["b"] == 1 and banned["lg"] == "mv" and banned["bn"] == "lc"
     assert carddb.card_row(oracle("Not legal", legalities={"commander": "not_legal"})) is None
     assert carddb.card_row(oracle("Token", layout="token")) is None
     faces = carddb.card_row({"name": "A // B", "cmc": 3, "type_line": "Creature // Land", "color_identity": ["U"],
@@ -142,7 +144,7 @@ def test_wanted_names_and_valuable_printings():
 
 MANABOX = """Name,Set code,Set name,Collector number,Foil,Rarity,Quantity,ManaBox ID,Scryfall ID,Purchase price,Misprint,Altered,Condition,Language,Purchase price currency
 Sol Ring,C21,Commander 2021,263,normal,uncommon,2,1,abc,1.50,false,false,near_mint,en,CAD
-"Ajani, Caller of the Pride",M13,Magic 2013,1,foil,mythic,1,2,def,4.00,false,false,near_mint,en,USD
+"Ajani, Caller of the Pride",M13,Magic 2013,1,foil,mythic,1,2,def,4.00,false,false,light_played,ja,USD
 """
 
 
@@ -157,6 +159,9 @@ def test_manabox_csv_becomes_its_own_source(db):  # noqa: F811
     assert [(r["Name"], r["Quantity"], r["Foil"], r["Source"]) for r in got] == [
         ("Sol Ring", "2", "normal", "New pulls"), ("Ajani, Caller of the Pride", "1", "foil", "New pulls")]
     assert got[0]["Price CAD"] == "1.50" and got[1]["Price CAD"] == ""    # a USD purchase price isn't used
+    assert got[0]["Purchase price"] == "1.50" and got[1]["Purchase price"] == ""
+    assert (got[0]["Condition"], got[0]["Language"]) == ("", "")          # near mint, English: left blank
+    assert (got[1]["Condition"], got[1]["Language"]) == ("LP", "JA")
     again = client.post("/api/sources/manabox", json={"csv": MANABOX, "name": "New pulls"}).get_json()
     assert again["source"] == "New pulls (2)"
     names = [s["name"] for s in client.get("/api/sources").get_json()["sources"]]
@@ -304,3 +309,268 @@ def test_new_pages_load(db):  # noqa: F811
         assert f'src="/static/{script}?v=' in html, page
         assert client.get(f"/static/{script}").status_code == 200
     assert client.get("/api/carddb").status_code == 404     # not built yet: says how to get it
+
+
+# --- Saves that land together, and the deck check's extra sections -----------------------------
+
+def test_saves_at_the_same_time_lose_nothing():
+    import os
+    import threading
+    from mtgscanner import decks, wishlist
+    ids = [decks.save_deck(f"Deck {i}", "1 Sol Ring")["id"] for i in range(8)]
+    errors = []
+
+    def work(i):
+        try:
+            for n in range(5):
+                decks.save_deck(f"Deck {i}", f"{n + 1} Sol Ring", ids[i])
+                wishlist.add(f"Card {i}-{n}")
+        except Exception as e:   # pragma: no cover - the failure we're guarding against
+            errors.append(e)
+    threads = [threading.Thread(target=work, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    saved = {d["id"]: d["text"] for d in decks.load_decks()}
+    assert set(saved) == set(ids) and set(saved.values()) == {"5 Sol Ring"}
+    assert len(wishlist.load_items()) == 40
+    assert os.stat(decks.decks_file()).st_mode & 0o777 == 0o644      # backups can still read it
+    assert not list(decks.decks_file().parent.glob("*.tmp"))
+
+
+def test_deck_check_leaves_out_the_maybeboard_and_tokens():
+    from mtgscanner import decks
+    text = "Commander\n1 Sol Ring\n\nDeck\n2 Mana Vault\n\nMaybeboard\n1 Mana Crypt\n1 Jeweled Lotus\n\nTokens\n1 Treasure"
+    r = decks.check(text, [], None)
+    assert (r["need"], r["have"], r["missing"], r["cost"]) == (3, 0, 3, 0)
+    assert r["unknown"] == ["Sol Ring", "Mana Vault"]                 # not Treasure
+    extra = [x for x in r["lines"] if x["extra"]]
+    assert [x["asked"] for x in extra] == ["Mana Crypt", "Jeweled Lotus", "Treasure"]
+    assert all(x["missing"] == 0 and x["cost"] is None for x in extra)   # never copied or wishlisted
+
+
+# --- The sorter's Canadian price matches the pages' -------------------------------------------------
+
+def test_sorter_price_is_the_price_the_pages_show():
+    from mtgscanner.database import Card
+    from mtgscanner.vault_prices import VaultPrices
+    card = Card(id="x", name="Odd Card", set_code="tst", set_name="", collector_number="1", rarity="", colors="",
+                price_usd=None, price_usd_foil=None)
+    for stores in ({"401": [2.0, 0, None], "hob": [2.5, 1, None]},     # cheaper but sold out
+                   {"f2f": [0, 1, None], "401": [3.0, 1, None]},       # a $0 Face to Face entry
+                   {"f2f": [4.0, 0, None], "401": [1.0, 1, None]},
+                   {"401": [2.0, 0, None], "hob": [2.5, 0, None]}):    # all sold out: the cheapest
+        got = VaultPrices({"prices": {"Odd Card": stores}}).price(card, False)
+        assert got[0] == ca_prices.main_price(stores), stores
+    assert VaultPrices({"prices": {"Odd Card": {"401": [2.0, 0, 9.0], "hob": [2.5, 1, 7.0]}}}).price(card, True) == \
+        (7.0, "Hobbiesville")
+    assert VaultPrices({"prices": {"Odd Card": {"f2f": [0, 0, None]}}}).price(card, False) is None
+
+
+def test_a_damaged_price_file_falls_back_to_scryfall(capsys):
+    from mtgscanner.vault_prices import VaultPrices
+    config.VAULT_PRICES.write_text('{"date": "Nov 1", "prices": {"Sol Ri')
+    assert VaultPrices.load(config.VAULT_PRICES) is None
+    assert "damaged" in capsys.readouterr().out
+    config.VAULT_PRICES.write_text("[1, 2]")
+    assert VaultPrices.load(config.VAULT_PRICES) is None
+    config.VAULT_PRICES.write_text('{"prices": [1], "printings": "x"}')
+    vp = VaultPrices.load(config.VAULT_PRICES)
+    assert vp.by_name == {} and vp.by_printing == {}
+
+
+# --- The weekly price check when stores misbehave -----------------------------------------------------
+
+def test_a_price_check_that_reached_no_store_changes_nothing():
+    ca_prices.save({"date": "Nov 11, 2026", "checked": "2026-11-11T10:00:00",
+                    "prices": {"Sol Ring": {"f2f": [5.0, 1, None]}}, "prev": {"Sol Ring": 2.0}})
+    before = config.VAULT_PRICES.read_text()
+    with pytest.raises(RuntimeError, match="No store answered"):
+        ca_prices.check(["Sol Ring", "Mana Crypt"], ["Sol Ring|C21|263|0"], shop=shop_for({}, {}), workers=2)
+    assert config.VAULT_PRICES.read_text() == before
+
+
+def test_a_card_nobody_answered_for_keeps_its_trend():
+    ca_prices.save({"prices": {"Sol Ring": {"f2f": [1.5, 1, None]}, "Quiet": {"f2f": [5.0, 1, None]}},
+                    "prev": {"Quiet": 4.0}})
+    shop = shop_for({F2F: [{"title": "Sol Ring [C21]", "handle": "sr", "price_min": "2"}]},
+                    {"sr": [{"title": "NM", "price": 299, "available": True}]})
+    data = ca_prices.check(["Sol Ring", "Quiet"], [], shop=shop, workers=1)
+    assert data["prev"] == {"Sol Ring": 1.5, "Quiet": 4.0}      # Quiet: still last week's trend, not 0
+
+
+def test_one_odd_card_never_stops_the_price_check(monkeypatch):
+    shop = shop_for({F2F: [{"title": "Sol Ring [C21]", "handle": "sr", "price_min": "2"},
+                           {"title": "Sol Ring [C21]", "price_min": "1"}]},        # no handle
+                    {"sr": [{"title": "NM", "price": "2.99x", "available": True},     # a price that isn't a number
+                            {"title": "NM", "price": 299, "available": True}]})
+    real = ca_prices.card_prices
+    monkeypatch.setattr(ca_prices, "card_prices",
+                        lambda s, name: (_ for _ in ()).throw(KeyError("handle")) if name == "Broken" else real(s, name))
+    data = ca_prices.check(["Broken", "Sol Ring"], [], shop=shop, workers=1)
+    assert data["prices"]["Sol Ring"]["f2f"][0] == 2.99 and data["failed"] == 1
+    assert json.loads(config.VAULT_PRICES.read_text())["prices"]["Sol Ring"]
+    monkeypatch.setattr(ca_prices, "card_prices", lambda s, name: {}["handle"])
+    with pytest.raises(RuntimeError):                                   # every card failing is a real bug
+        ca_prices.check(["A", "B"], [], shop=shop, workers=1)
+
+
+def http_error(code, retry_after=None):
+    import requests
+    resp = requests.Response()
+    resp.status_code = code
+    if retry_after is not None:
+        resp.headers["Retry-After"] = str(retry_after)
+    return requests.HTTPError(f"{code}", response=resp)
+
+
+def test_shop_retries_only_what_can_get_better():
+    calls, slept = [], []
+
+    def make_shop(answers):
+        def get(url):
+            calls.append(url)
+            a = answers.pop(0) if answers else ConnectionError(url)
+            if isinstance(a, Exception):
+                raise a
+            return a
+        shop = ca_prices.Shop(get=get, pause=0.01)
+        shop.sleep = slept.append
+        return shop
+
+    assert make_shop([http_error(404)]).get("https://a.ca/x") is None and len(calls) == 1   # no such page: once
+    calls.clear(); slept.clear()
+    shop = make_shop([http_error(429, 7), {"ok": 1}])
+    assert shop.get("https://a.ca/x") == {"ok": 1} and len(calls) == 2 and 7.0 in slept and shop.answered == 1
+    calls.clear(); slept.clear()
+    assert make_shop([http_error(503), http_error(503), {"ok": 2}]).get("https://a.ca/x") == {"ok": 2}
+    slept.clear()
+    assert make_shop([http_error(429, 600), {"ok": 3}]).get("https://a.ca/x") == {"ok": 3}
+    assert max(slept) == 30.0                       # Retry-After is capped
+    # A store that's down is left alone after a few failures in a row.
+    calls.clear()
+    dead = make_shop([])
+    for _ in range(10):
+        assert dead.get("https://dead.ca/x") is None
+    assert len(calls) == dead.limit * dead.tries
+    assert dead.get("https://other.ca/x") is None and len(calls) == dead.limit * dead.tries + dead.tries
+
+
+# --- Guides, shared prices and the weekly check ---------------------------------------------------------
+
+def test_guides_run_in_a_sandbox(db):  # noqa: F811
+    _, client = make(db)
+    client.post("/api/vault/import", json=EXPORT)
+    res = client.get("/guides/wretched.html")
+    assert res.status_code == 200
+    csp = res.headers["Content-Security-Policy"]
+    assert csp.startswith("sandbox") and "allow-scripts" in csp and "allow-same-origin" not in csp
+    assert res.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_only_an_admin_import_replaces_the_shared_prices(db, monkeypatch):  # noqa: F811
+    from mtgscanner import accounts
+    scanner, client = make(db)
+    fake = dict(EXPORT, prices={"date": "Jan 1, 2099", "checked": "2099-01-01T00:00:00",
+                                "prices": {"Card 1": {"f2f": [999, 1, None]}}})
+    monkeypatch.setattr(accounts, "can", lambda perm, username=None: perm != "admin")
+    did = client.post("/api/vault/import", json=fake).get_json()["imported"]
+    assert did["prices"] == 0 and did["prices_note"] and not config.VAULT_PRICES.exists()
+    monkeypatch.setattr(accounts, "can", lambda perm, username=None: True)
+    assert client.post("/api/vault/import", json=fake).get_json()["imported"]["prices"] == 1
+    assert not json.loads(config.VAULT_PRICES.read_text())["checked"].startswith("2099")   # not in the future
+    ca_prices.save({"prices": {"Card 1": {}}, "checked": "2099-01-01T00:00:00"})
+    (config.DATA_DIR / "carddb.json").write_text("{}")
+    assert vault.Weekly(scanner).due() == "prices"      # a future date can't freeze the weekly check
+
+
+# --- The browser's decklist reader and editor (webui/vault.js, run in node) ------------------------
+
+MOXFIELD = """Commander
+1 Thrasios, Triton Hero (C16) 46 *F*
+1 Tymna the Weaver (C16) 48
+
+Companion
+1 Lurrus of the Dream-Den
+
+Deck
+1 Sol Ring (C21) 263 *F*
+1x Command Tower ^Have,#37d67a^
+1x Arcane Signet (c21) 263 [Ramp]
+1 Swords to Plowshares (STA) 10 *E* [Removal]
+1 Brainstorm <foil>
+// a comment
+2 Island
+
+Maybeboard
+1 Mana Crypt"""
+
+
+def run_vault_js(tmp_path, code: str):
+    import shutil
+    import subprocess
+    from pathlib import Path
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node isn't installed here")
+    src = Path(__file__).resolve().parent.parent / "webui" / "vault.js"
+    script = tmp_path / "run.js"
+    script.write_text(
+        "const fs = require('fs');\n"
+        "global.window = {}; global.MTG = { esc: s => s, api: async () => ({}) };\n"
+        f"eval(fs.readFileSync({json.dumps(str(src))}, 'utf8').replace('window.VAULT =', 'global.VAULT ='));\n"
+        "const V = VAULT;\n" + code)
+    out = subprocess.run([node, str(script)], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+def test_browser_and_pi_read_decklists_the_same(tmp_path):
+    from mtgscanner import decks
+    got = run_vault_js(tmp_path, f"console.log(JSON.stringify(V.parseDeck({json.dumps(MOXFIELD)})));")
+    assert got["commander"] == "Thrasios, Triton Hero" and got["partner"] == "Tymna the Weaver"
+    js_names = [got["commander"], got["partner"]] + [n for n, _ in got["list"]] + [n for n, _ in got["side"]]
+    assert sorted(js_names) == sorted(r["name"] for r in decks.parse(MOXFIELD))
+    assert "Command Tower" in js_names and "Arcane Signet" in js_names
+
+
+def test_builder_edits_change_only_their_own_line(tmp_path):
+    got = run_vault_js(tmp_path, f"""
+      const t = {json.dumps(MOXFIELD)};
+      console.log(JSON.stringify({{
+        add: V.editDeckText(t, [{{ add: "Lightning Greaves" }}]),
+        more: V.editDeckText(t, [{{ add: "Island" }}, {{ remove: "Sol Ring" }}]),
+        cmd: V.editDeckText(t, [{{ commander: "Atraxa, Praetors' Voice" }}]),
+        plain: V.editDeckText("4 Lightning Bolt", [{{ commander: "Sol Ring" }}]),
+      }}));""")
+    lines = MOXFIELD.splitlines()
+    added = got["add"].splitlines()
+    assert added == lines[:15] + ["1 Lightning Greaves"] + lines[15:]     # at the end of the Deck part
+    assert got["more"].splitlines() == [x for x in lines if not x.startswith("1 Sol Ring")][:13] + ["3 Island"] + lines[15:]
+    from mtgscanner import decks
+    parsed = {(r["section"], r["name"]) for r in decks.parse(got["cmd"])}
+    assert ("Commander", "Atraxa, Praetors' Voice") in parsed
+    assert ("Main deck", "Thrasios, Triton Hero") in parsed and ("Main deck", "Tymna the Weaver") in parsed
+    assert ("Companion", "Lurrus of the Dream-Den") in parsed and ("Maybeboard", "Mana Crypt") in parsed
+    assert "1 Sol Ring (C21) 263 *F*" in got["cmd"]                        # set and foil marks kept
+    assert {(r["section"], r["name"]) for r in decks.parse(got["plain"])} == {("Commander", "Sol Ring"),
+                                                                              ("Main deck", "Lightning Bolt")}
+
+
+def test_partner_commanders_share_their_colors(tmp_path):
+    got = run_vault_js(tmp_path, """
+      const S = V.S, card = (n, ci, t, o = "") => ({ n, ci, t, o, v: 2, m: "" });
+      S.cards = [card("Thrasios, Triton Hero", "GU", "Legendary Creature — Merfolk", "Partner"),
+                 card("Tymna the Weaver", "WB", "Legendary Creature — Human", "Partner"),
+                 card("Swords to Plowshares", "W", "Instant"), card("Island", "", "Basic Land — Island")];
+      S.byName = new Map(S.cards.map(c => [V.norm(c.n), c]));
+      const d = V.parseDeck("Commander\\n1 Thrasios, Triton Hero\\n1 Tymna the Weaver\\n\\nDeck\\n1 Swords to Plowshares\\n97 Island");
+      S.decks = [{ name: "Partners", ...d }];
+      console.log(JSON.stringify({ checks: V.deckChecks(d).checks, count: V.deckStats(d).count,
+        index: [...V.deckIndex().keys()], text: V.deckToText(d), ci: [...V.cmdCI(d)].sort() }));""")
+    assert got["count"] == 100 and got["ci"] == ["B", "G", "U", "W"]
+    assert all(level == "ok" for level, _ in got["checks"]), got["checks"]   # Swords is in Tymna's colors
+    assert "tymna the weaver" in got["index"]
+    assert got["text"].startswith("Commander\n1 Thrasios, Triton Hero\n1 Tymna the Weaver\n")

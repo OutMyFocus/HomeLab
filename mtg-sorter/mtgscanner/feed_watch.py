@@ -23,8 +23,8 @@ import cv2
 import numpy as np
 from flask import jsonify, request
 
-from . import config
-from .machine import load_saved
+from . import config, health
+from .machine import Busy, claim, load_saved, release
 
 SMALL_W = 160   # pictures are compared at this width: plenty to see a card, and quick
 
@@ -73,13 +73,14 @@ class FrameTap:
         self.watching = 0
         self.seq = 0
         self.small = None
+        self.full = None     # the same picture at full size, as the scanner sees it
 
     def put(self, frame):
         if not self.watching:
             return
         small = small_gray(frame)
         with self.cond:
-            self.small, self.seq = small, self.seq + 1
+            self.small, self.full, self.seq = small, frame, self.seq + 1
             self.cond.notify_all()
 
     def next(self, after: int, timeout: float):
@@ -112,6 +113,10 @@ class FeedWatcher:
     def __init__(self, scanner, machine):
         self.scanner, self.machine = scanner, machine
         self.tap = FrameTap()
+        self._bed_clear = False   # the last sort_one saw its card leave the bed
+        self._card_shares = []    # how much of the bed a good landed card covers (last few)
+        self.nones = 0            # feeds in a row where nothing came out
+        self.test = {"running": False, "rows": [], "stop": False}
         scanner.tap = self.tap
         self.busy = threading.Lock()
 
@@ -157,6 +162,10 @@ class FeedWatcher:
         self.tap.watching += 1
         self._hold_lights(True)
         try:
+            # Never feed into a stop bar that is still on its way up (or down).
+            pins_up = getattr(self.machine, "pins_up", None)
+            if pins_up is not None:
+                pins_up()
             seq, ref = self.tap.next(self.tap.seq, timeout=2.0)
             if ref is None:
                 raise RuntimeError("No camera picture to watch: is the Pi camera on and picked on the Scanner page?")
@@ -222,19 +231,47 @@ class FeedWatcher:
                 result = "landed" if share >= config.FEED_LAND_SHARE else "none"
             else:
                 result = "landed" if share >= config.FEED_LAND_SHARE / 2 else "over"
-            return {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms,
-                    "push_ms": round(1000 * (push if landed_ms is not None else 0)) if landed_ms is not None else 0,
-                    "backoff_ms": round(1000 * backoff) if landed_ms is not None else 0,
-                    "zone": zone, "settled_share": round(share, 3), "trace": trace}
+            out = {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms,
+                   "push_ms": round(1000 * (push if landed_ms is not None else 0)) if landed_ms is not None else 0,
+                   "backoff_ms": round(1000 * backoff) if landed_ms is not None else 0,
+                   "zone": zone, "settled_share": round(share, 3), "trace": trace}
+            health.feed_result(out)
+            return out
         finally:
             self._hold_lights(False)
             self.tap.watching -= 1
             self.busy.release()
 
 
-    @staticmethod
-    def check_bin(bin_no) -> int:
-        bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
+    def bed_check(self, empty, zone):
+        """A short look after landing, before anything drops. Returns None when one card
+        lies at the stop, else why not: "over" (the stop area is empty again: the card went
+        over the stop bar), "crowded" (much more of the bed changed than one card covers:
+        a hand, two cards, or a card standing up nearer the camera)."""
+        if empty is None:
+            return None
+        wait = float(getattr(config, "BED_CHECK_SECONDS", 0.25))
+        seq, now = self.tap.seq, None
+        end = time.monotonic() + max(0.05, wait)
+        while time.monotonic() < end:
+            seq, pic = self.tap.next(seq, timeout=max(0.05, end - time.monotonic()))
+            now = pic if pic is not None else now
+        if now is None:
+            return None
+        if changed_share(empty, now, zone) < config.FEED_LAND_SHARE / 2:
+            return "over"
+        check = clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95]
+        share = changed_share(empty, now, check)
+        self._last_bed_share = round(share, 3)
+        if len(self._card_shares) >= 3:
+            typical = float(np.median(self._card_shares))
+            if share > typical * float(getattr(config, "BED_CROWDED_TIMES", 1.6)):
+                return "crowded"
+        return None
+
+    def check_bin(self, bin_no) -> int:
+        bins = (self.machine.bins() if hasattr(self.machine, "bins")
+                else getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"}))
         if bin_no not in bins and str(bin_no) not in map(str, bins):
             raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
         return int(bin_no)
@@ -258,14 +295,42 @@ class FeedWatcher:
         self._hold_lights(True)
         try:
             seq, empty = self.tap.next(self.tap.seq, timeout=2.0)   # the bed before the card
+            remember = getattr(self.scanner, "remember_empty_bed", None)
+            if self._bed_clear and remember is not None and empty is not None:
+                # The last card was seen leaving, so the bed is bare: keep the scanner's
+                # idea of the empty bed up to date (the light and the bed change), so its
+                # ribs are never read as a card (2026-11-09).
+                try:
+                    remember(self.tap.full, save=True)
+                except Exception:
+                    pass
+            self._bed_clear = False
             # Feed without the settle wait or the back-off: the pins drop the moment the
             # card lands, with the back-off turning at the same time (the machine's own
             # timer stops it), so the card is on its way before the next one can follow
             # it out of the slot. Measured 2026-11-06: the old order dropped the pins 1.4 s
             # after landing, and the card behind caught the landed one meanwhile.
             fed = self.feed_one(speed=speed, backoff=0, settle=0, push=push)
+            retry = getattr(config, "FEED_RETRY_SPEED", None)
+            if fed["result"] in ("none", "stuck") and retry:
+                # The gate held the card part way out (set a hair low, or a sticky new
+                # card): one more push at full power usually gets it through, where the
+                # run used to stop on "nothing came out" (2026-11-08).
+                again = self.feed_one(speed=float(retry), backoff=0, settle=0, push=push)
+                # Still nothing: keep the first answer ("stuck" says more than "none", since
+                # the retry's picture already had the held card in it).
+                fed = (again if again["result"] not in ("none", "stuck") else fed) | {"retried": fed["result"]}
             out = fed | {"bin": bin_no, "dropped": None, "drop_tries": 0}
+            self.nones = self.nones + 1 if fed["result"] == "none" else 0
+            out["nones_in_row"] = self.nones
             if fed["result"] in ("none", "stuck"):
+                return out
+            # Before dropping: is there one card, lying flat, at the stop? (2026-11-24: hands,
+            # a nose-up card and a card that went over the stop bar all counted as "landed".)
+            look = self.bed_check(empty, fed["zone"])
+            if look:
+                out["result"] = look
+                health.feed_result({"result": look, "landed_ms": fed.get("landed_ms"), "motor_ms": fed.get("motor_ms")})
                 return out
             backoff = self._feeder_setting("backoff", backoff, config.FEED_BACKOFF_SECONDS,
                                            getattr(config, "FEED_BACKOFF_MAX", 1.0))
@@ -290,6 +355,7 @@ class FeedWatcher:
                     return False
                 return changed_share(empty, now, fed["zone"]) < config.FEED_LAND_SHARE / 2
 
+            out["bed_share"] = getattr(self, "_last_bed_share", None)
             for attempt in range(1 + max(0, int(getattr(config, "SORT_RETRIES", 1)))):
                 self.machine.drop(bin_no, card_gone=card_gone, **drop)
                 out["drop_tries"] = attempt + 1
@@ -311,7 +377,13 @@ class FeedWatcher:
                 out["dropped"] = share < getattr(config, "SORT_GONE_SHARE", 0.05)
                 out["left_share"] = round(share, 3)
                 if out["dropped"]:
+                    self._bed_clear = True
                     break
+            health.drop_result(out)
+            if out.get("result") == "over":
+                health.event("feed", f"Bin {bin_no}: the card went over the stop teeth (the feed was too fast)", "warn")
+            if out.get("result") == "landed" and out.get("dropped") and out.get("bed_share"):
+                self._card_shares = (self._card_shares + [out["bed_share"]])[-10:]
         finally:
             self._hold_lights(False)
             self.tap.watching -= 1
@@ -321,7 +393,12 @@ class FeedWatcher:
 MESSAGES = {
     "landed": "Fed one card: it landed on the bed.",
     "over": "A card came out but slid past the stop teeth: try a lower speed.",
-    "none": "No card reached the bed: check the feeder's grip, or a card stuck in the slot.",
+    "none": "No card came out. If the stack was just touched or is low, square it up, check the "
+            "bottom card lies flat over the wheels, keep 20+ cards in, and try again.",
+    "none_twice": "Nothing came out twice in a row: the stack is probably empty, or the bottom card "
+                  "is bent or sitting off the wheels. Reload the stack.",
+    "crowded": "Stopped before dropping: the camera sees more than one flat card (a hand, two cards, "
+               "or a card standing up). Clear the bed, then go again.",
     "stuck": "A card came part way out and stopped: the gate is holding it. Open the gate a little "
              "(one card should slide through by hand, two together shouldn't) and take the card off the bed.",
 }
@@ -332,17 +409,33 @@ def add_feed_watch_routes(app, scanner, machine):
     hardware) the Pi does it, since the Pi has both the motor and the camera."""
     watcher = None if hasattr(machine, "feed_one") else FeedWatcher(scanner, machine)
     run = machine.feed_one if watcher is None else watcher.feed_one
+    LOST = "Lost touch with the sorter's servo board or motor. Check its power and wiring, then try again."
+
+    def guarded(action):
+        """One card fed by hand: refused while a run drives the machine, and keeps a run
+        from starting until it's done. The checks are here, not in feed_one or sort_one,
+        because the runs call those from their own thread."""
+        claim(machine, "one-card feed")
+        try:
+            return action()
+        finally:
+            release(machine, "one-card feed")
 
     @app.post("/api/machine/feed_one")
     def machine_feed_one():
         body = request.get_json(silent=True) or {}
         try:
-            out = run(body.get("speed"), body.get("max_seconds"), body.get("zone"), body.get("backoff"),
-                      push=body.get("push"))
+            out = guarded(lambda: run(body.get("speed"), body.get("max_seconds"), body.get("zone"),
+                                      body.get("backoff"), push=body.get("push")))
+        except Busy as e:
+            return jsonify(error=str(e)), 409
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
+        except OSError as e:
+            print(f"Machine: {LOST} ({e})")
+            return jsonify(error=LOST), 503
         return jsonify(out | {"message": MESSAGES.get(out.get("result"), "")})
 
     @app.post("/api/machine/sort_one")
@@ -350,14 +443,23 @@ def add_feed_watch_routes(app, scanner, machine):
         body = request.get_json(silent=True) or {}
         run_sort = machine.sort_one if watcher is None else watcher.sort_one
         try:
-            out = run_sort(body.get("bin"), body.get("speed"), body.get("drop"), body.get("backoff"),
-                           push=body.get("push"))
+            out = guarded(lambda: run_sort(body.get("bin"), body.get("speed"), body.get("drop"),
+                                           body.get("backoff"), push=body.get("push")))
+        except Busy as e:
+            return jsonify(error=str(e)), 409
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
-        if out.get("result") in ("none", "stuck"):
+        except OSError as e:
+            print(f"Machine: {LOST} ({e})")
+            return jsonify(error=LOST), 503
+        if out.get("result") == "none" and out.get("nones_in_row", 0) >= 2:
+            message = MESSAGES["none_twice"]
+        elif out.get("result") in ("none", "stuck", "crowded"):
             message = MESSAGES[out["result"]]
+        elif out.get("result") == "over":
+            message = "Stopped before dropping: the card went over the stop bar. Take it off and go again."
         elif out.get("dropped") is False:
             message = f"A card came out but it is still on the bed after {out['drop_tries']} drop(s): check the doors and the bin."
         elif out.get("dropped") is None:
@@ -365,6 +467,73 @@ def add_feed_watch_routes(app, scanner, machine):
         else:
             message = f"Fed a card and dropped it to bin {out['bin']}."
         return jsonify(out | {"message": message})
+
+    # --- Test run: feed and drop N cards in turn, stop at the first problem ---------------
+
+    def test_loop(count, bins):
+        t = watcher.test
+        try:
+            claim(machine, "test run")
+        except Busy as e:
+            t.update(running=False, reason=str(e))
+            return
+        reason = f"done: {count} cards"
+        try:
+            for i in range(count):
+                if t["stop"]:
+                    reason = "stopped"
+                    break
+                bin_no = bins[i % len(bins)]
+                t0 = time.monotonic()
+                try:
+                    out = watcher.sort_one(bin_no)
+                except Exception as e:
+                    reason = f"error: {e}"
+                    break
+                ok = out.get("result") == "landed" and out.get("dropped") is not False
+                row = {"n": i + 1, "bin": bin_no, "result": out.get("result"),
+                       "landed_ms": out.get("landed_ms"), "dropped": out.get("dropped"),
+                       "seconds": round(time.monotonic() - t0, 1), "ok": ok}
+                t["rows"].append(row)
+                if not ok:
+                    key = out.get("result")
+                    if key == "none" and out.get("nones_in_row", 0) >= 2:
+                        key = "none_twice"
+                    reason = MESSAGES.get(key) or ("The card is still on the bed after the drop."
+                                                   if out.get("dropped") is False else f"Stopped: {key}")
+                    break
+        finally:
+            try:
+                machine.stop_feeder()
+            except Exception:
+                pass
+            release(machine, "test run")
+            t.update(running=False, reason=reason)
+
+    @app.post("/api/machine/test_run")
+    def machine_test_run():
+        if watcher is None:
+            return jsonify(error="Run the test from the Pi's own page: http://10.0.0.247:5000/machine?stay=1"), 400
+        body = request.get_json(silent=True) or {}
+        if body.get("stop"):
+            watcher.test["stop"] = True
+            return jsonify(watcher.test)
+        if watcher.test["running"]:
+            return jsonify(error="A test run is already going."), 409
+        try:
+            count = max(1, min(100, int(body.get("count") or 10)))
+            bins = [watcher.check_bin(b) for b in (body.get("bins") or list(machine.bins()))]
+        except (ValueError, TypeError) as e:
+            return jsonify(error=str(e)), 400
+        if not bins:
+            return jsonify(error="No bins to drop into."), 400
+        watcher.test = {"running": True, "stop": False, "rows": [], "count": count, "reason": None}
+        threading.Thread(target=test_loop, args=(count, bins), daemon=True).start()
+        return jsonify(watcher.test)
+
+    @app.get("/api/machine/test_run")
+    def machine_test_status():
+        return jsonify(watcher.test if watcher is not None else {"running": False, "rows": []})
 
     @app.get("/api/machine/feed_zone")
     def machine_feed_zone_get():
@@ -384,6 +553,9 @@ def add_feed_watch_routes(app, scanner, machine):
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
             return jsonify(error=str(e)), 503
+        except OSError as e:
+            print(f"Machine: couldn't save the feed zone ({e})")
+            return jsonify(error="Couldn't save the zone. Is the data folder full or read-only?"), 503
         return jsonify({"zone": clean_zone(body.get("zone"))})
 
     return watcher

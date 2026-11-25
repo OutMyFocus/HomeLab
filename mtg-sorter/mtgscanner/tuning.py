@@ -19,12 +19,16 @@ The settings the run ends with are offered to be saved (POST /api/machine/tune/s
 the feeder speed as the usual one, the drop timings in data/machine_settings.json "sort".
 """
 
+import logging
 import threading
 import time
 
 from flask import jsonify, request
 
 from . import config
+from .machine import claim, release
+
+log = logging.getLogger(__name__)
 
 SPEED_STEP = 0.05
 PINS_STEP = 0.5
@@ -58,12 +62,19 @@ class TuningRun:
                 "doors_seconds": float(drop["doors_seconds"] if doors_seconds is None else doors_seconds),
                 "tilt_seconds": float(drop["tilt_seconds"] if tilt_seconds is None else tilt_seconds),
             }
+            # Nothing else moves the machine while the run drives it (see SortRun.start).
+            claim(self.machine, "tuning run")
             self.stop_asked = False
             self.state = {"running": True, "feeds": [], "settings": settings, "started": settings.copy(),
                           "plan": {"cycles": cycles, "bins": bins, "adjust": bool(adjust)},
                           "done": None, "changes": []}
             self.thread = threading.Thread(target=self._run, args=(cycles, bins, bool(adjust)), daemon=True)
-            self.thread.start()
+            try:
+                self.thread.start()
+            except Exception:
+                self.state["running"] = False
+                release(self.machine, "tuning run")
+                raise
         return self.status()
 
     def stop(self) -> dict:
@@ -118,7 +129,15 @@ class TuningRun:
                     if nothing_in_a_row >= 2:
                         reason = "nothing came out twice in a row: is the hopper empty?"
                         return
+        except Exception as e:     # no servo board at the start, an I2C or disk error mid-feed
+            log.exception("The tuning run stopped on an error")
+            reason = f"error: {e}"
         finally:
+            try:
+                self.machine.stop_feeder()      # never leave the motor turning
+            except Exception:
+                pass
+            release(self.machine, "tuning run")    # free before the page sees "done"
             with self.lock:
                 self.state["running"] = False
                 self.state["done"] = reason
@@ -165,6 +184,9 @@ def add_tuning_routes(app, watcher, machine):
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
             return jsonify(error=str(e)), timeout_error
+        except OSError as e:     # saving the settings: a full or read-only disk
+            print(f"Tuning: couldn't save the settings ({e})")
+            return jsonify(error="Couldn't save the settings. Is the data folder full or read-only?"), 503
 
     @app.post("/api/machine/tune")
     def tune_start():

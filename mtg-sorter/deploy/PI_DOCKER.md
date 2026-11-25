@@ -51,3 +51,8 @@ The server's Machine page, Home page and check-up then send every move to the Pi
 angles stay on the Pi. If the Pi has a PIN or accounts on, also run `mtg machine-key` on
 the Pi and put what it prints in `MTG_MACHINE_KEY` on the server. The key only opens the
 Pi's machine controls, nothing else.
+
+The server is then the main copy: it copies every card the Pi saves (sort runs included) into
+its own collection, and the Pi's pages send the browser on to the server's site while the
+server is up. Add `?stay=1` to a Pi address to use the Pi's own pages anyway. See "One
+collection" in [UNRAID.md](UNRAID.md).

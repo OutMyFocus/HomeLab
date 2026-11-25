@@ -11,6 +11,9 @@ writes, next to this script:
   MTG_Sorter_Bins_And_Organizer.3mf  three bins for the sorter (bins.scad) with removable
                                      showcase front plates, card dividers, and a 3-wide, 2-high organizer to keep the bins in
   MTG_Sorter_DC_Jack_Holder.3mf      holder + bezel for the servo-power barrel jack (dc_jack_holder.scad)
+  MTG_Sorter_Feeder_Box_v4.3mf       feeder box v4 (feeder4.scad): stand, hopper, separator shoe, roller,
+                                     and the scan bed v3.1 plate with the wheel slots, and the hopper tower
+                                     with its front open
 
   python3 make_small_projects.py MTG_Sorter_Bins_And_Organizer.3mf   builds just that one
 
@@ -47,6 +50,17 @@ mp.PER_PART.update({
     "bins_plate": {"brim_type": "outer_only", "brim_width": "5"},   # thin and 109 tall
     "dc_jack_holder": STRUCTURAL,
     "dc_jack_bezel": STRUCTURAL,
+    # scan bed v3.1, slippery smooth: the card's face is flat on this print, so 0.2 mm layers are
+    # fine; more top layers and ironing on every top surface (the nozzle passes again, a little flow)
+    "bed_chute_bed_plate3": {"wall_loops": "3", "sparse_infill_density": "20%",
+                             "top_shell_layers": "7", "top_surface_line_width": "0.4",
+                             "ironing_type": "top", "ironing_flow": "15%", "ironing_spacing": "0.1", "ironing_speed": "20"},
+    "feeder_weight_solid": SOLID,
+    "bed_chute_stop_gate3": STRUCTURAL,
+    "feeder4_stand4": TALL,
+    "feeder4_hopper4": TALL,
+    "feeder4_shoe4": SOLID,       # its weight is what presses the pads on the wheels
+    "feeder4_roller4": SOLID,
 })
 
 PROJECTS = {
@@ -72,11 +86,37 @@ PROJECTS = {
         ("4 Blank showcase cards (WHITE, optional)", ["bins_label"] * 3),
         ("5 Organizer 2x2 (brim)", ["bins_organizer_2x2"]),
         ("6 Organizer 1x2 (brim)", ["bins_organizer_1x2"]),
+    "MTG_Sorter_Scan_Bed_v3.3mf": [
+        ("1 Scan bed v3 plate (WHITE)", ["bed_chute_bed_plate3"]),
+        ("2 Solid hopper weight (any colour, 100% infill)", ["feeder_weight_solid"]),
+        ("3 Stop bar, replaces the four-tooth stop gate (black)", ["bed_chute_stop_gate3"]),
+    ],
+    "MTG_Sorter_Feeder_Box_v4.3mf": [
+        ("1 Feeder stand v4 (black, brim)", ["feeder4_stand4"]),
+        ("2 Feeder hopper v4 (black, brim)", ["feeder4_hopper4"]),
+        ("3 Separator shoe and roller (100% infill)", ["feeder4_shoe4", "feeder4_roller4"]),
+        ("4 Scan bed v3.1 plate with wheel slots (WHITE)", ["bed_chute_bed_plate3"]),
+        ("5 Stop bar v3.2 (black), if not printed yet", ["bed_chute_stop_gate3"]),
+        ("6 Hopper tower with the open front (black, brim), if you fit the tower", ["enc_tower"]),
     ],
     "MTG_Sorter_DC_Jack_Holder.3mf": [
         ("1 DC jack holder and bezel (black)", ["dc_jack_holder", "dc_jack_bezel"]),
     ],
 }
+
+def write_bed_preset():
+    """presets/MTG_Scan_Bed_Slippery_Smooth.json: the bed plate's settings as a process preset,
+    for Bambu Studio's File > Import > Import Configs (use it when slicing bed_plate3 on its own)."""
+    import json
+    name = "MTG Scan Bed - Slippery smooth @BBL A1"
+    p = {"type": "process", "name": name, "inherits": mp.PROCESS_BASE, "from": "User",
+         "instantiation": "true", "version": mp.VERSION, "print_settings_id": name, "is_custom_defined": "0"}
+    p.update(mp.GLOBAL)
+    p.update(mp.PER_PART["bed_chute_bed_plate3"])
+    with open(os.path.join(mp.HERE, "presets", "MTG_Scan_Bed_Slippery_Smooth.json"), "w") as f:
+        json.dump(p, f, indent=4)
+    print("wrote presets/MTG_Scan_Bed_Slippery_Smooth.json")
+
 
 if __name__ == "__main__":
     import sys
@@ -86,3 +126,4 @@ if __name__ == "__main__":
         mp.PLATES = plates
         mp.OUT = os.path.join(mp.HERE, name)
         mp.main()
+    write_bed_preset()

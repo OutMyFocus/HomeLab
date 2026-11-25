@@ -26,13 +26,21 @@ command) count as the owner, as long as they didn't come in through a tunnel.
 
 Locked out? Delete data/users.json on the Pi or server and the login is gone (everyone's
 cards stay where they are; turn accounts on again to get them back).
+
+users.json.bak next to it is a copy from the last save. If users.json gets damaged, the app
+uses that copy; with neither readable, only the Pi itself gets in until one is fixed.
 """
 
+import copy
 import hashlib
 import hmac
 import json
+import logging
+import math
+import os
 import re
 import secrets
+import tempfile
 import threading
 import time
 from contextlib import contextmanager
@@ -57,6 +65,7 @@ _current: ContextVar[str | None] = ContextVar("mtg_account", default=None)
 _cache: dict = {"mtime": None, "data": None}
 _lock = threading.RLock()
 _tries: dict[str, tuple[int, float]] = {}
+log = logging.getLogger(__name__)
 
 
 # --- The accounts file ----------------------------------------------------------------------
@@ -65,8 +74,27 @@ def users_file() -> Path:
     return config.DATA_DIR / "users.json"
 
 
+def backup_file() -> Path:
+    """A copy of users.json from the last time it was saved, in case users.json gets damaged."""
+    return config.DATA_DIR / "users.json.bak"
+
+
+def _read(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    ok = isinstance(data, dict) and data.get("secret") and isinstance(data.get("users"), dict) and data["users"]
+    return data if ok else None
+
+
 def _load() -> dict | None:
-    """users.json, or None while accounts are off. Read again only when it changes."""
+    """users.json, or None while accounts are off (no file) or the file is damaged.
+    Read again only when it changes.
+
+    A file that is there but can't be read (a bad hand edit, a half-copied restore) never
+    turns accounts off: the app keeps the accounts it read last, or the copy saved next to
+    it (users.json.bak). With neither, damaged() is True and logins.py lets only the Pi in."""
     path = users_file()
     try:
         mtime = path.stat().st_mtime_ns
@@ -75,27 +103,62 @@ def _load() -> dict | None:
     with _lock:
         if _cache["mtime"] == mtime and _cache.get("path") == path:
             return _cache["data"]
-        try:
-            data = json.loads(path.read_text())
-            ok = isinstance(data, dict) and data.get("secret") and isinstance(data.get("users"), dict) and data["users"]
-        except (OSError, ValueError):
-            ok = False
-        data = data if ok else None
+        data = _read(path)
+        if data is None:
+            data = (_cache["data"] if _cache.get("path") == path else None) or _read(backup_file())
+            log.warning("%s can't be read: using %s", path,
+                        "the accounts read before it broke" if data else "nothing (only the Pi can get in)")
         _cache.update(mtime=mtime, data=data, path=path)
         return data
 
 
+def _write(path: Path, text: str):
+    """Write a file in one go: a half-written file is never left in its place."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name.split(".")[0] + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _save(data: dict):
+    """Save users.json (and the spare copy, users.json.bak). Call it holding _lock, with
+    a copy of what _load gave (see _changing)."""
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = users_file().with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=1))
-    tmp.replace(users_file())
+    text = json.dumps(data, indent=1)
     with _lock:
+        _write(users_file(), text)
+        _write(backup_file(), text)
         _cache.update(mtime=None)
 
 
+@contextmanager
+def _changing():
+    """A copy of the accounts to change and save, one change at a time. Nothing changes
+    in memory if the change stops half way with an error."""
+    with _lock:
+        data = _load()
+        yield copy.deepcopy(data) if data else None
+
+
+def damaged() -> bool:
+    """users.json is there but can't be read, and there's no good copy to use instead."""
+    return _load() is None and users_file().exists()
+
+
 def enabled() -> bool:
-    return _load() is not None
+    """Accounts are on. A damaged users.json still counts as on, so nobody gets in
+    without logging in just because the file broke."""
+    return _load() is not None or users_file().exists()
 
 
 def owner() -> str | None:
@@ -143,31 +206,55 @@ def _clean_perms(raw, role=None) -> list[str]:
     return list(PERMS) if "admin" in perms else perms
 
 
-def _account(name, password, perms) -> dict:
+DAMAGED = ("data/users.json is damaged (and so is its copy, users.json.bak), so nobody can log in. "
+           "On the Pi or server, put back users.json from a backup, or delete it to turn accounts off.")
+
+
+def _secret(password: str) -> tuple[str, str]:
+    """A new salt and hash. Slow on purpose: do it before taking _lock."""
     salt = secrets.token_hex(16)
+    return salt, _hash(password, salt)
+
+
+def _account(name, secret: tuple[str, str], perms, session=1) -> dict:
+    salt, hashed = secret
     return {"name": str(name or "").strip()[:40], "perms": perms, "salt": salt,
-            "hash": _hash(password, salt), "session": 1, "created": time.strftime("%Y-%m-%d %H:%M")}
+            "hash": hashed, "session": session, "created": time.strftime("%Y-%m-%d %H:%M")}
+
+
+def _new_session(data: dict, username: str) -> int:
+    """Where a new account's logins start. A username that was removed starts after its
+    old logins, so a phone still holding one doesn't get into the new account."""
+    return int((data.get("retired") or {}).pop(username, 0)) + 1
 
 
 def setup(username, password, name="") -> str:
     """Turn accounts on: the first account is the owner, and keeps the existing cards."""
-    if enabled():
-        raise ValueError("Accounts are on already")
+    if users_file().exists():
+        raise ValueError(DAMAGED if damaged() else "Accounts are on already")
     username = _clean_username(username)
-    account = _account(name or username, _clean_password(password), list(PERMS)) | {"owner": True}
-    _save({"secret": secrets.token_hex(32), "users": {username: account}})
+    secret = _secret(_clean_password(password))
+    with _lock:
+        if users_file().exists():
+            raise ValueError("Accounts are on already")
+        account = _account(name or username, secret, list(PERMS)) | {"owner": True}
+        _save({"secret": secrets.token_hex(32), "users": {username: account}})
     return username
 
 
 def add(username, password, name="", perms=None, role="member") -> str:
-    data = _load()
-    if not data:
+    if not _load():
         raise ValueError("Turn accounts on first")
     username = _clean_username(username)
-    if username in data["users"]:
-        raise ValueError("Someone already has that username")
-    data["users"][username] = _account(name or username, _clean_password(password), _clean_perms(perms, role))
-    _save(data)
+    secret = _secret(_clean_password(password))
+    with _changing() as data:
+        if not data:
+            raise ValueError("Turn accounts on first")
+        if username in data["users"]:
+            raise ValueError("Someone already has that username")
+        data["users"][username] = _account(name or username, secret, _clean_perms(perms, role),
+                                           _new_session(data, username))
+        _save(data)
     home(username).mkdir(parents=True, exist_ok=True)
     return username
 
@@ -188,15 +275,16 @@ def _code_id(code: str) -> str:
 
 def create_invite(by: str, role="member", uses=1, days=7, note="") -> str:
     """A new invite link's code (shown once)."""
-    data = _load()
-    if not data:
+    if not _load():
         raise ValueError("Turn accounts on first")
     if role not in INVITE_ROLES:
         raise ValueError("An invite makes a member or a viewer. Make admins on the People list")
     uses = int(uses) if str(uses).isdigit() and int(uses) in INVITE_USES else 1
     days = int(days) if str(days).isdigit() and int(days) in INVITE_DAYS else 7
     code = secrets.token_urlsafe(18)
-    with _lock:
+    with _changing() as data:
+        if not data:
+            raise ValueError("Turn accounts on first")
         invites = _live_invites(data)
         invites[_code_id(code)] = {"role": role, "uses": uses, "used": [], "by": by or "",
                                    "note": str(note or "").strip()[:40], "created": int(time.time()),
@@ -231,10 +319,9 @@ def check_invite(code) -> dict | None:
 
 
 def cancel_invite(invite_id: str):
-    data = _load()
-    if not data:
-        return
-    with _lock:
+    with _changing() as data:
+        if not data:
+            return
         invites = _live_invites(data)
         gone = [k for k in invites if k[:12] == str(invite_id or "")]
         if not gone:
@@ -246,10 +333,13 @@ def cancel_invite(invite_id: str):
 
 
 def join(code, username, password, name="") -> str:
-    """Make an account from an invite link. The username can't be one someone had before
-    (their cards are still kept under it)."""
-    with _lock:
-        data = _load()
+    """Make an account from an invite link. The username can't be one someone has, or one
+    whose cards are still kept (someone removed who had cards)."""
+    if not _load():
+        raise ValueError("This sorter doesn't use accounts")
+    username = _clean_username(username)
+    secret = _secret(_clean_password(password))
+    with _changing() as data:
         if not data:
             raise ValueError("This sorter doesn't use accounts")
         invites = _live_invites(data)
@@ -257,12 +347,11 @@ def join(code, username, password, name="") -> str:
         invite = invites.get(key)
         if not invite:
             raise ValueError("This invite link is used up, ran out or was cancelled. Ask for a new one")
-        username = _clean_username(username)
         folder = config.DATA_DIR / "users" / username
         if username in data["users"] or (folder.is_dir() and any(folder.iterdir())):
             raise ValueError("Someone already has that username: pick another")
-        data["users"][username] = _account(name or username, _clean_password(password), list(ROLES[invite["role"]])) \
-            | {"invited_by": invite.get("by", "")}
+        data["users"][username] = _account(name or username, secret, list(ROLES[invite["role"]]),
+                                           _new_session(data, username)) | {"invited_by": invite.get("by", "")}
         invite.setdefault("used", []).append(username)
         data["invites"] = _live_invites(data)
         _save(data)
@@ -272,45 +361,52 @@ def join(code, username, password, name="") -> str:
 
 def update(username, name=None, perms=None, password=None):
     """Change someone's name, permissions or password. A new password logs them out
-    everywhere else."""
+    everywhere else. Everything is checked first: a refused change changes nothing."""
     data = _load()
     account = data and data["users"].get(username)
     if not account:
         raise ValueError("There's no account called that")
-    if name is not None:
-        account["name"] = str(name).strip()[:40] or username
     if perms is not None:
         perms = _clean_perms(perms)
-        if account.get("owner") and "admin" not in perms:
-            raise ValueError("The owner always stays an admin")
-        if "admin" in account["perms"] and "admin" not in perms and _admins(data) == [username]:
-            raise ValueError("Keep at least one admin")
-        account["perms"] = perms
-    if password is not None:
-        account["salt"] = secrets.token_hex(16)
-        account["hash"] = _hash(_clean_password(password), account["salt"])
-        account["session"] = int(account.get("session", 1)) + 1
-    _save(data)
+    secret = _secret(_clean_password(password)) if password is not None else None
+    with _changing() as data:
+        account = data and data["users"].get(username)
+        if not account:
+            raise ValueError("There's no account called that")
+        if perms is not None:
+            if account.get("owner") and "admin" not in perms:
+                raise ValueError("The owner always stays an admin")
+            if "admin" in account["perms"] and "admin" not in perms and _admins(data) == [username]:
+                raise ValueError("Keep at least one admin")
+            account["perms"] = perms
+        if name is not None:
+            account["name"] = str(name).strip()[:40] or username
+        if secret is not None:
+            account["salt"], account["hash"] = secret
+            account["session"] = int(account.get("session", 1)) + 1
+        _save(data)
 
 
 def remove(username):
     """Take the account away. Their cards stay in data/users/<username>/, so adding the
-    same username again brings them back."""
-    data = _load()
-    account = data and data["users"].get(username)
-    if not account:
-        raise ValueError("There's no account called that")
-    if account.get("owner"):
-        raise ValueError("The owner's account can't be removed")
-    del data["users"][username]
-    _save(data)
+    same username again brings the cards back (but not the old logins: a phone that was
+    logged in as them stays logged out)."""
+    with _changing() as data:
+        account = data and data["users"].get(username)
+        if not account:
+            raise ValueError("There's no account called that")
+        if account.get("owner"):
+            raise ValueError("The owner's account can't be removed")
+        data.setdefault("retired", {})[username] = int(account.get("session", 1))
+        del data["users"][username]
+        _save(data)
 
 
 def log_out_everywhere(username):
-    data = _load()
-    if data and username in data["users"]:
-        data["users"][username]["session"] = int(data["users"][username].get("session", 1)) + 1
-        _save(data)
+    with _changing() as data:
+        if data and username in data["users"]:
+            data["users"][username]["session"] = int(data["users"][username].get("session", 1)) + 1
+            _save(data)
 
 
 def _admins(data) -> list[str]:
@@ -325,10 +421,79 @@ def check_password(username, password) -> bool:
     return hmac.compare_digest(_hash(str(password or ""), account["salt"]), account["hash"])
 
 
-def too_many_tries(who: str) -> bool:
+# --- Too many wrong passwords ---------------------------------------------------------------
+# After TRIES wrong tries in a row from one place it waits PAUSE seconds, then twice as long
+# after each wrong one after that, up to MAX_PAUSE. A right one clears it, and so does a
+# quiet spell (`forget` seconds after the last try). The PIN lock (security.py) uses the same.
+
+MAX_PAUSE = 15 * 60
+FORGET = 15 * 60                 # a login's wrong tries are forgotten this long after the last one
+USER_CAP, USER_SPAN = 20, 10 * 60   # wrong passwords for one username, from anywhere, in USER_SPAN
+
+
+def _pause_after(count: int) -> float:
+    return 0 if count < TRIES else min(PAUSE * 2 ** (count - TRIES), MAX_PAUSE)
+
+
+def _wait(book: dict, who: str, forget: float, now: float) -> int:
+    count, last = book.get(who, (0, 0.0))
+    if now - last > forget:
+        return 0
+    return max(0, math.ceil(_pause_after(count) - (now - last)))
+
+
+def _prune(book: dict, now: float, forget: float):
+    if len(book) > 500:
+        for k in [k for k, (_, last) in book.items() if now - last > forget]:
+            del book[k]
+
+
+def take_try(who: str, book: dict | None = None, forget: float = FORGET, also=None) -> int:
+    """Count a try before it's checked, so tries sent all at once can't slip past the
+    limit while the first ones are still being checked. Returns 0 to go ahead, or how many
+    seconds to wait. `also` is (key, cap, span): a second limit, at most `cap` tries in
+    `span` seconds under that key (span no longer than forget)."""
+    book = _tries if book is None else book
     with _lock:
-        count, since = _tries.get(who, (0, 0.0))
-        return count >= TRIES and time.time() - since < PAUSE
+        now = time.time()
+        _prune(book, now, forget)
+        wait = _wait(book, who, forget, now)
+        if wait:
+            return wait
+        if also:
+            key, cap, span = also
+            count, start = book.get(key, (0, now))
+            if now - start > span:
+                count, start = 0, now
+            if count >= cap:
+                return max(1, math.ceil(span - (now - start)))
+            book[key] = (count + 1, start)
+        count, last = book.get(who, (0, 0.0))
+        book[who] = ((0 if now - last > forget else count) + 1, now)
+        return 0
+
+
+def clear_tries(who: str, book: dict | None = None, also_key: str | None = None):
+    """A right password or PIN: forget the wrong ones from there (and take this one back
+    off the second limit, which only counts wrong ones)."""
+    book = _tries if book is None else book
+    with _lock:
+        book.pop(who, None)
+        if also_key in book:
+            count, start = book[also_key]
+            book[also_key] = (max(0, count - 1), start)
+
+
+def login_limit(username: str):
+    """The second limit for a login: wrong passwords for this username from anywhere."""
+    return ("user:" + username, USER_CAP, USER_SPAN) if get(username) else None
+
+
+def too_many_tries(who: str) -> int:
+    """Seconds `who` still has to wait (0: none). For invite links, whose codes are too long
+    to guess, so they're counted after the check (see note_try)."""
+    with _lock:
+        return _wait(_tries, who, FORGET, time.time())
 
 
 def note_try(who: str, ok: bool):
@@ -336,8 +501,18 @@ def note_try(who: str, ok: bool):
         if ok:
             _tries.pop(who, None)
         else:
-            count, _ = _tries.get(who, (0, 0.0))
-            _tries[who] = (count % TRIES + 1, time.time())
+            now = time.time()
+            _prune(_tries, now, FORGET)
+            count, last = _tries.get(who, (0, 0.0))
+            _tries[who] = ((0 if now - last > FORGET else count) + 1, now)
+
+
+def wait_words(seconds: int) -> str:
+    """How long to wait, in words: "30 seconds", "2 minutes"."""
+    if seconds < 60:
+        return f"{seconds} second" + ("" if seconds == 1 else "s")
+    minutes = math.ceil(seconds / 60)
+    return f"{minutes} minute" + ("" if minutes == 1 else "s")
 
 
 # --- Logged in ------------------------------------------------------------------------------
@@ -393,7 +568,9 @@ def can(perm: str, username: str | None = None) -> bool:
         return True
     account = get(username if username is not None else _current.get())
     if not account:
-        return False
+        # users.json is damaged: logins.py lets only the Pi itself and the server's machine
+        # key through then, so the Pi (and stopping its machine) keeps working.
+        return damaged()
     perms = account.get("perms", [])
     return "admin" in perms or perm in perms
 

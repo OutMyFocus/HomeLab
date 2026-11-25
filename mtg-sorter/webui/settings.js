@@ -41,6 +41,11 @@
       const parts = [d.sources && `${d.sources} sources (${d.cards} cards)`, d.decks && `${d.decks} decks`, d.wishlist && `${d.wishlist} wishlist cards`,
         d.trade && `${d.trade} trade binder cards`, d.games && `${d.games} games`, d.prices && `prices for ${d.prices} cards`].filter(Boolean);
       $("vImported").innerHTML = parts.length ? `Brought in ${parts.join(", ")}. Have a look at your <a href="/collection">Collection</a> and <a href="/decks">Decks</a>.` : "Nothing new: everything in that file is already here.";
+      if (d.prices_note) {     // a member's import: the shared store prices were left out
+        const note = document.createElement("span");
+        note.textContent = ` ${d.prices_note}.`;
+        $("vImported").append(note);
+      }
       loadVault();
     } catch (e) { $("vImported").textContent = e.message; $("vImport").disabled = false; }
   };

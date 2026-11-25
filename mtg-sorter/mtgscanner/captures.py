@@ -16,6 +16,8 @@ evaluate.py runs the current recognition code over all of it and reports how it 
 """
 
 import csv
+import os
+import threading
 import time
 from pathlib import Path
 
@@ -41,29 +43,38 @@ class CaptureLog:
     def __init__(self, folder: Path):
         self.folder = folder
         self.log = folder / "log.csv"
+        # One log for every scanner (each phone has its own scanner and scanner lock), so
+        # the log has a lock of its own: a phone's scan written while the Train tab rewrote
+        # the log was lost. Take it after a scanner's lock, never before one.
+        self._lock = threading.RLock()
         self._recount(self.rows())
 
     def rows(self) -> list[dict]:
-        if not self.log.exists():
-            return []
-        with self.log.open(newline="", encoding="utf-8") as f:
-            return [{k: row.get(k) or "" for k in COLUMNS} for row in csv.DictReader(f)]
+        with self._lock:
+            if not self.log.exists():
+                return []
+            with self.log.open(newline="", encoding="utf-8") as f:
+                return [{k: row.get(k) or "" for k in COLUMNS} for row in csv.DictReader(f)]
 
     def update(self, crop: str, **changes) -> dict | None:
         """Change a scan that's already in the log (e.g. label it in the Train tab)."""
-        rows = self.rows()
-        found = next((r for r in rows if r["crop"] == crop), None)
-        if found is None:
-            return None
-        found.update(changes)
-        tmp = self.log.with_suffix(".tmp")
-        with tmp.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=COLUMNS)
-            writer.writeheader()
-            writer.writerows(rows)
-        tmp.replace(self.log)
-        self._recount(rows)
-        return found
+        with self._lock:
+            rows = self.rows()
+            found = next((r for r in rows if r["crop"] == crop), None)
+            if found is None:
+                return None
+            found.update(changes)
+            tmp = self.log.with_name(f".{self.log.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+            try:
+                with tmp.open("w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=COLUMNS)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                tmp.replace(self.log)
+            finally:
+                tmp.unlink(missing_ok=True)
+            self._recount(rows)
+            return found
 
     def capture(self, frame, corners, card: Card | None, distance: int, camera: str) -> dict:
         """Save the pictures now. The log row is written by finish(), once the verdict is known."""
@@ -96,14 +107,15 @@ class CaptureLog:
         }
 
     def finish(self, record: dict):
-        new = not self.log.exists()
-        self.folder.mkdir(parents=True, exist_ok=True)
-        with self.log.open("a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=COLUMNS, extrasaction="ignore")
-            if new:
-                writer.writeheader()
-            writer.writerow(record)
-        self._count(record)
+        with self._lock:
+            new = not self.log.exists()
+            self.folder.mkdir(parents=True, exist_ok=True)
+            with self.log.open("a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=COLUMNS, extrasaction="ignore")
+                if new:
+                    writer.writeheader()
+                writer.writerow(record)
+            self._count(record)
 
     def _recount(self, rows: list[dict]):
         self.counts = {"total": 0, "unknown": 0, "saved": 0, "wrong": 0, "corrected": 0, "labeled": 0}
