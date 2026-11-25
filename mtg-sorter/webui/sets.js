@@ -27,13 +27,16 @@
       <circle cx="${size / 2}" cy="${size / 2}" r="${r}" class="ring-fg" stroke-dasharray="${(c * pct / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${size / 2} ${size / 2})"/>
       <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${Math.floor(pct)}%</text></svg>`;
   };
+  // Each set's symbol (Scryfall's picture of it), drawn in the text color so it suits light
+  // and dark. A set Scryfall has no symbol for just shows none.
+  const symbol = code => /^[a-z0-9]{2,6}$/i.test(code) ? `--sym: url('https://svgs.scryfall.io/sets/${code.toLowerCase()}.svg')` : "";
   function renderSets() {
     const q = $("setQ").value.trim().toLowerCase(), started = $("startedOnly").checked;
     const list = sets.filter(s => (!started || s.owned) && (!q || `${s.name} ${s.set}`.toLowerCase().includes(q)));
     const begun = sets.filter(s => s.owned).length;
     $("barNote").textContent = sets.length ? `${plural(begun, "set")} started of ${sets.length.toLocaleString()} in the card database` : "";
-    $("setGrid").innerHTML = list.length ? list.map(s => `<button class="panel set-card${s.percent >= 100 ? " done" : ""}" data-set="${esc(s.set)}">
-        ${ring(s.percent)}<span class="info"><b>${esc(s.name)}</b><small>${esc(s.set)} · ${s.owned} of ${s.total}${s.copies > s.owned ? ` · ${s.copies} copies` : ""}</small>
+    $("setGrid").innerHTML = list.length ? list.map(s => `<button class="panel set-card${s.percent >= 100 ? " done" : ""}" data-set="${esc(s.set)}" style="${symbol(s.set)}">
+        ${ring(s.percent)}<span class="info"><b><i class="set-sym" aria-hidden="true"></i>${esc(s.name)}</b><small>${esc(s.set)} · ${s.owned} of ${s.total}${s.copies > s.owned ? ` · ${s.copies} copies` : ""}</small>
         <span class="bar"><i style="width:${s.percent}%"></i></span></span></button>`).join("")
       : `<p class="results-empty">${sets.length ? (started && !q ? "No set started yet. Scan some cards, or turn off <b>Only sets I've started</b>." : "No set matches that.") : "The card database is empty."}</p>`;
   }
@@ -55,7 +58,7 @@
   $("backBtn").onclick = closeSet;
   function renderDetail() {
     const d = detail, pct = d.total ? 100 * d.owned / d.total : 0, missing = d.total - d.owned;
-    $("dName").textContent = d.name;
+    $("dName").innerHTML = `<i class="set-sym" aria-hidden="true" style="${symbol(d.set)}"></i>${esc(d.name)}`;
     $("dSub").textContent = `${d.set} · you have ${d.owned} of ${d.total}` + (missing ? `. The ${plural(missing, "missing card")} cost about ${money(d.missing_value)} today.` : ". Complete!");
     $("dRing").innerHTML = ring(pct, 76);
     $("dRarity").innerHTML = RARITIES.filter(r => d.by_rarity[r]).map(r => {

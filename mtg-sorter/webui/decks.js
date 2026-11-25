@@ -3,8 +3,9 @@
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = v => v == null ? "–" : "$" + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const DRAFT_KEY = "mtg-deck-draft";
-  let decks = [], currentId = null, result = null, show = "all", toastT;
+  const DRAFT_KEY = "mtg-deck-draft", VIEW_KEY = "mtg-deck-view";
+  let decks = [], currentId = null, result = null, show = "all", toastT, view = "list";
+  try { if (localStorage.getItem(VIEW_KEY) === "pics") view = "pics"; } catch (e) {}
 
   function toast(msg) {
     const t = $("toast"); $("toastText").textContent = msg;
@@ -120,18 +121,41 @@
     $("rUnknown").hidden = !r.unknown.length;
     $("rUnknown").textContent = r.unknown.length ? `Couldn't find ${r.unknown.length === 1 ? "this card" : "these cards"}: ${r.unknown.join(", ")}. Check the spelling.` : "";
     for (const b of $("showSeg").children) b.setAttribute("aria-pressed", b.dataset.v === show);
+    for (const b of $("viewSeg").children) b.setAttribute("aria-pressed", b.dataset.v === view);
     const rows = r.lines.filter(x => show === "all" || (show === "missing" ? x.missing : x.have));
+    $("rPics").hidden = view !== "pics"; $("rTable").hidden = view === "pics";
+    if (view === "pics") return renderPics(rows);
     $("rRows").innerHTML = rows.length ? rows.map(x => {
       const cls = x.extra ? "" : !x.found ? "unknown" : x.missing ? "short" : "ok";
       const where = x.where.map(w => `<span class="pill bin-${w.bin}" title="${esc(w.sorted_into || "")}">${esc(w.set)} #${esc(w.number)}${w.foil ? " foil" : ""} ×${w.qty}</span>`).join("");
       const img = x.image ? `<img class="thumb" src="${esc(x.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">` : '<span class="thumb"></span>';
-      return `<tr class="${cls}"><td class="card-cell">${img}<span><span class="nm">${esc(x.name)}</span><span class="sec">${esc(x.section)}${x.extra ? " · not counted" : ""}</span></span></td>
+      return `<tr class="${cls}"><td class="card-cell">${img}<span><span class="nm">${esc(x.name)}</span><span class="sec">${esc(x.section)}${x.extra ? " · not counted" : x.basic ? " · basic land" : ""}</span></span></td>
         <td class="num">${x.need}</td><td class="num">${x.have}</td>
         <td class="hide-sm"><span class="where">${where || '<span class="sub">Not in your collection</span>'}</span></td>
-        <td class="num">${x.missing ? money(x.price) : ""}</td>
+        <td class="num hide-sm">${x.missing ? money(x.price) : ""}</td>
         <td class="num miss">${x.missing ? `${x.missing}${x.cost != null ? " · " + money(x.cost) : ""}` : ""}</td></tr>`;
     }).join("") : `<tr class="empty-row"><td colspan="6">${show === "missing" ? "Nothing missing" : "Nothing here"}</td></tr>`;
   }
+  // Pictures: the deck as card pictures, a section at a time. Cards you're short of are
+  // dimmed, with how many to get on the corner.
+  function renderPics(rows) {
+    if (!rows.length) { $("rPics").innerHTML = `<p class="none">${show === "missing" ? "Nothing missing" : "Nothing here"}</p>`; return; }
+    const sections = [];
+    for (const x of rows) { let g = sections.find(s => s.name === x.section); if (!g) sections.push(g = { name: x.section, items: [] }); g.items.push(x); }
+    $("rPics").innerHTML = sections.map(g => `<section><h4>${esc(g.name)} <span class="sub">${g.items.reduce((n, x) => n + x.need, 0)}</span></h4><div class="pic-grid">${g.items.map(x => {
+      const small = x.image ? x.image.replace("version=normal", "version=small") : "";
+      const state = x.extra ? "extra" : !x.found ? "unknown" : x.missing ? "short" : "ok";
+      const tag = x.extra ? "" : x.missing ? `<span class="pic-tag short">Need ${x.missing}${x.cost != null ? " · " + money(x.cost) : ""}</span>` : `<span class="pic-tag ok">✓ ${x.have}</span>`;
+      return `<a class="pic ${state}" href="/cards?card=${encodeURIComponent(x.name)}" title="${esc(x.name)}: need ${x.need}, have ${x.have}">
+        ${small ? `<img src="${esc(small)}" srcset="${esc(small)} 146w, ${esc(x.image)} 488w" sizes="(max-width: 600px) 30vw, 150px" alt="${esc(x.name)}" loading="lazy">` : `<span class="pic-blank">${esc(x.name)}</span>`}
+        ${x.need > 1 ? `<span class="pic-qty">${x.need}×</span>` : ""}${tag}</a>`;
+    }).join("")}</div></section>`).join("");
+  }
+  $("viewSeg").onclick = e => {
+    const b = e.target.closest("button"); if (!b || !result) return;
+    view = b.dataset.v; try { localStorage.setItem(VIEW_KEY, view); } catch (err) {}
+    renderResult();
+  };
   $("showSeg").onclick = e => { const b = e.target.closest("button"); if (b && result) { show = b.dataset.v; renderResult(); } };
 
   function missingList() {

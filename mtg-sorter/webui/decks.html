@@ -58,7 +58,8 @@ Sideboard
 2 Duress
 
 Works with lists copied from Moxfield, Archidekt, MTG Arena, MTGO and most websites.
-For a Commander deck, put the commander under a Commander line and the deck builder appears below."></textarea>
+For a Commander deck, put the commander under a Commander line.
+The deck builder (checks, mana curve, test hands) appears below for any deck of 40 cards or more."></textarea>
         <div class="deck-acts">
           <span class="sub" id="lineCount"></span>
           <button class="btn ghost danger" id="deleteDeck" hidden><svg><use href="#i-trash" /></svg>Delete</button>
@@ -129,14 +130,18 @@ For a Commander deck, put the commander under a Commander line and the deck buil
           <div class="seg small" id="showSeg">
             <button data-v="all" aria-pressed="true">All</button><button data-v="missing" aria-pressed="false">Missing</button><button data-v="have" aria-pressed="false">Have</button>
           </div>
+          <div class="seg small" id="viewSeg" aria-label="Show as">
+            <button data-v="list" aria-pressed="true">List</button><button data-v="pics" aria-pressed="false">Pictures</button>
+          </div>
           <div class="actions">
             <button class="btn ghost" id="copyMissing" title="One line per card, like 2 Lightning Bolt. Pastes into TCGplayer Mass Entry, Card Kingdom, Moxfield and most shops"><svg><use href="#i-copy" /></svg>Copy the missing cards</button>
             <button class="btn ghost" id="wishMissing" title="Add each missing card to the Wishlist page">Add the missing cards to my wishlist</button>
           </div>
         </div>
-        <div class="table-wrap">
+        <div class="deck-pics" id="rPics" hidden></div>
+        <div class="table-wrap" id="rTable">
           <table class="list deck-table">
-            <thead><tr><th>Card</th><th class="num">Need</th><th class="num">Have</th><th class="hide-sm">Where it is</th><th class="num">Each</th><th class="num">To buy</th></tr></thead>
+            <thead><tr><th>Card</th><th class="num">Need</th><th class="num">Have</th><th class="hide-sm">Where it is</th><th class="num hide-sm">Each</th><th class="num">To buy</th></tr></thead>
             <tbody id="rRows"></tbody>
           </table>
         </div>

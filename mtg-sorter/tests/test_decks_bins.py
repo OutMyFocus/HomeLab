@@ -73,6 +73,14 @@ def test_check_prices_missing_cards_from_scryfall(db):  # noqa: F811
     assert res["lines"][0]["name"] == "Lightning Bolt" and res["cost"] == 12.0 and not res["unknown"]
 
 
+def test_basic_lands_are_never_missing_or_bought(db):  # noqa: F811
+    res = make_client(db).post("/api/decks/check", json={"text": "20 Mountain\n2 Snow-Covered Island\n1 Card 2"}).get_json()
+    lines = {x["name"]: x for x in res["lines"]}
+    assert lines["Mountain"]["basic"] and lines["Mountain"]["have"] == 20 and lines["Mountain"]["missing"] == 0
+    assert lines["Mountain"]["cost"] is None and lines["Snow-Covered Island"]["found"]
+    assert res["need"] == 23 and res["missing"] == 1 and res["cost"] == 37.5 and not res["unknown"]
+
+
 def test_check_needs_a_list(db):  # noqa: F811
     assert make_client(db).post("/api/decks/check", json={"text": "  \n// nothing"}).status_code == 400
 

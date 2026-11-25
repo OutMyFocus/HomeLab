@@ -1,12 +1,13 @@
-// The Commander deck builder on the Decks page (Commander Vault's Deck builder). It reads
-// the decklist box, so typing and pasting still work: it checks the deck as you go (100
-// cards, colors, duplicates, banned cards, Game Changers), draws the mana curve, prices
+// The deck builder on the Decks page (Commander Vault's Deck builder). It reads the
+// decklist box, so typing and pasting still work: it checks the deck as you go (Commander:
+// 100 cards, colors, duplicates, banned cards, Game Changers; 60-card decks: size, 4
+// copies, sideboard, the formats it's legal in), draws the mana curve, prices
 // it in Canadian dollars, groups the cards by type, and deals test hands. Its buttons
 // change the list in the box, and save the deck if it's already saved.
 (() => {
   const { $, esc, toast, copy } = MTG;
   const V = VAULT, { S, norm, cad } = V;
-  let deck = null, pt = null, sug = [], sugIdx = -1, t;
+  let deck = null, pt = null, sug = [], sugIdx = -1, t, constructed = false;
 
   const text = () => $("deckText").value;
   function read() { deck = V.parseDeck(text()); const saved = window.DECKS?.current(); deck.proxied = !!saved?.proxied; deck.guide = saved?.guide || ""; return deck; }
@@ -23,15 +24,19 @@
 
   function render() {
     read();
-    const looksCommander = !!deck.commander || deck.list.reduce((s, x) => s + x[1], 0) >= 90;
-    $("builder").hidden = !looksCommander;
-    if (!looksCommander) return;
-    const ci = V.cmdCI(deck), ch = V.deckChecks(deck), st = V.deckStats(deck);
-    $("bTitle").textContent = "Commander checks";
-    $("bCmd").innerHTML = deck.commander ? `${ci ? V.pips([...ci].join("")) : ""} ${esc(V.cmds(deck).join(" and "))}` : "";
+    const size = deck.list.reduce((s, x) => s + x[1], 0);
+    const looksCommander = !!deck.commander || size >= 90;
+    // A 60-card (or 40-card Limited) deck gets the same tools with its own checks.
+    constructed = !looksCommander && size >= 40;
+    $("builder").hidden = !looksCommander && !constructed;
+    if ($("builder").hidden) return;
+    const ci = V.cmdCI(deck), ch = constructed ? V.constructedChecks(deck) : V.deckChecks(deck), st = V.deckStats(deck);
+    $("bTitle").textContent = constructed ? "Deck checks" : "Commander checks";
+    $("bSetCmd").hidden = constructed;
+    $("bCmd").innerHTML = constructed ? (ch.legal.length ? `<span class="badge good">${esc(ch.legal[0])}</span>` : "") : deck.commander ? `${ci ? V.pips([...ci].join("")) : ""} ${esc(V.cmds(deck).join(" and "))}` : "";
     $("bChecks").innerHTML = ch.checks.map(([c, msg]) => `<div class="check-row ${c}"><span class="ic">${c === "ok" ? "✓" : c === "bad" ? "✕" : "!"}</span><span>${esc(msg)}</span></div>`).join("")
       + `<div class="check-row ok"><span class="ic">✓</span><span>${deck.proxied ? "Complete. Cards you don't own are covered by proxies." : `You own ${st.own} of ${st.count}.`}</span></div>`;
-    $("bBracket").textContent = S.cards ? `Bracket estimate ${ch.bracket}` : "";
+    $("bBracket").textContent = S.cards && !constructed ? `Bracket estimate ${ch.bracket}` : "";
     const unpriced = [...V.cmds(deck), ...deck.list.map(x => x[0])].filter(n => n && !V.BASICS.has(norm(n)) && V.priceOf(n) == null).length;
     $("bMoney").innerHTML = `<span>Deck value <b>${cad(st.value)}</b></span>${deck.proxied ? "<span>Complete with proxies</span>" : `<span>To finish <b>${cad(st.cost)}</b> for ${st.need.length} cards</span>`}${unpriced ? `<span>${unpriced} not priced in Canada yet</span>` : ""}`;
     $("bProxy").checked = deck.proxied; $("bProxy").disabled = !window.DECKS?.current();
@@ -53,7 +58,7 @@
         const have = V.ownedQty(nm), proxy = deck.proxied && have < q, ok = deck.proxied || have >= q;
         return `<li class="${bad.has(norm(c ? c.n : nm)) || bad.has(norm(nm)) ? "bad" : ""}"><span class="own ${proxy ? "p" : ok ? "y" : "n"}" title="${proxy ? "Proxy" : ok ? "Owned" : "Not owned"}">${proxy ? "PRX" : ok ? "OWN" : "BUY"}</span>
           <span>${q > 1 ? `${q}x ` : ""}<a class="cardlink" href="/cards?card=${encodeURIComponent(nm)}">${esc(nm)}</a>${c && c.gc ? ' <span class="badge warn">GC</span>' : ""}</span>
-          <span class="right">${c ? V.mana(c.m) : ""}<span>${V.money(V.priceInfo(nm))}</span>${V.BASICS.has(norm(nm)) ? `<button class="x" data-inc="${esc(nm)}" title="One more">+</button>` : ""}<button class="x" data-rm="${esc(nm)}" title="Remove one">×</button></span></li>`;
+          <span class="right">${c ? V.mana(c.m) : ""}<span>${V.money(V.priceInfo(nm))}</span>${V.BASICS.has(norm(nm)) || (constructed && q < 4) ? `<button class="x" data-inc="${esc(nm)}" title="One more">+</button>` : ""}<button class="x" data-rm="${esc(nm)}" title="Remove one">×</button></span></li>`;
       }).join("")}</ul></div>`;
     }).join("");
   }
@@ -73,7 +78,8 @@
   function add(name) {
     const c = V.lookup(name), nm = c ? c.n : name.trim(); if (!nm) return;
     const ex = deck.list.find(x => norm(x[0]) === norm(nm));
-    if (ex && !V.BASICS.has(norm(nm)) && !(c && /any number of cards named/i.test(c.o))) return toast(`${nm} is already in the deck`);
+    if (ex && !V.BASICS.has(norm(nm)) && !(c && /any number of cards named/i.test(c.o)) && !(constructed && ex[1] < 4))
+      return toast(constructed ? `${nm} already has 4 copies` : `${nm} is already in the deck`);
     write([{ add: ex ? ex[0] : nm }], `Added ${nm}`);
   }
   $("bGroups").onclick = e => {

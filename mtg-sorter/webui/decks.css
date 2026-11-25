@@ -21,7 +21,7 @@
 .progress span { display: block; height: 100%; background: var(--good); border-radius: 999px; transition: width .4s var(--ease); }
 .warn-line { margin: 0; padding: 10px 14px; border-radius: calc(var(--radius) * .6); border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent);
   background: color-mix(in oklab, var(--warn) 10%, transparent); font-size: .9rem; }
-#result { display: grid; gap: var(--gap); }
+#result { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); }
 #result[hidden] { display: none; }
 .deck-table tr { cursor: default; }
 .deck-table .sec { color: var(--muted); font-size: .74rem; display: block; }
@@ -29,6 +29,24 @@
 .deck-table tr.short .miss { color: var(--bad); font-weight: 650; }
 .deck-table tr.unknown .nm { color: var(--warn); }
 .where { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Deck result as pictures */
+.deck-pics { display: grid; gap: 18px; padding: 4px 0 2px; }
+.deck-pics[hidden], #rTable[hidden] { display: none; }
+.deck-pics h4 { margin: 0 0 10px; font-size: .95rem; font-weight: 650; }
+.deck-pics h4 .sub { font-weight: 500; margin-left: 4px; }
+.deck-pics .none { color: var(--muted); margin: 8px 0; }
+.pic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
+.pic { position: relative; display: block; text-decoration: none; aspect-ratio: 488 / 680; border-radius: 4.75% / 3.5%; overflow: hidden; background: var(--raised);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .28); transition: transform var(--speed) var(--ease), box-shadow var(--speed); }
+.pic:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(0, 0, 0, .36); }
+.pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pic.short img, .pic.unknown .pic-blank { filter: grayscale(.85) brightness(.62); }
+.pic-blank { display: grid; place-items: center; height: 100%; padding: 10px; text-align: center; font-size: .82rem; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: inherit; box-sizing: border-box; }
+.pic-qty { position: absolute; top: 12.5%; left: 6px; padding: 2px 7px; border-radius: 999px; background: rgba(0, 0, 0, .72); color: #fff; font-size: .75rem; font-weight: 700; }
+.pic-tag { position: absolute; left: 6px; right: 6px; bottom: 6px; padding: 4px 6px; border-radius: 8px; font-size: .74rem; font-weight: 650; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; backdrop-filter: blur(6px); }
+.pic-tag.short { background: color-mix(in oklab, var(--bad) 82%, black); color: #fff; }
+.pic-tag.ok { background: color-mix(in oklab, var(--good) 78%, black); color: #fff; left: auto; }
 .where .pill { font-weight: 550; }
 
 /* bins page */
@@ -86,6 +104,15 @@
 
 @media (max-width: 900px) {
   .deck-layout { grid-template-columns: 1fr; }
+  /* Saved decks scroll sideways in one row, and the empty note is one short line, so the
+     decklist box is on the first screen. */
+  .deck-list { padding: 12px var(--pad); }
+  .deck-list .panel-head { margin-bottom: 6px; }
+  #savedDecks { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--pad) * -1); padding: 0 var(--pad); }
+  #savedDecks::-webkit-scrollbar { display: none; }
+  .deck-item { flex: 0 0 auto; width: auto; max-width: 220px; background: var(--raised); border-color: var(--line); }
+  .deck-list .none { padding: 2px 0; text-align: left; }
+  .deck-list .none::before { display: none; }
   .bin-cards { grid-template-columns: 1fr 1fr; }
   .rule { grid-template-columns: minmax(0, 1fr); }
   .rule .no { display: none; }
@@ -96,6 +123,9 @@
   .rule .goto select { flex: 1 1 12em; min-width: 0; }
 }
 @media (max-width: 600px) {
+  .pic-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .pic-tag { font-size: .66rem; padding: 3px 4px; left: 4px; right: 4px; bottom: 4px; }
+  .pic-qty { font-size: .68rem; }
   /* Two bins side by side: the bin's name gets its own line under the number badge. */
   .bin-card .head { flex-wrap: wrap; }
   .bin-card input { flex: 1 1 100%; }

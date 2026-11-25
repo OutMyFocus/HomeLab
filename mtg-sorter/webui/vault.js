@@ -275,6 +275,31 @@ window.VAULT = (() => {
     } else checks.push(["warn", "Color, duplicate and Game Changer checks run once the card database loads."]);
     return { checks, bad, count, gcs, bracket: gcs.length === 0 ? "1 to 2" : gcs.length <= 3 ? "3" : "4+" };
   }
+  // Checks for a 60-card (or 40-card Limited) deck with no commander: deck size, the
+  // sideboard, at most 4 copies, and the formats every card is legal in.
+  const CONSTRUCTED = [["s", "Standard"], ["p", "Pioneer"], ["m", "Modern"], ["l", "Legacy"], ["v", "Vintage"], ["u", "Pauper"]];
+  function constructedChecks(d) {
+    const checks = [], bad = new Set(), count = d.list.reduce((s, x) => s + x[1], 0), side = (d.side || []).reduce((s, x) => s + x[1], 0);
+    checks.push(count >= 60 ? ["ok", `${count} cards in the main deck.`] : count >= 40 ? ["warn", `${count} cards: fine for Limited (40), short of 60 for Constructed.`] : ["bad", `${count} cards. A deck needs at least 60 (40 for Limited).`]);
+    if (side) checks.push(side <= 15 ? ["ok", `${side} card sideboard.`] : ["bad", `${side} cards in the sideboard. The most is 15.`]);
+    const seen = new Map(), unknown = [];
+    for (const [n, q] of [...d.list, ...(d.side || [])]) { const c = lookup(n); if (S.cards && !c) unknown.push(n); const k = norm(c ? c.n : n); seen.set(k, (seen.get(k) || 0) + q); }
+    const over = []; let legalIn = [];
+    for (const [k, q] of seen) { const c = S.byName && S.byName.get(k); if (q > 4 && !BASICS.has(k) && !(c && /any number of cards named/i.test(c.o))) { over.push(`${c ? c.n : k} (${q})`); bad.add(k); } }
+    if (S.cards) {
+      checks.push(over.length ? ["bad", `More than 4 copies: ${over.join(", ")}. Only basic lands can go past 4.`] : ["ok", "No more than 4 copies of any card."]);
+      const legal = [], notLegal = [];
+      for (const [k, f] of CONSTRUCTED) {
+        const off = [...seen.keys()].map(n => S.byName.get(n)).filter(c => c && !BASICS.has(norm(c.n)) && !(c.lg || "").includes(k));
+        if (!off.length) legal.push(f); else notLegal.push([f, off]);
+      }
+      legalIn = legal;
+      if (legal.length) checks.push(["ok", `Legal in ${legal.join(", ")}.`]);
+      for (const [f, off] of notLegal.slice(0, 2)) checks.push(["warn", `Not legal in ${f}: ${off.slice(0, 4).map(c => c.n).join(", ")}${off.length > 4 ? ` and ${off.length - 4} more` : ""}.`]);
+      if (unknown.length) checks.push(["warn", `Not found in the card database: ${unknown.slice(0, 6).join(", ")}${unknown.length > 6 ? "…" : ""}. Check the spelling.`]);
+    } else checks.push(["warn", "Copy and format checks run once the card database loads."]);
+    return { checks, bad, count, legal: legalIn };
+  }
   function deckStats(d) {
     const all = [...cmds(d).map(n => [n, 1]), ...d.list];
     let count = 0, own = 0, cost = 0, value = 0; const need = [];
@@ -286,5 +311,5 @@ window.VAULT = (() => {
     return { count, own, cost, value, need };
   }
 
-  return { S, norm, BASICS, STORES, cad, loadCards, lookup, loadPrices, caRec, priceInfo, priceOf, money, trend, storeTable, loadOwned, ownedQty, copiesOf, parseDeck, deckToText, editDeckText, cmds, cmdCI, loadDecks, deckIndex, TYPES, typeOf, isCommander, pips, mana, ROLES, ROLEF, deckChecks, deckStats };
+  return { S, norm, BASICS, STORES, cad, loadCards, lookup, loadPrices, caRec, priceInfo, priceOf, money, trend, storeTable, loadOwned, ownedQty, copiesOf, parseDeck, deckToText, editDeckText, cmds, cmdCI, loadDecks, deckIndex, TYPES, typeOf, isCommander, pips, mana, ROLES, ROLEF, deckChecks, constructedChecks, deckStats };
 })();
