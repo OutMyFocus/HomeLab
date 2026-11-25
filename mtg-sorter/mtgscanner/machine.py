@@ -72,7 +72,7 @@ def claim(machine, who: str):
     lock = getattr(machine, "run_lock", None)
     if lock is None:
         return
-    if who in ("sort run", "tuning run") and getattr(machine, "model", lambda: "mk1")() == "mk2":
+    if who == "tuning run" and getattr(machine, "model", lambda: "mk1")() == "mk2":
         raise RuntimeError(f"The {who} doesn't drive Mk2 yet. Set each part's angles on the Machine page "
                            "and try the Bin buttons; runs come once those work.")
     with lock:
