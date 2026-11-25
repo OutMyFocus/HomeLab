@@ -206,7 +206,7 @@ if __name__ == "__main__":
         sys.exit(0)
     if "--tonight" in sys.argv:   # 2026-11-25: every upgrade part in one file
         mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Upgrades.3mf")
-        mp.PLATES = [("1 All upgrades: gates 1-2-3, stack weight, stop bar, hold-downs, plugs x6",
+        mp.PLATES = [("1 All upgrades - gates 1-2-3, stack weight, stop bar, hold-downs, plugs x6",
                       P("fd_gate1", "fd_gate2", "fd_gate3", "stop_bar", "fd_weight", "holddown_l", "holddown_r", "gate_plug*6"))]
         mp.main(mp.PLATES, mp.OUT)
         sys.exit(0)
