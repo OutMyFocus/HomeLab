@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/collection.css">
   <link rel="stylesheet" href="/static/decks.css">
+  <link rel="stylesheet" href="/static/bins.css">
   <script src="/static/look.js"></script>
 </head>
 <body>
@@ -30,6 +31,8 @@
     <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M5 15V6a1 1 0 0 1 1-1h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
   </svg>
 
@@ -41,9 +44,11 @@
   <main class="coll">
     <section class="panel bins-intro">
       <h3>What goes in each bin</h3>
-      <p><span id="trayNote"></span>The rules below are checked from the top, and a card goes into the bin of the
-        first rule it fits. Cards that fit no rule go to the "anything else" bin. The counts show how your
-        collection would be split, so you can try things before saving.</p>
+      <p><span id="trayNote"></span>Build a rule for anything: lands, tokens, a color, a price, the cards in your decks,
+        extra copies, a format, words in the rules text. Rules are checked from the top and a card goes into the bin
+        of the first rule it fits. Cards no rule fits (and cards it can't read) go to the catch-all bin. The counts show
+        how your collection would be split, so you can try things before saving.</p>
+      <div class="sub preset-head">Start from a ready-made setup</div>
       <div class="presets" id="presets"></div>
     </section>
 
@@ -76,11 +81,15 @@
     </section>
 
     <section class="panel rules">
-      <div class="panel-head"><h3>Rules</h3><span class="sub">First match wins</span></div>
+      <div class="panel-head"><h3>Rules</h3><span class="sub">Checked from the top. First match wins</span></div>
+      <div class="facts-note" id="factsNote" hidden></div>
       <div id="rules"></div>
       <div class="rules-foot">
         <button class="btn ghost" id="addRule"><svg><use href="#i-plus" /></svg>Add a rule</button>
-        <label class="goto-else">Anything else goes to <select class="field" id="fallback"></select></label>
+      </div>
+      <div class="catch-all">
+        <span class="catch-tag">Catch-all</span>
+        <label class="goto-else">Anything else, and cards it can't read, go to <select class="field" id="fallback"></select></label>
       </div>
     </section>
 

@@ -221,7 +221,7 @@ def test_wanted_list_from_a_deck_and_the_bins_page(db):  # noqa: F811
     client.post("/api/add", json={"id": "id0"})   # Card 0, US$0.10: bulk
     deck = client.post("/api/decks/save", json={"name": "Pauper", "text": "1 Card 0\n4 Lightning Bolt"}).get_json()["deck"]
     js = client.get("/api/bins").get_json()
-    assert js["decks"] == [{"id": deck["id"], "name": "Pauper"}] and js["rules"]["wanted"]["on"] is False
+    assert [{k: d[k] for k in ("id", "name")} for d in js["decks"]] == [{"id": deck["id"], "name": "Pauper"}] and js["rules"]["wanted"]["on"] is False
     listed = client.post("/api/bins/wanted/list", json={"deck": deck["id"]}).get_json()
     assert listed == {"text": "1 Card 0\n4 Lightning Bolt", "source": "Pauper"}
     assert client.post("/api/bins/wanted/list", json={"deck": "nope"}).status_code == 404

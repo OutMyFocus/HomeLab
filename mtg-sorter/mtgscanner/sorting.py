@@ -45,10 +45,12 @@ def card_price(card: Card, foil: bool, vault: VaultPrices | None = None, live=No
     return round(usd * rate, 2), f"{source} US price × {rate:.2f}{', ' + note if note else ''}"
 
 
-def bin_for(card: Card, foil: bool, price: float | None, rules: dict | None = None) -> tuple[int, str]:
+def bin_for(card: Card, foil: bool, price: float | None, rules: dict | None = None, copy: int | None = None,
+            live=None) -> tuple[int, str]:
     """Return (bin number, bin name) for a card whose price you already know. Pass the
-    rules (sort_rules.load()) when doing many cards, so they're looked up once."""
-    return sort_rules.pick(card, foil, price, rules)
+    rules (sort_rules.load()) when doing many cards, so they're looked up once. `copy`:
+    which copy of the card this is (for "copies beyond N"), if known."""
+    return sort_rules.pick(card, foil, price, rules, copy=copy, live=live)
 
 
 def bin_for_price(price: float | None) -> tuple[int, str]:
@@ -61,6 +63,12 @@ def bin_for_price(price: float | None) -> tuple[int, str]:
     return config.NO_PRICE_BIN
 
 
-def choose_bin(card: Card, foil: bool = False, vault: VaultPrices | None = None, live=None) -> tuple[int, str]:
-    """Return (bin number, bin label) for this card, by the rules on the Bins page."""
-    return bin_for(card, foil, card_price(card, foil, vault, live)[0])
+def choose_bin(card: Card, foil: bool = False, vault: VaultPrices | None = None, live=None,
+               collection=None) -> tuple[int, str]:
+    """Return (bin number, bin label) for this card, by the rules on the Bins page. With
+    `collection` (the file it's about to be saved into), "copies beyond N" counts the
+    copies already there."""
+    copy = None
+    if collection is not None and sort_rules.uses(sort_rules.load(), "copies"):
+        copy = sort_rules.owned_counts(collection).get(sort_rules.name_key(card.name), 0) + 1
+    return bin_for(card, foil, card_price(card, foil, vault, live)[0], copy=copy, live=live)

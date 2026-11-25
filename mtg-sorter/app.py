@@ -804,9 +804,9 @@ class Scanner:
     def _save(
         self, card: Card, foil: bool, track: Track | None = None, auto: bool = False
     ):
-        bin_no, bin_label = choose_bin(card, foil, self.vault, self.live)
-        price = card_price(card, foil, self.vault, self.live)
         path = self.collection()
+        bin_no, bin_label = choose_bin(card, foil, self.vault, self.live, path)
+        price = card_price(card, foil, self.vault, self.live)
         scanned_at = add_card(path, card, foil, bin_label, price, self.owner)
         with accounts.acting_as(self.account):   # their own alerts and wishlist
             special = self._special(card, price[0])
