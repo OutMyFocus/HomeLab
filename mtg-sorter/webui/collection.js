@@ -5,11 +5,18 @@
   const money = v => v == null ? "No price" : "$" + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const signed = v => (v > 0 ? "+" : v < 0 ? "−" : "") + money(Math.abs(v));
   const small = url => url ? url.replace("version=normal", "version=small") : "";
+  // The small picture where it's enough, the sharp one on a phone's screen or a big tile:
+  // the browser picks from the two by how wide the picture is shown.
+  const picture = (c, sizes) => c.image
+    ? `<img src="${esc(small(c.image))}" srcset="${esc(small(c.image))} 146w, ${esc(c.image)} 488w" sizes="${sizes}" alt="" loading="lazy" decoding="async">`
+    : `<span class="noimg">${esc(c.name)}</span>`;
   const COLORS = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green", M: "Multicolor", C: "Colorless", "": "Unknown" };
   const RARITIES = ["mythic", "rare", "uncommon", "common", "special", "bonus"];
   const PAGE = 120;
   const PREFS_KEY = "mtg-collection-prefs";
   let data = null, shown = [], limit = PAGE, detailKey = null, toastT;
+  let selecting = false, binderFirst = 0;
+  const picked = new Set();   // the keys of the cards picked with Select
   let prefs = { view: "grid", sort: "value", breakdown: "color", measure: "cards", format: "moxfield" };
   try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") }; } catch (e) {}
   const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) {} };
@@ -39,12 +46,14 @@
     $("metaText").textContent = js.prices;
     $("refreshBtn").hidden = !js.live;
     fillFilters();
+    for (const k of [...picked]) if (!byKeyIn(js, k)) picked.delete(k);   // deleted elsewhere
     renderTiles(); renderLine(); renderBars(); renderTop(); renderResults();
     if (detailKey) renderDetail();
     if (js.refresh?.running) watchRefresh();
   }
 
   const byKey = key => data.cards.find(c => c.key === key);
+  const byKeyIn = (js, key) => js.cards.some(c => c.key === key);
 
   // ---------- headline numbers ----------
   function renderTiles() {
@@ -141,15 +150,16 @@
   $("measureSeg").onclick = e => { const b = e.target.closest("button"); if (b) { prefs.measure = b.dataset.v; savePrefs(); renderBars(); } };
 
   // ---------- card tiles ----------
-  function tile(c, extra = "") {
-    const img = c.image ? `<img src="${esc(small(c.image))}" alt="" loading="lazy">` : `<span class="noimg">${esc(c.name)}</span>`;
-    return `<button class="tile${c.foil ? " foil" : ""}${extra}" data-key="${esc(c.key)}" title="${esc(c.name)}">
-      <span class="art">${img}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}</span>
+  const PICK_MARK = '<i class="pick-mark" aria-hidden="true"><svg><use href="#i-check"/></svg></i>';
+  function tile(c, extra = "", sizes = "(max-width: 600px) 46vw, 170px") {
+    const on = selecting && picked.has(c.key);
+    return `<button class="tile${c.foil ? " foil" : ""}${on ? " picked" : ""}${extra}" data-key="${esc(c.key)}" title="${esc(c.name)}"${selecting && !extra ? ` aria-pressed="${on}"` : ""}>
+      <span class="art">${picture(c, sizes)}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${selecting && !extra ? PICK_MARK : ""}</span>
       <b>${esc(c.name)}</b><span>${esc(c.set)} #${esc(c.number)}<em>${money(c.price)}</em></span></button>`;
   }
   function renderTop() {
     const top = data.summary.top.map(byKey).filter(Boolean);
-    $("topStrip").innerHTML = top.length ? top.map(c => tile(c)).join("") : '<p class="none">Scan some cards and they show up here.</p>';
+    $("topStrip").innerHTML = top.length ? top.map(c => tile(c, " in-strip", "130px")).join("") : '<p class="none">Scan some cards and they show up here.</p>';
   }
   $("topStrip").onclick = e => { const t = e.target.closest(".tile"); if (t) openDetail(t.dataset.key); };
 
@@ -195,26 +205,72 @@
       (isNaN(min) || (c.price ?? -1) >= min) && (isNaN(max) || (c.price != null && c.price <= max))
     ).sort((a, b) => SORTS[prefs.sort](a, b) || a.name.localeCompare(b.name));
   }
-  function applyFilters() { limit = PAGE; renderResults(); }
+  function applyFilters() { limit = PAGE; binderFirst = 0; renderResults(); syncUrl(); }
   function clearFilters(render = true) { for (const id of FILTER_IDS) $(id).value = ""; if (render) applyFilters(); }
   for (const id of FILTER_IDS) $(id).addEventListener("input", applyFilters);
   $("sort").onchange = () => { prefs.sort = $("sort").value; savePrefs(); applyFilters(); };
-  $("clearFilters").onclick = () => clearFilters();
+
+  // The filters live in the address too, so Back, a refresh or a bookmark keeps them
+  // (/collection?color=U&rarity=mythic&min=5).
+  const URL_KEYS = { q: "q", color: "fColor", rarity: "fRarity", set: "fSet", bin: "fBin", foil: "fFoil", min: "fMin", max: "fMax" };
+  function syncUrl() {
+    const ps = new URLSearchParams();
+    for (const [k, id] of Object.entries(URL_KEYS)) if ($(id).value.trim()) ps.set(k, $(id).value.trim());
+    if (prefs.sort !== "value") ps.set("sort", prefs.sort);
+    const qs = ps.toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+  }
+
+  // What's filtered, as chips you can take off one at a time.
+  function activeChips() {
+    const f = id => $(id).value.trim(), out = [];
+    const label = id => $(id).selectedOptions[0]?.textContent || f(id);
+    if (f("q")) out.push(["q", `“${f("q")}”`]);
+    if (f("fColor")) out.push(["fColor", COLORS[f("fColor")] ?? f("fColor")]);
+    if (f("fRarity")) out.push(["fRarity", label("fRarity")]);
+    if (f("fSet")) out.push(["fSet", label("fSet")]);
+    if (f("fBin")) out.push(["fBin", label("fBin")]);
+    if (f("fFoil")) out.push(["fFoil", label("fFoil")]);
+    const lo = f("fMin"), hi = f("fMax");
+    if (lo || hi) out.push(["price", lo && hi ? `$${lo} to $${hi}` : lo ? `$${lo} and up` : `Up to $${hi}`]);
+    return out;
+  }
+  function renderChips() {
+    const chips = activeChips(), box = $("chips");
+    const n = chips.filter(([id]) => id !== "q").length;
+    $("filterCount").hidden = !n; $("filterCount").textContent = n;
+    box.hidden = !chips.length;
+    box.innerHTML = chips.map(([id, text]) => `<button class="chip" data-clear="${id}" aria-label="Take off ${esc(text)}">${esc(text)}<svg><use href="#i-close"/></svg></button>`).join("")
+      + (chips.length > 1 ? '<button class="link-btn" data-clear="all">Clear all</button>' : "");
+  }
+  $("chips").onclick = e => {
+    const b = e.target.closest("[data-clear]"); if (!b) return;
+    const id = b.dataset.clear;
+    if (id === "all") return clearFilters();
+    if (id === "price") { $("fMin").value = ""; $("fMax").value = ""; } else $(id).value = "";
+    applyFilters();
+  };
+  $("filterBtn").onclick = () => {
+    const open = document.querySelector(".find-bar").classList.toggle("open");
+    $("filterBtn").setAttribute("aria-expanded", open);
+  };
 
   function renderResults() {
     shown = filtered();
     const active = FILTER_IDS.some(id => $(id).value);
-    $("clearFilters").hidden = !active;
+    renderChips();
     const cards = shown.reduce((n, c) => n + c.qty, 0), value = shown.reduce((v, c) => v + (c.value || 0), 0);
     $("showing").textContent = data.cards.length ? (active ? `Showing ${cards.toLocaleString()} of ${data.summary.cards.toLocaleString()} cards · ${money(value)}` : `${cards.toLocaleString()} cards · ${money(value)}`) : "";
     for (const b of $("viewSeg").children) b.setAttribute("aria-pressed", b.dataset.v === prefs.view);
     const page = shown.slice(0, limit);
+    $("results").classList.toggle("is-binder", prefs.view === "binder" && shown.length > 0);
     if (!data.cards.length) $("results").innerHTML = `<p class="results-empty">No cards saved yet. Scan some on the <a href="/scan">Scanner</a>, or press <b>Add a card</b>.</p>`;
     else if (!shown.length) $("results").innerHTML = '<p class="results-empty">No cards match these filters.</p>';
     else if (prefs.view === "grid") $("results").innerHTML = `<div class="results-grid">${page.map(c => tile(c)).join("")}</div>`;
+    else if (prefs.view === "binder") renderBinder();
     else $("results").innerHTML = `<div class="table-wrap"><table class="list"><thead><tr>
         <th>Card</th><th class="hide-sm">Set</th><th class="hide-sm">Rarity</th><th>Copies</th><th class="num">Price</th><th class="num" title="Face to Face Games, or the next Montreal store">Montreal</th><th class="num hide-sm">Value</th><th class="num hide-sm">Since scanned</th><th class="hide-sm">Bin</th></tr></thead><tbody>
-      ${page.map(c => `<tr data-key="${esc(c.key)}">
+      ${page.map(c => `<tr data-key="${esc(c.key)}"${selecting && picked.has(c.key) ? ' class="picked"' : ""}>
         <td class="card-cell">${c.image ? `<img class="thumb" src="${esc(small(c.image))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}<span><span class="dotc" style="background:var(--mana-${esc(c.color)})" title="${esc(COLORS[c.color] ?? "")}"></span><span class="nm">${esc(c.name)}</span>${c.foil ? '<span class="foil-tag">foil</span>' : ""}<small class="sub show-sm">${esc(c.set)} #${esc(c.number)}</small></span></td>
         <td class="hide-sm">${esc(c.set)} #${esc(c.number)}</td>
         <td class="rar hide-sm">${esc(c.rarity)}</td>
@@ -224,15 +280,126 @@
         <td class="num hide-sm">${c.value == null ? "" : money(c.value)}</td>
         <td class="num chg hide-sm ${c.change > 0 ? "up" : c.change < 0 ? "down" : ""}">${c.change ? signed(c.change) : ""}</td>
         <td class="hide-sm"><span class="pill bin-${c.bin}">${c.bin}</span></td></tr>`).join("")}</tbody></table></div>`;
-    $("moreBtn").hidden = shown.length <= limit;
+    $("moreBtn").hidden = shown.length <= limit || prefs.view === "binder";
     $("moreBtn").textContent = `Show more (${(shown.length - limit).toLocaleString()} left)`;
   }
   $("moreBtn").onclick = () => { limit += PAGE * 2; renderResults(); };
   $("viewSeg").onclick = e => { const b = e.target.closest("button"); if (b) setView(b.dataset.v); };
-  function setView(v) { prefs.view = v; savePrefs(); renderResults(); }
+  function setView(v) {
+    if (v === "binder" && prefs.view !== "binder") binderFirst = 0;
+    prefs.view = v; savePrefs(); renderResults();
+  }
+
+  // ---------- binder: the cards in 9-pocket pages, two side by side on a computer ----------
+  const POCKETS = 9;
+  const binderSpread = () => matchMedia("(min-width: 900px)").matches ? 2 : 1;
+  function renderBinder(turn = "") {
+    const pps = binderSpread(), per = POCKETS * pps;
+    const pages = Math.max(1, Math.ceil(shown.length / POCKETS));
+    const spreads = Math.max(1, Math.ceil(shown.length / per));
+    const at = Math.min(Math.floor(binderFirst / per), spreads - 1);
+    binderFirst = at * per;
+    const sheet = p => {
+      const cards = shown.slice(p * POCKETS, (p + 1) * POCKETS);
+      if (p >= pages) return '<div class="binder-page blank" aria-hidden="true"></div>';
+      return `<div class="binder-page" aria-label="Page ${p + 1}">${cards.map(c => {
+        const on = selecting && picked.has(c.key);
+        return `<button class="pocket${c.foil ? " foil" : ""}${on ? " picked" : ""}" data-key="${esc(c.key)}" title="${esc(c.name)} · ${esc(c.set)} #${esc(c.number)} · ${esc(money(c.price))}"${selecting ? ` aria-pressed="${on}"` : ""}>
+          ${picture(c, "(max-width: 900px) 30vw, 180px")}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${selecting ? PICK_MARK : ""}
+          <span class="pocket-price">${esc(money(c.price))}</span></button>`;
+      }).join("")}${'<span class="pocket empty" aria-hidden="true"></span>'.repeat(POCKETS - cards.length)}<small class="page-no">${p + 1}</small></div>`;
+    };
+    const first = at * pps, last = Math.min(pages, first + pps);
+    const label = last - first > 1 ? `Pages ${first + 1}–${last} of ${pages}` : `Page ${first + 1} of ${pages}`;
+    const value = shown.slice(first * POCKETS, last * POCKETS).reduce((v, c) => v + (c.value || 0), 0);
+    $("results").innerHTML = `<div class="binder-wrap">
+        <button class="binder-turn" data-turn="-1" aria-label="Page before" ${at ? "" : "disabled"}><svg><use href="#i-left"/></svg></button>
+        <div class="binder${turn ? " turn-" + turn : ""}" style="--pps:${pps}">${Array.from({ length: pps }, (_, i) => sheet(first + i)).join("")}</div>
+        <button class="binder-turn" data-turn="1" aria-label="Next page" ${at < spreads - 1 ? "" : "disabled"}><svg><use href="#i-right"/></svg></button>
+      </div>
+      <div class="binder-foot"><span><b>${label}</b> · ${money(value)} on ${last - first > 1 ? "these pages" : "this page"}</span>
+        ${spreads > 1 ? `<input type="range" id="binderRange" min="1" max="${spreads}" value="${at + 1}" aria-label="Jump to a page">` : ""}</div>`;
+  }
+  function turnBinder(d) {
+    const per = POCKETS * binderSpread(), spreads = Math.ceil(shown.length / per);
+    const at = Math.floor(binderFirst / per) + d;
+    if (at < 0 || at >= spreads) return;
+    binderFirst = at * per; renderBinder(d > 0 ? "next" : "prev");
+  }
+  $("results").addEventListener("input", e => {
+    if (e.target.id !== "binderRange") return;
+    binderFirst = (+e.target.value - 1) * POCKETS * binderSpread(); renderBinder();
+    $("binderRange")?.focus();
+  });
+  // A swipe turns the page on a phone.
+  let swipeX = null, swipeY = 0;
+  $("results").addEventListener("touchstart", e => { if (prefs.view === "binder" && e.touches.length === 1) { swipeX = e.touches[0].clientX; swipeY = e.touches[0].clientY; } }, { passive: true });
+  $("results").addEventListener("touchend", e => {
+    if (swipeX == null) return;
+    const dx = e.changedTouches[0].clientX - swipeX, dy = e.changedTouches[0].clientY - swipeY; swipeX = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5 && e.target.closest(".binder")) turnBinder(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  let spreadWas = binderSpread();
+  addEventListener("resize", () => { if (data && prefs.view === "binder" && binderSpread() !== spreadWas) { spreadWas = binderSpread(); renderBinder(); } });
+
+  // ---------- select: pick several cards, then trade, export or delete them together ----------
+  function setSelecting(on) {
+    selecting = on;
+    if (!on) picked.clear();
+    $("selectBtn").setAttribute("aria-pressed", on);
+    document.querySelector(".browse").classList.toggle("selecting", on);
+    renderResults(); renderSelectBar();
+  }
+  function pickedCards() { return data.cards.filter(c => picked.has(c.key)); }
+  function renderSelectBar() {
+    $("selectBar").hidden = !selecting;
+    document.documentElement.classList.toggle("has-select-bar", selecting);
+    if (!selecting) return;
+    const cards = pickedCards(), n = cards.reduce((t, c) => t + c.qty, 0);
+    $("selCount").textContent = cards.length ? `${n.toLocaleString()} card${n === 1 ? "" : "s"} picked` : "Tap cards to pick them";
+    $("selValue").textContent = cards.length ? `${cards.length.toLocaleString()} printing${cards.length === 1 ? "" : "s"} · ${money(cards.reduce((v, c) => v + (c.value || 0), 0))}` : "";
+    const all = shown.length && shown.every(c => picked.has(c.key));
+    $("selAll").textContent = all ? "Unpick all" : `Pick all ${shown.length.toLocaleString()} showing`;
+    for (const id of ["selTrade", "selExport", "selDelete"]) $(id).disabled = !cards.length;
+  }
+  function togglePick(el) {
+    const key = el.dataset.key;
+    if (picked.has(key)) picked.delete(key); else picked.add(key);
+    const on = picked.has(key);
+    el.classList.toggle("picked", on);
+    if (el.hasAttribute("aria-pressed")) el.setAttribute("aria-pressed", on);
+    renderSelectBar();
+  }
+  $("selectBtn").onclick = () => setSelecting(!selecting);
+  $("selDone").onclick = () => setSelecting(false);
+  $("selAll").onclick = () => {
+    const all = shown.every(c => picked.has(c.key));
+    for (const c of shown) all ? picked.delete(c.key) : picked.add(c.key);
+    renderResults(); renderSelectBar();
+  };
+  $("selTrade").onclick = async () => {
+    const cards = pickedCards();
+    try {
+      setTrades(await api("/api/trades/add", { cards: cards.map(c => ({ name: c.name, set: c.set, number: c.number, foil: c.foil, qty: c.qty, card_id: c.id })) }));
+      toast(`${cards.length.toLocaleString()} in the trade binder (Wishlist page)`);
+    } catch (e) { toast(e.message); }
+  };
+  $("selExport").onclick = () => openExport(true);
+  $("selDelete").onclick = async () => {
+    const cards = pickedCards(), n = cards.reduce((t, c) => t + c.qty, 0);
+    if (!cards.length || !confirm(`Delete ${n.toLocaleString()} card${n === 1 ? "" : "s"} (${cards.length.toLocaleString()} printing${cards.length === 1 ? "" : "s"}, ${money(cards.reduce((v, c) => v + (c.value || 0), 0))}) from the collection?\n\nA backup on the Maintenance page is the only way back.`)) return;
+    try {
+      setData(await api("/api/collection/delete", { cards: Object.fromEntries(cards.map(c => [c.key, c.qty])) }));
+      picked.clear(); renderResults(); renderSelectBar();
+      toast(`Deleted ${n.toLocaleString()} card${n === 1 ? "" : "s"}`);
+    } catch (e) { toast(e.message); load(); }
+  };
   $("results").onclick = async e => {
+    const turn = e.target.closest("[data-turn]");
+    if (turn) return turnBinder(+turn.dataset.turn);
     const step = e.target.closest("[data-step]"), row = e.target.closest("[data-key]");
     if (!row) return;
+    if (selecting && !step) return togglePick(row);
     if (step) {
       // Sends one more or one fewer, not a count: the server counts what's there now, so
       // copies saved since the page loaded are kept.
@@ -262,7 +429,17 @@
 
   // ---------- one card ----------
   function openModal(id) { $(id).hidden = false; }
-  function closeModal(id) { $(id).hidden = true; if (id === "detail") detailKey = null; }
+  function closeModal(id) {
+    $(id).hidden = true;
+    if (id !== "detail") return;
+    // In the binder, land on the page of the last card looked at.
+    const i = shown.findIndex(c => c.key === detailKey);
+    if (prefs.view === "binder" && i >= 0) {
+      const per = POCKETS * binderSpread();
+      if (Math.floor(i / per) !== Math.floor(binderFirst / per)) { binderFirst = Math.floor(i / per) * per; renderBinder(); }
+    }
+    detailKey = null;
+  }
   for (const m of document.querySelectorAll(".modal")) {
     m.addEventListener("click", e => { if (e.target === m || e.target.closest("[data-close]")) closeModal(m.id); });
   }
@@ -270,9 +447,30 @@
     detailKey = key; $("dPrintList").hidden = true; $("dImg").removeAttribute("src");
     renderDetail(); openModal("detail");
   }
+  // Card to card with the arrows, the ← → keys or a swipe on the picture, in the order showing.
+  function stepDetail(d) {
+    const i = shown.findIndex(c => c.key === detailKey), next = shown[i + d];
+    if (i < 0 || !next) return;
+    detailKey = next.key; $("dPrintList").hidden = true;
+    renderDetail();
+  }
+  $("dPrev").onclick = () => stepDetail(-1);
+  $("dNext").onclick = () => stepDetail(1);
+  let artX = null;
+  $("dArt").addEventListener("touchstart", e => { artX = e.touches[0].clientX; }, { passive: true });
+  $("dArt").addEventListener("touchend", e => {
+    if (artX == null) return;
+    const dx = e.changedTouches[0].clientX - artX; artX = null;
+    if (Math.abs(dx) > 40) stepDetail(dx < 0 ? 1 : -1);
+  }, { passive: true });
   function renderDetail() {
     const c = byKey(detailKey);
     if (!c) return closeModal("detail");
+    const i = shown.findIndex(x => x.key === c.key);
+    $("dNav").hidden = i < 0 || shown.length < 2;
+    $("dPos").textContent = i < 0 ? "" : `${(i + 1).toLocaleString()} of ${shown.length.toLocaleString()}`;
+    $("dPrev").disabled = i <= 0; $("dNext").disabled = i < 0 || i >= shown.length - 1;
+    if (shown[i + 1]?.image) new Image().src = shown[i + 1].image;   // ready before it's asked for
     $("dName").textContent = c.name;
     if (c.image && $("dImg").getAttribute("src") !== c.image) $("dImg").src = c.image;
     $("dImg").alt = c.name;
@@ -333,7 +531,7 @@
     list.hidden = false; list.innerHTML = '<p class="sub">Looking up every printing…</p>';
     try {
       const prints = await api(`/api/printings?name=${encodeURIComponent(c.name)}&foil=${c.foil ? 1 : 0}`);
-      list.innerHTML = `<p class="sub">Pick the printing you really have:</p><div class="print-grid">` + prints.map(p => tile({ ...p, key: p.id, qty: 1, foil: c.foil }, p.id === c.id ? " is-current" : "")).join("") + "</div>";
+      list.innerHTML = `<p class="sub">Pick the printing you really have:</p><div class="print-grid">` + prints.map(p => tile({ ...p, key: p.id, qty: 1, foil: c.foil }, p.id === c.id ? " is-current in-print" : " in-print", "110px")).join("") + "</div>";
     } catch (e) { list.innerHTML = `<p class="sub">${esc(e.message)}</p>`; }
   };
   $("dPrintList").onclick = e => {
@@ -382,14 +580,17 @@
   };
 
   // ---------- export ----------
-  function openExport() {
+  let exportPicked = false;   // Select's Export: only the picked cards
+  function openExport(onlyPicked = false) {
+    exportPicked = onlyPicked && picked.size > 0;
     $("formats").innerHTML = data.exports.map(f => `<button class="format" data-id="${f.id}" aria-pressed="${f.id === prefs.format}"><b>${esc(f.label)}</b><small>${esc(f.hint)}</small></button>`).join("");
-    const active = shown.length !== data.cards.length;
+    const active = exportPicked || shown.length !== data.cards.length;
+    const count = (exportPicked ? pickedCards() : shown).reduce((n, c) => n + c.qty, 0).toLocaleString();
     $("exOnly").checked = active; $("exOnly").disabled = !active;
-    $("exOnlyText").textContent = active ? `Only the ${shown.reduce((n, c) => n + c.qty, 0).toLocaleString()} cards showing` : "Only the cards showing (set filters first)";
+    $("exOnlyText").textContent = exportPicked ? `Only the ${count} cards you picked` : active ? `Only the ${count} cards showing` : "Only the cards showing (set filters first)";
     openModal("export");
   }
-  $("exportBtn").onclick = openExport;
+  $("exportBtn").onclick = () => openExport(false);
   $("formats").onclick = e => {
     const b = e.target.closest(".format"); if (!b) return;
     prefs.format = b.dataset.id; savePrefs();
@@ -397,7 +598,7 @@
   };
   async function exportFile() {
     const body = { format: prefs.format };
-    if ($("exOnly").checked) body.keys = shown.map(c => c.key);
+    if ($("exOnly").checked) body.keys = exportPicked ? [...picked] : shown.map(c => c.key);
     const r = await fetch("/api/collection/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error("Export failed");
     const name = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/)?.[1] || "collection.csv";
@@ -451,10 +652,17 @@
   document.addEventListener("keydown", e => {
     const open = [...document.querySelectorAll(".modal")].find(m => !m.hidden);
     if (e.key === "Escape" && open) return closeModal(open.id);
+    if (open?.id === "detail" && (e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.target.matches("input, textarea, select")) {
+      e.preventDefault(); return stepDetail(e.key === "ArrowLeft" ? -1 : 1);
+    }
     if (open || e.target.matches("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Escape" && selecting) return setSelecting(false);
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && prefs.view === "binder" && data) { e.preventDefault(); return turnBinder(e.key === "ArrowLeft" ? -1 : 1); }
     if (e.key === "/") { e.preventDefault(); $("q").focus(); }
     else if (e.key === "g" || e.key === "G") setView("grid");
     else if (e.key === "l" || e.key === "L") setView("list");
+    else if (e.key === "b" || e.key === "B") setView("binder");
+    else if ((e.key === "s" || e.key === "S") && data) setSelecting(!selecting);
     else if (e.key === "n" || e.key === "N") { e.preventDefault(); openAdd(); }
     else if ((e.key === "e" || e.key === "E") && data) openExport();
   });
@@ -462,16 +670,19 @@
   // Other pages link here with a search filled in (/collection?q=Sol Ring).
   { const ps = new URLSearchParams(location.search), q = ps.get("q"), sort = ps.get("sort");
     if (q) $("q").value = q;
+    for (const [k, id] of [["min", "fMin"], ["max", "fMax"]]) if (ps.get(k) && !isNaN(parseFloat(ps.get(k)))) $(id).value = parseFloat(ps.get(k));
     if (sort && [...$("sort").options].some(o => o.value === sort)) { prefs.sort = sort; $("sort").value = sort; }
     // Home links here with one filter set (/collection?color=U, ?bin=3); applied once the lists are filled.
-    var linked = { fColor: ps.get("color"), fBin: ps.get("bin"), fRarity: ps.get("rarity"), fSet: ps.get("set") }; }
+    var linked = { fColor: ps.get("color"), fBin: ps.get("bin"), fRarity: ps.get("rarity"), fSet: ps.get("set"), fFoil: ps.get("foil") }; }
   // The search palette's "Export the collection" and "Add a card" land here as #export / #add.
   load().then(() => {
     let changed = false;
     for (const [id, v] of Object.entries(linked)) if (v != null && [...$(id).options].some(o => o.value === v)) { $(id).value = v; changed = true; }
     if (changed) applyFilters();
+    else renderChips();
     if (location.hash === "#export" && data) openExport();
     else if (location.hash === "#add") openAdd();
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    syncUrl();   // drops any filter that didn't match (a set no longer in the collection)
   });
 })();

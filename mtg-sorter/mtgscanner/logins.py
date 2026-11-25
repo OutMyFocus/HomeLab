@@ -30,7 +30,7 @@ POST_NEEDS = {
          "/api/history/export", "/api/password", "/api/logout/everywhere"],
     "scan": ["/api/frame", "/api/camera", "/api/camera/release", "/api/add", "/api/save_all",
              "/api/correct", "/api/undo", "/api/wrong", "/api/photos", "/api/settings"],
-    "edit": ["/api/collection/edit", "/api/collection/add", "/api/decks/save", "/api/decks/delete",
+    "edit": ["/api/collection/edit", "/api/collection/add", "/api/collection/delete", "/api/decks/save", "/api/decks/delete",
              "/api/wishlist/", "/api/alerts", "/api/games/", "/api/trades/", "/api/sources/",
              "/api/history/delete", "/api/vault/import"],
     "machine": ["/api/machine/", "/api/lights", "/api/bins", "/api/train", "/api/forget", "/api/label"],

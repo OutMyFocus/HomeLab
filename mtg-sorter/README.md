@@ -132,7 +132,12 @@ Then open **http://localhost:5000** in your browser. You get:
   restarting, or the Wi-Fi dropped), a red bar says so at the top until it's back.
 - **Collection** (in the menu, or **Whole collection**): everything you've ever saved.
   Search and filter by color, rarity, set, bin, foil and price, sort it, and switch between
-  pictures and a list. Tap a card to change how many you have, mark it foil, pick a different
+  pictures, a list and a **binder** (9-pocket pages, two side by side on a computer: turn them
+  with the arrows, the arrow keys or a swipe). On a phone the filters fold behind **Filters**;
+  each filter shows as a chip you can take off, and the page's address keeps them, so Back or a
+  bookmark comes back to the same cards. **Select** (S) ticks several cards to put in the trade
+  binder, export or delete together. In a card's details, the arrows (or ← →, or a swipe on
+  the picture) go to the next card. Tap a card to change how many you have, mark it foil, pick a different
   printing or delete it. **Add a card** adds one you didn't scan. It shows the total value,
   how much it changed since you scanned the cards, a value-over-time chart, a breakdown by
   color, rarity, bin and set, and your 10 most valuable cards. **Refresh prices** gets today's
