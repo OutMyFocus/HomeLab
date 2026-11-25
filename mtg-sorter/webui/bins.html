@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/app-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <meta name="theme-color" content="#0e1013">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="SortR">
+  <meta name="color-scheme" content="dark light">
+  <title>SortR · Bins</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/decks.css">
+  <link rel="stylesheet" href="/static/bins.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <rect x="3.6" y="4.2" width="9" height="13" rx="1.9" transform="rotate(-14 8.1 10.7)" fill="currentColor" opacity=".38" />
+      <rect x="6.2" y="4.6" width="9" height="13" rx="1.9" transform="rotate(-4 10.7 11.1)" fill="currentColor" opacity=".62" />
+      <rect x="9.2" y="5.4" width="9.4" height="13.6" rx="1.9" transform="rotate(8 13.9 12.2)" fill="currentColor" />
+      <path d="M13.9 8.6c.4 2 1.1 2.8 3.1 3.2-2 .4-2.7 1.2-3.1 3.2-.4-2-1.1-2.8-3.1-3.2 2-.4 2.7-1.2 3.1-3.2Z" transform="rotate(8 13.9 12.2)" fill="var(--logo-spark, var(--bg))" />
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M5 15V6a1 1 0 0 1 1-1h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>SortR</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+
+  <main class="coll">
+    <section class="panel bins-intro">
+      <h3>What goes in each bin</h3>
+      <p><span id="trayNote"></span>Build a rule for anything: lands, tokens, a color, a price, the cards in your decks,
+        extra copies, a format, words in the rules text. Rules are checked from the top and a card goes into the bin
+        of the first rule it fits. Cards no rule fits (and cards it can't read) go to the catch-all bin. The counts show
+        how your collection would be split, so you can try things before saving.</p>
+      <div class="sub preset-head">Start from a ready-made setup</div>
+      <div class="presets" id="presets"></div>
+    </section>
+
+    <section class="bin-cards" id="binCards"></section>
+
+    <section class="panel wanted-panel" id="wantedPanel">
+      <div class="panel-head"><h3>Wanted cards</h3><span class="sub">Checked before the rules</span></div>
+      <p class="sub">Pull specific cards out of your bulk, like the ones a deck needs. A card on this list goes into the
+        bin you pick, whatever it's worth. Paste a list (one card per line, like 4 Lightning Bolt) or fill it from a deck.</p>
+      <label class="switch"><input type="checkbox" id="wOn"><span></span><b>Pull wanted cards</b></label>
+      <div class="wanted-grid">
+        <div class="wanted-list">
+          <div class="wanted-fill">
+            <select class="field" id="wDeck" aria-label="Fill from a deck"><option value="">Fill from a deck…</option></select>
+            <button class="btn ghost" id="wWish" type="button">Fill from my wishlist</button>
+            <button class="btn ghost" id="wClear" type="button">Clear the list</button>
+          </div>
+          <textarea class="field" id="wText" spellcheck="false" placeholder="1 Sol Ring&#10;4 Lightning Bolt&#10;1 Fire // Ice"></textarea>
+          <span class="sub" id="wSource"></span>
+        </div>
+        <div class="wanted-opts">
+          <label>Wanted cards go to <select class="field" id="wBin"></select></label>
+          <label class="switch"><input type="checkbox" id="wOnly"><span></span>Only wanted cards in that bin</label>
+          <label class="w-others" id="wOthersRow">Cards the rules would put there go to <select class="field" id="wOthers"></select></label>
+          <label class="switch"><input type="checkbox" id="wLimit"><span></span>Stop at the number of copies listed</label>
+          <label class="switch"><input type="checkbox" id="wBasics"><span></span>Skip basic lands</label>
+          <div class="wanted-found" id="wFound"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel rules">
+      <div class="panel-head"><h3>Rules</h3><span class="sub">Checked from the top. First match wins</span></div>
+      <div class="facts-note" id="factsNote" hidden></div>
+      <div id="rules"></div>
+      <div class="rules-foot">
+        <button class="btn ghost" id="addRule"><svg><use href="#i-plus" /></svg>Add a rule</button>
+      </div>
+      <div class="catch-all">
+        <span class="catch-tag">Catch-all</span>
+        <label class="goto-else">Anything else, and cards it can't read, go to <select class="field" id="fallback"></select></label>
+      </div>
+    </section>
+
+    <div class="panel save-bar">
+      <span class="sub" id="saveNote"></span>
+      <button class="btn ghost" id="resetBtn" title="Go back to the price bins in config.py">Back to the original price bins</button>
+      <button class="btn ghost" id="undoBtn" disabled>Undo changes</button>
+      <button class="btn primary" id="saveBtn" disabled>Save</button>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/bins.js"></script>
+</body>
+</html>

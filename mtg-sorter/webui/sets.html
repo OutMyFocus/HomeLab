@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/app-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <meta name="theme-color" content="#0e1013">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="SortR">
+  <meta name="color-scheme" content="dark light">
+  <title>SortR · Sets</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/decks.css">
+  <link rel="stylesheet" href="/static/sets.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <rect x="3.6" y="4.2" width="9" height="13" rx="1.9" transform="rotate(-14 8.1 10.7)" fill="currentColor" opacity=".38" />
+      <rect x="6.2" y="4.6" width="9" height="13" rx="1.9" transform="rotate(-4 10.7 11.1)" fill="currentColor" opacity=".62" />
+      <rect x="9.2" y="5.4" width="9.4" height="13.6" rx="1.9" transform="rotate(8 13.9 12.2)" fill="currentColor" />
+      <path d="M13.9 8.6c.4 2 1.1 2.8 3.1 3.2-2 .4-2.7 1.2-3.1 3.2-.4-2-1.1-2.8-3.1-3.2 2-.4 2.7-1.2 3.1-3.2Z" transform="rotate(8 13.9 12.2)" fill="var(--logo-spark, var(--bg))" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>SortR</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+
+  <main class="coll sets-page">
+    <div class="sets-bar">
+      <div class="seg" id="viewSeg" role="tablist">
+        <button data-v="sets" aria-pressed="true">Set completion</button><button data-v="spares" aria-pressed="false">Spare copies</button>
+      </div>
+      <span class="sub" id="barNote"></span>
+    </div>
+
+    <!-- every set in the card database, how much of it you own -->
+    <section id="viewSets">
+      <div class="toolbar sets-tools">
+        <label class="search"><svg><use href="#i-search" /></svg><input id="setQ" placeholder="Find a set" autocomplete="off" spellcheck="false"></label>
+        <label class="switch"><input type="checkbox" id="startedOnly" checked><span></span>Only sets I've started</label>
+      </div>
+      <div class="set-grid" id="setGrid"></div>
+
+      <!-- one set, card by card -->
+      <section class="panel set-detail" id="setDetail" hidden>
+        <div class="panel-head">
+          <button class="btn ghost" id="backBtn"><svg><use href="#i-back" /></svg>All sets</button>
+          <div class="seg small" id="showSeg"><button data-v="missing" aria-pressed="true">Missing</button><button data-v="owned" aria-pressed="false">Owned</button><button data-v="all" aria-pressed="false">All</button></div>
+        </div>
+        <div class="set-head">
+          <div><h2 id="dName"></h2><p class="sub" id="dSub"></p></div>
+          <div class="ring" id="dRing"></div>
+        </div>
+        <div class="rarity-row" id="dRarity"></div>
+        <div class="row-acts">
+          <button class="btn" id="wishBtn">Add the missing cards to my wishlist</button>
+          <button class="btn ghost" id="copyBtn">Copy the missing list</button>
+        </div>
+        <div class="results-grid" id="dCards"></div>
+      </section>
+    </section>
+
+    <!-- copies beyond what you keep, ready to trade or sell -->
+    <section id="viewSpares" hidden>
+      <section class="tiles three">
+        <div class="stat panel"><span class="label">Spare cards</span><b id="sCards">0</b><small class="sub" id="sCardsSub"></small></div>
+        <div class="stat panel"><span class="label">Their value</span><b id="sValue">$0.00</b><small class="sub">Today's prices, cheapest copies first</small></div>
+        <div class="stat panel"><span class="label">Keep</span>
+          <div class="keep"><button class="btn" data-keep="1">1</button><button class="btn" data-keep="4">4</button><input class="field" id="keepN" type="number" min="0" max="99" value="4" aria-label="Copies to keep"><span class="sub">copies of each card</span></div>
+          <label class="switch small"><input type="checkbox" id="lands"><span></span>Count basic lands</label></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h3>Spare copies</h3><button class="btn ghost" id="copySpares">Copy the list</button></div>
+        <div class="spare-list" id="spareList"></div>
+      </section>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
+  <script src="/static/sets.js"></script>
+</body>
+</html>

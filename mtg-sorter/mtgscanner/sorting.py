@@ -1,26 +1,74 @@
-"""Decide which bin a card goes into. Change the bins in config.py."""
+"""Decide which bin a card goes into. Set the bins on the Bins page (sort_rules.py);
+without saved rules they're the price bins in config.py."""
 
-from . import config
+from . import config, sort_rules
 from .database import Card
 from .vault_prices import VaultPrices
 
+# Which Scryfall price to use, best first. If a card was never printed in the finish you
+# picked (a foil-only promo scanned with Foil off, or an etched foil), the next one is used
+# instead of leaving the card without a price.
+_FINISH_ORDER = {
+    False: [("usd", ""), ("usd_foil", "foil price"), ("usd_etched", "etched price")],
+    True: [("usd_foil", ""), ("usd_etched", "etched price"), ("usd", "non-foil price")],
+}
 
-def card_price(card: Card, foil: bool, vault: VaultPrices | None = None) -> tuple[float | None, str]:
-    """Return (price in CAD, where it came from). Price is None if nobody has one."""
+
+def _pick_usd(prices: dict, foil: bool) -> tuple[float | None, str]:
+    for key, note in _FINISH_ORDER[foil]:
+        try:
+            if prices.get(key):
+                return float(prices[key]), note
+        except (TypeError, ValueError):
+            continue
+    return None, ""
+
+
+def card_price(card: Card, foil: bool, vault: VaultPrices | None = None, live=None) -> tuple[float | None, str]:
+    """Return (price in CAD, where it came from). Price is None if nobody has one.
+
+    Order: Commander Vault's Canadian price, then today's Scryfall price (if live lookups
+    are on and the card has been fetched), then the Scryfall price saved in the database.
+    """
     if vault and (found := vault.price(card, foil)):
         return found
-    usd = card.price_usd_foil if foil else card.price_usd
+    usd, note, source = None, "", ""
+    if live and (prices := live.prices(card.id)):
+        usd, note = _pick_usd(prices, foil)
+        source = "Scryfall today"
+    if usd is None:
+        usd, note = _pick_usd({"usd": card.price_usd, "usd_foil": card.price_usd_foil}, foil)
+        source = "Scryfall"
     if usd is None:
         return None, ""
-    return round(usd * config.USD_TO_CAD, 2), f"Scryfall US price × {config.USD_TO_CAD:.2f}"
+    rate = config.USD_TO_CAD
+    return round(usd * rate, 2), f"{source} US price × {rate:.2f}{', ' + note if note else ''}"
 
 
-def choose_bin(card: Card, foil: bool = False, vault: VaultPrices | None = None) -> tuple[int, str]:
-    """Return (bin number, bin label) for this card, based on its price."""
-    price, _ = card_price(card, foil, vault)
+def bin_for(card: Card, foil: bool, price: float | None, rules: dict | None = None, copy: int | None = None,
+            live=None) -> tuple[int, str]:
+    """Return (bin number, bin name) for a card whose price you already know. Pass the
+    rules (sort_rules.load()) when doing many cards, so they're looked up once. `copy`:
+    which copy of the card this is (for "copies beyond N"), if known."""
+    return sort_rules.pick(card, foil, price, rules, copy=copy, live=live)
+
+
+def bin_for_price(price: float | None) -> tuple[int, str]:
+    """The config.py price bins only (ignores the Bins page)."""
     if price is None:
         return config.NO_PRICE_BIN
     for number, label, minimum in config.PRICE_BINS:
         if price >= minimum:
             return number, label
     return config.NO_PRICE_BIN
+
+
+def choose_bin(card: Card, foil: bool = False, vault: VaultPrices | None = None, live=None,
+               collection=None) -> tuple[int, str]:
+    """Return (bin number, bin label) for this card, by the rules on the Bins page. With
+    `collection` (the file it's about to be saved into), "copies beyond N" counts the
+    copies already there."""
+    copy = None
+    if collection is not None and sort_rules.uses(sort_rules.load(), "copies"):
+        copy = sort_rules.owned_counts(collection).get(sort_rules.name_key(card.name), 0) + 1
+    return bin_for(card, foil, card_price(card, foil, vault, live)[0], copy=copy, live=live)

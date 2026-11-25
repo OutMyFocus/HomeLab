@@ -11,14 +11,21 @@ Neither needs a port opened on your router. Both connect to the app on the Pi at
 `127.0.0.1:5000`. The app also answers on your home Wi-Fi at `http://mtgsorter.local:5000`
 (see the end of 2c to turn that off).
 
-> **The app has no login.** Anyone who can open it can scan, delete, and download your
-> collection. Don't publish it through Cloudflare without step 3c (Access) in front.
+> **The app has no login** unless you turn on Accounts (Settings, **Accounts**) or set a PIN in
+> Settings. Without them, anyone who can open it can scan, delete, and download your collection.
+> A PIN is one shared code that unlocks everything, Restart and Wi-Fi included. Don't publish it
+> through Cloudflare without accounts on, or step 3c (Access) in front.
+
+Scanning with a phone's own camera (**This device's camera** on the Scan page) only works on
+an **https** address, so use the Tailscale or Cloudflare one for that, not `http://mtgsorter.local:5000`.
+Running the app on a home server instead of the Pi: [UNRAID.md](UNRAID.md).
 
 Replace `example.com` with your domain throughout.
 
 ## 1. Run the app as a service
 
-So it starts on boot and comes back if it crashes. From an SSH session on the Pi:
+So it starts on boot and comes back if it crashes. `deploy/setup.sh` does steps 1 and 1b for
+you (and more: see [MAINTENANCE.md](../MAINTENANCE.md)). By hand, from an SSH session on the Pi:
 
 ```bash
 cd ~/HomeLab && git pull
@@ -29,13 +36,23 @@ systemctl status mtg-sorter        # should say "active (running)"
 curl -I http://127.0.0.1:5000      # should say "200 OK"
 ```
 
-No camera yet? Edit the service to use demo photos, then restart it:
+No camera yet? Add demo photos with an override. Don't edit
+`/etc/systemd/system/mtg-sorter.service` itself: the updater puts the repo's copy back within
+5 minutes, and your change is gone. An override stays:
 
 ```bash
-sudo nano /etc/systemd/system/mtg-sorter.service
-#   end the ExecStart line with:  --demo /home/nic/photos
-sudo systemctl daemon-reload && sudo systemctl restart mtg-sorter
+sudo systemctl edit mtg-sorter
+#   in the editor, between the comment lines, type these three lines:
+#   [Service]
+#   ExecStart=
+#   ExecStart=/home/nic/HomeLab/mtg-sorter/.venv/bin/python app.py --host 0.0.0.0 --port 5000 --demo /home/nic/photos
+sudo systemctl restart mtg-sorter
 ```
+
+The empty `ExecStart=` line is needed: it clears the first one. To undo it:
+`sudo systemctl revert mtg-sorter`. The override copies the whole ExecStart line, so if the repo
+changes that line later, the Pi keeps running your copy until you remove the override. It's for
+the git copy only: remove it before `mtg docker on`.
 
 Useful later: `journalctl -u mtg-sorter -f` shows the app's output live, and
 `sudo systemctl restart mtg-sorter` picks up a `git pull`.
@@ -56,7 +73,9 @@ journalctl -u mtg-sorter-update -n 20        # what the last updates did
 ```
 
 It only fast-forwards. If you edit files in `~/HomeLab` on the Pi, updates stop (the log
-says so) until you undo the edits with `git checkout -- .` or commit and push them.
+and the Maintenance page say so) until you press **Fix updates** on the Maintenance page
+(it sets the edits aside with `git stash`) or undo them with `git checkout -- .`. If a new version
+doesn't start, it goes back to the previous one by itself.
 
 If you stop the app from the service to run it by hand, use `sudo systemctl stop mtg-sorter`
 first, or the two will fight over port 5000.

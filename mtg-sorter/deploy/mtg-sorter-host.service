@@ -1,0 +1,7 @@
+# Runs the jobs the app in Docker asked for. See mtg-sorter-host.path and mtg-sorter-host.
+[Unit]
+Description=Run jobs for the MTG sorter app in Docker
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/sbin/mtg-sorter-host

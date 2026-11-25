@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/app-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <meta name="theme-color" content="#0e1013">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="SortR">
+  <meta name="color-scheme" content="dark light">
+  <title>SortR · Play</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/decks.css">
+  <link rel="stylesheet" href="/static/extras.css">
+  <link rel="stylesheet" href="/static/vault.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <rect x="3.6" y="4.2" width="9" height="13" rx="1.9" transform="rotate(-14 8.1 10.7)" fill="currentColor" opacity=".38" />
+      <rect x="6.2" y="4.6" width="9" height="13" rx="1.9" transform="rotate(-4 10.7 11.1)" fill="currentColor" opacity=".62" />
+      <rect x="9.2" y="5.4" width="9.4" height="13.6" rx="1.9" transform="rotate(8 13.9 12.2)" fill="currentColor" />
+      <path d="M13.9 8.6c.4 2 1.1 2.8 3.1 3.2-2 .4-2.7 1.2-3.1 3.2-.4-2-1.1-2.8-3.1-3.2 2-.4 2.7-1.2 3.1-3.2Z" transform="rotate(8 13.9 12.2)" fill="var(--logo-spark, var(--bg))" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>SortR</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+
+  <main class="coll vault">
+    <section class="panel">
+      <div class="panel-head"><h3>Life counter</h3><span class="sub">Saved on this phone or computer only</span></div>
+      <div class="lc-tools">
+        <select id="lcN" aria-label="Players"><option value="2">2 players</option><option value="3">3 players</option><option value="4" selected>4 players</option><option value="5">5 players</option><option value="6">6 players</option></select>
+        <select id="lcStart" aria-label="Starting life"><option value="40">40 life</option><option value="30">30 life</option><option value="25">25 life</option><option value="20">20 life</option></select>
+        <button class="btn primary" id="lcReset">New game</button>
+        <button class="btn ghost" id="lcFirst">Who goes first?</button>
+        <button class="btn ghost" id="lcD6">Roll d6</button><button class="btn ghost" id="lcD20">Roll d20</button><button class="btn ghost" id="lcCoin">Flip a coin</button>
+        <b id="lcRoll" aria-live="polite"></b>
+      </div>
+      <div class="lc-grid" id="lcGrid" style="margin-top: 14px"></div>
+      <p class="hint">21 commander damage from one commander, or 10 poison, knocks a player out. <button class="link-btn" id="lcLog">Log this game</button></p>
+    </section>
+
+    <section class="play-grid">
+      <div class="panel">
+        <div class="panel-head"><h3>Log a game</h3></div>
+        <div class="toolbar">
+          <label class="price-range">Date <input id="gDate" type="date" style="width: 10.5em"></label>
+          <label class="price-range">Turns <input id="gTurns" type="number" min="1" max="40" placeholder="9"></label>
+        </div>
+        <div id="gPlayers"></div>
+        <datalist id="gDecks"></datalist>
+        <div class="toolbar second">
+          <button class="btn ghost" id="gAddP">Add player</button>
+          <input class="field grow" id="gNotes" placeholder="What won it? e.g. Gray Merchant for 14">
+          <button class="btn primary" id="gSave">Save game</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Win rates</h3><span class="sub" id="gCount"></span></div>
+        <h4 class="sub">Players</h4><div class="winbars" id="gByPlayer"></div>
+        <h4 class="sub" style="margin-top: 16px">Decks</h4><div class="winbars" id="gByDeck"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>Every game</h3></div>
+      <div id="gList"></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
+  <script src="/static/play.js"></script>
+</body>
+</html>

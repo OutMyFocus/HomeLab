@@ -1,0 +1,71 @@
+/* The Bins page rule builder: rule cards with conditions, the catch-all, the card-list note. */
+.bin-cards { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.preset-head { margin-bottom: -4px; }
+.facts-note { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px; border-radius: calc(var(--radius) * .6);
+  border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent); background: color-mix(in oklab, var(--warn) 10%, transparent); font-size: .88rem; }
+.facts-note .btn { padding: 6px 12px; }
+
+.rule2 { display: grid; gap: 10px; padding: 12px; border-radius: calc(var(--radius) * .7); border: 1px solid var(--line);
+  border-left: 5px solid var(--c, var(--line)); background: color-mix(in oklab, var(--panel-solid) 55%, transparent); }
+.rule2.off { opacity: .55; }
+.rule2 .r-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.rule2 .no { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-solid); font-weight: 700; font-size: .8rem; flex: none; }
+.rule2 .r-goto { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+.rule2 .r-goto select { padding: 6px 8px; font-weight: 600; }
+.rule2 .hits { color: var(--muted); font-size: .8rem; }
+.rule2 .tools { display: flex; gap: 4px; margin-left: auto; }
+.rule2 .tools button { width: 32px; height: 32px; }
+.rule2 .tools svg { width: 15px; height: 15px; }
+.rule2 .r-say { font-size: .86rem; color: var(--muted); line-height: 1.4; }
+.rule2 .r-say b { color: var(--text); font-weight: 600; }
+.r-match { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .88rem; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: .82rem; padding: 4px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--tint); color: var(--text); font-weight: 650; }
+
+.conds2 { display: grid; gap: 8px; }
+.cond2 { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 46px 8px 10px; border-radius: calc(var(--radius) * .55);
+  border: 1px solid var(--line); background: var(--panel-solid); font-size: .88rem; }
+.cond2 .what { font-weight: 650; min-width: 7.5em; }
+.cond2 .field { padding: 5px 8px; font-size: .86rem; max-width: 100%; }
+.cond2 input[type="number"] { width: 5.5em; }
+.cond2 input.wide, .cond2 textarea { flex: 1 1 14em; min-width: 0; }
+.cond2 textarea { min-height: 4.5em; resize: vertical; font-family: var(--mono); font-size: .82rem; }
+.cond2 .muted { color: var(--muted); }
+.cond2 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.cond2 .del { position: absolute; top: 6px; right: 8px; width: 30px; height: 30px; }
+.cond2 .del svg { width: 14px; height: 14px; }
+.not-btn { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 6px; font: inherit; font-size: .75rem;
+  font-weight: 700; letter-spacing: .04em; padding: 3px 7px; cursor: pointer; }
+.not-btn[aria-pressed="true"] { color: #fff; background: var(--bad); border-color: var(--bad); }
+.cond2.is-not { border-color: color-mix(in oklab, var(--bad) 45%, var(--line)); }
+.add-cond { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.add-cond select { padding: 6px 8px; }
+.every { font-size: .86rem; color: var(--muted); padding: 2px 2px; }
+
+.catch-all { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border-radius: calc(var(--radius) * .7);
+  border: 1px dashed var(--line); }
+.catch-tag { font-size: .72rem; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; padding: 3px 8px; border-radius: 999px;
+  background: var(--tint); }
+.catch-all .field { padding: 6px 8px; font-weight: 600; }
+
+@media (max-width: 640px) {
+  .rule2 { padding: 10px; }
+  .cond2 { padding: 7px 8px; }
+  .cond2 .what { min-width: 0; flex: 1 1 auto; }
+  .cond2 > .chips, .cond2 > textarea, .cond2 > input.wide { flex: 1 1 100%; }
+  .cond2 .chips .chip { padding: 2px 8px; font-size: .76rem; }
+  .rule2 .r-goto { flex: 1 1 calc(100% - 110px); min-width: 0; }
+  .rule2 .r-goto select { flex: 1; min-width: 0; }
+  .rule2 .hits { flex: 1 1 auto; }
+  .cond2 { padding-right: 42px; }
+  /* on a phone the save bar only follows you down the page while there's something to save */
+  .save-bar { gap: 8px; padding: 8px 10px; }
+  .save-bar:not(.dirty) { position: static; }
+  .save-bar.dirty #resetBtn { display: none; }
+  .presets { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; margin: 0 calc(var(--pad) * -1); padding-inline: var(--pad); }
+  .preset { flex: 0 0 72%; scroll-snap-align: start; }
+  .save-bar .sub, .save-bar .err { flex: 1 1 100%; font-size: .8rem; }
+  .save-bar .btn { padding: 8px 12px; font-size: .86rem; }
+  .catch-all .goto-else { display: grid; gap: 6px; width: 100%; }
+}

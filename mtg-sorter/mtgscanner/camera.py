@@ -55,6 +55,22 @@ def list_cameras() -> list[dict]:
     return pi + unique
 
 
+# Focus for the Pi camera (Camera Module 3 has autofocus). None keeps refocusing on its
+# own; a number locks the lens at that many cm, e.g. 12 for the scan bed (the lens sits
+# 120 mm above the card). Picked on the scanner page and kept in app_settings.json; the
+# app sets this at startup so a camera opened later starts with it.
+focus_cm: float | None = None
+FOCUS_CHOICES_CM = (8, 10, 12, 14, 16, 18, 20, 25, 30, 40, 60)
+
+
+def focus_controls(cm: float | None) -> dict:
+    """libcamera controls for a focus setting. Auto uses the FULL range: the default
+    ("Normal") range skips the closest distances, which is where cards are."""
+    if cm is None:
+        return {"AfMode": 2, "AfRange": 2, "AfSpeed": 1}   # Continuous, Full range, Fast
+    return {"AfMode": 0, "LensPosition": 100.0 / float(cm)}  # Manual; the lens takes 1/metres
+
+
 class PiCapture:
     """The Pi camera, behaving like the bits of cv2.VideoCapture this module uses."""
 
@@ -62,15 +78,30 @@ class PiCapture:
         from picamera2 import Picamera2
         self.cam = Picamera2()
         size = config.CAMERA_SIZE
-        # picamera2's "RGB888" is laid out blue-green-red in memory, which is what OpenCV expects.
-        self.cam.configure(self.cam.create_video_configuration(
-            main={"size": size, "format": "RGB888"}, controls={"FrameRate": 30}))
-        self.cam.start()
         try:
-            self.cam.set_controls({"AfMode": 2})   # keep refocusing (Camera Module 3 has autofocus)
+            # picamera2's "RGB888" is laid out blue-green-red in memory, which is what OpenCV expects.
+            self.cam.configure(self.cam.create_video_configuration(
+                main={"size": size, "format": "RGB888"}, controls={"FrameRate": 30}))
+            self.cam.start()
         except Exception:
-            pass                                    # cameras without autofocus
+            # Let go of the camera, or every later try fails with "Camera in Configured
+            # state trying acquire()" and the app never gets it back without a restart.
+            self.cam.close()
+            raise
         self.size = size
+        # Cameras without autofocus (Camera Module 2, HQ) have no AfMode control.
+        self.has_focus = "AfMode" in getattr(self.cam, "camera_controls", {})
+        self.focus_cm = None
+        self.set_focus(focus_cm)
+
+    def set_focus(self, cm: float | None):
+        if not self.has_focus:
+            return
+        try:
+            self.cam.set_controls(focus_controls(cm))
+            self.focus_cm = cm
+        except Exception as e:
+            print(f"Couldn't set the Pi camera's focus: {e}")
 
     def read(self):
         try:
@@ -119,8 +150,10 @@ class CameraSource:
         self.index, self.name = index, name or f"Camera {index}"
         try:
             self.cap = open_camera(index)
-        except RuntimeError:
-            raise RuntimeError(f"Could not open {self.name}.") from None
+        except RuntimeError as e:
+            # Keep the reason (e.g. "Cannot allocate memory") so the log says what went wrong.
+            reason = str(e).partition("(")[2].rstrip(".)")
+            raise RuntimeError(f"Could not open {self.name}" + (f" ({reason})." if reason else ".")) from None
         self.format, self.size = describe(self.cap)
         self._cond = threading.Condition()
         self._frame, self._seq, self._given, self._stop = None, 0, 0, False
@@ -161,7 +194,16 @@ class CameraSource:
         out = {"index": self.index, "name": self.name, "format": self.format, "size": list(self.size)}
         if self.camera_fps is not None:
             out["fps"] = round(self.camera_fps, 1)
+        if getattr(self.cap, "has_focus", False):
+            out["focus"] = {"cm": self.cap.focus_cm, "choices": list(FOCUS_CHOICES_CM)}
         return out
+
+    def set_focus(self, cm: float | None) -> bool:
+        """Change the focus now (Pi camera with autofocus only). False if it has none."""
+        if not getattr(self.cap, "has_focus", False):
+            return False
+        self.cap.set_focus(cm)
+        return True
 
     def release(self):
         self._stop = True
@@ -169,3 +211,64 @@ class CameraSource:
             self._cond.notify_all()
         self._thread.join(timeout=2.0)
         self.cap.release()
+
+
+class BrowserSource:
+    """A camera on the phone or computer that has the page open. The browser sends its
+    pictures to /api/frame and this hands each new one to the scanner, so scanning works
+    from any device, not just the one the scanner runs on. The token tells the pictures of
+    one device from another's: only the device that picked this camera can send."""
+
+    index = "browser"       # what /api/camera is sent to pick it (webcams have numbers)
+    format = "JPEG"
+    gone_after = 15.0       # seconds without a picture before the scanner gives up on it
+
+    def __init__(self, token: str, name: str | None = None):
+        self.token, self.name = token, name or "This device's camera"
+        self._cond = threading.Condition()
+        self._frame, self._seq, self._given, self._stop = None, 0, 0, False
+        self.size = None            # (width, height) of the pictures, known from the first one
+        self.taken_at = 0.0         # when the newest picture arrived (time.monotonic)
+        self.last_seen = time.monotonic()
+        self.camera_fps = None
+        self._count, self._since = 0, time.monotonic()
+
+    def push(self, frame):
+        """A new picture from the browser (a decoded OpenCV image)."""
+        now = time.monotonic()
+        self._count += 1
+        if now - self._since >= 2.0:
+            self.camera_fps, self._count, self._since = self._count / (now - self._since), 0, now
+        with self._cond:
+            self._frame, self.taken_at, self.last_seen, self._seq = frame, now, now, self._seq + 1
+            self.size = (frame.shape[1], frame.shape[0])
+            self._cond.notify_all()
+
+    def read(self, timeout: float = 2.0):
+        """The newest picture not handed out yet (None if the browser stops sending)."""
+        with self._cond:
+            seq = self._given
+            if not self._cond.wait_for(lambda: self._seq > seq or self._stop, timeout) or self._stop:
+                return None
+            self._given = self._seq
+            return self._frame
+
+    def quiet_for(self) -> float:
+        """Seconds since the browser last sent a picture."""
+        return time.monotonic() - self.last_seen
+
+    def gone(self) -> bool:
+        """True once the browser has been silent long enough to count as closed."""
+        return self.quiet_for() > self.gone_after
+
+    def info(self) -> dict:
+        out = {"index": self.index, "name": self.name, "format": self.format,
+               "size": list(self.size) if self.size else None, "browser": True}
+        if self.camera_fps is not None:
+            out["fps"] = round(self.camera_fps, 1)
+        return out
+
+    def release(self):
+        self._stop = True
+        with self._cond:
+            self._cond.notify_all()

@@ -2,9 +2,17 @@
 <html lang="en" data-theme="system">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <link rel="manifest" href="/static/manifest.json" />
+    <link rel="icon" href="/static/app-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/static/icon-180.png" />
+    <meta name="theme-color" content="#0e1013" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="SortR" />
     <meta name="color-scheme" content="dark light" />
-    <title>MTG Scanner</title>
+    <title>SortR · Scanner</title>
     <link rel="stylesheet" href="/static/style.css" />
     <!-- Apply saved look before first paint, so the page doesn't flash the default theme. -->
     <script>
@@ -17,20 +25,11 @@
   <body>
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <symbol id="i-logo" viewBox="0 0 24 24">
-        <path
-          d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z"
-          fill="currentColor"
-          opacity=".18" />
-        <path
-          d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linejoin="round" />
-        <path
-          d="m12 7 1.4 3.2L17 11l-2.7 2.3.8 3.7-3.1-1.9-3.1 1.9.8-3.7L7 11l3.6-.8L12 7Z"
-          fill="currentColor" />
-      </symbol>
+      <rect x="3.6" y="4.2" width="9" height="13" rx="1.9" transform="rotate(-14 8.1 10.7)" fill="currentColor" opacity=".38" />
+      <rect x="6.2" y="4.6" width="9" height="13" rx="1.9" transform="rotate(-4 10.7 11.1)" fill="currentColor" opacity=".62" />
+      <rect x="9.2" y="5.4" width="9.4" height="13.6" rx="1.9" transform="rotate(8 13.9 12.2)" fill="currentColor" />
+      <path d="M13.9 8.6c.4 2 1.1 2.8 3.1 3.2-2 .4-2.7 1.2-3.1 3.2-.4-2-1.1-2.8-3.1-3.2 2-.4 2.7-1.2 3.1-3.2Z" transform="rotate(8 13.9 12.2)" fill="var(--logo-spark, var(--bg))" />
+    </symbol>
       <symbol id="i-camera" viewBox="0 0 24 24">
         <path
           d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z"
@@ -45,6 +44,23 @@
           fill="none"
           stroke="currentColor"
           stroke-width="1.7" />
+      </symbol>
+      <symbol id="i-flip" viewBox="0 0 24 24">
+        <path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+        <path d="M9.5 12.5a2.5 2.5 0 0 1 4.6-1.4M14.5 12.5a2.5 2.5 0 0 1-4.6 1.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        <path d="M14 9.5v1.8h-1.8M10 15.5v-1.8h1.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-torch" viewBox="0 0 24 24">
+        <path d="M9 3h6l1.5 3v2.5a3 3 0 0 1-1 2.2V20a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-9.3a3 3 0 0 1-1-2.2V6L9 3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+        <path d="M7.5 8.5h9M12 13v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24">
+        <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+        <path d="M10.5 5.5h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        <rect x="9" y="8.5" width="6" height="8.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24">
+        <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />
       </symbol>
       <symbol id="i-photos" viewBox="0 0 24 24">
         <rect
@@ -133,6 +149,45 @@
           stroke-width="1.7"
           stroke-linejoin="round" />
       </symbol>
+      <symbol id="i-bulb" viewBox="0 0 24 24">
+        <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3Z"
+          fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-wrench" viewBox="0 0 24 24">
+        <path
+          d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+          stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-stack" viewBox="0 0 24 24">
+        <rect x="7" y="3.5" width="12" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M5 7v11.5A2.5 2.5 0 0 0 7.5 21H15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-deck" viewBox="0 0 24 24">
+        <rect x="9" y="4" width="10" height="14" rx="1.8" transform="rotate(12 14 11)" fill="none" stroke="currentColor" stroke-width="1.6" />
+        <rect x="5" y="5" width="10" height="14" rx="1.8" transform="rotate(-8 10 12)" fill="none" stroke="currentColor" stroke-width="1.6" />
+      </symbol>
+      <symbol id="i-bins" viewBox="0 0 24 24">
+        <path d="M3.5 9h17l-1.5 10.5h-14L3.5 9ZM8 9V5.5h8V9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+        <path d="M12 12v4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24">
+        <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24">
+        <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M12 8v4.5l3 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
       <symbol id="i-check" viewBox="0 0 24 24">
         <path
           d="m5 12.5 4.5 4.5L19 7.5"
@@ -163,6 +218,12 @@
           stroke="currentColor"
           stroke-width="1.8"
           stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-rotate" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-crop" viewBox="0 0 24 24">
+        <path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
       </symbol>
       <symbol id="i-slots" viewBox="0 0 24 24">
         <rect
@@ -199,22 +260,7 @@
 
     <header class="top">
       <div class="brand">
-        <svg class="logo"><use href="#i-logo" /></svg><span>MTG Scanner</span>
-      </div>
-      <nav class="tabs" role="tablist">
-        <span class="tab-ind" id="tabInd"></span>
-        <button role="tab" data-tab="live" aria-selected="true">
-          <svg><use href="#i-camera" /></svg>Live
-        </button>
-        <button role="tab" data-tab="photos" aria-selected="false">
-          <svg><use href="#i-photos" /></svg>Photos
-        </button>
-        <button role="tab" data-tab="train" aria-selected="false">
-          <svg><use href="#i-brain" /></svg>Train
-        </button>
-      </nav>
-      <div class="meta" id="meta">
-        <span class="pulse"></span><span id="metaText">Connecting…</span>
+        <svg class="logo"><use href="#i-logo" /></svg><span>SortR</span>
       </div>
       <button
         class="icon-btn"
@@ -224,13 +270,71 @@
         <svg><use href="#i-sliders" /></svg>
       </button>
     </header>
+    <script src="/static/shell.js"></script>
 
     <main>
+      <div class="scan-bar">
+        <nav class="tabs" role="tablist">
+          <span class="tab-ind" id="tabInd"></span>
+          <button role="tab" data-tab="live" aria-selected="true">
+            <svg><use href="#i-camera" /></svg>Live
+          </button>
+          <button role="tab" data-tab="photos" aria-selected="false">
+            <svg><use href="#i-photos" /></svg>Photos
+          </button>
+          <button role="tab" data-tab="train" aria-selected="false">
+            <svg><use href="#i-brain" /></svg>Train
+          </button>
+        </nav>
+        <div class="meta" id="meta">
+          <span class="pulse"></span><span id="metaText">Connecting…</span>
+        </div>
+      </div>
       <!-- LIVE -->
       <section id="tab-live" class="tab">
         <div class="live">
           <div class="camera">
-            <img id="stream" src="/stream.mjpg" alt="Live camera" />
+            <img id="stream" alt="Live camera" />
+            <video id="localCam" autoplay playsinline muted hidden></video>
+            <div class="no-camera" id="noCamera" hidden>
+              <!-- This phone or computer can be the camera (https, and a browser that shares its camera). -->
+              <div class="device-offer" id="noCamDevice" hidden>
+                <div class="device-hero" aria-hidden="true">
+                  <svg class="hero-phone"><use href="#i-phone" /></svg>
+                  <svg class="hero-card" viewBox="0 0 24 34"><rect x="1" y="1" width="22" height="32" rx="2.5" /><rect x="4" y="4" width="16" height="12" rx="1.2" /><path d="M5 21h14M5 25h9" /></svg>
+                  <span class="hero-ring"></span>
+                </div>
+                <h3 id="deviceTitle">Scan with this phone</h3>
+                <p>Point its camera at your cards. The scanner recognizes them here and they land in the
+                  same collection as everything else.</p>
+                <label class="who">
+                  <span>Scanning as</span>
+                  <input id="whoInput" type="text" maxlength="40" placeholder="Your name" title="Optional: shows who scanned each card" autocomplete="given-name" />
+                </label>
+                <button class="btn primary big" id="useDeviceCamBtn">
+                  <svg><use href="#i-camera" /></svg><span id="useDeviceCamText">Use this phone's camera</span>
+                </button>
+                <p class="sub">Or <button class="linkish" id="usePhotosLink">scan photos</button> you already took.</p>
+              </div>
+              <div id="noCamOther">
+                <svg class="big-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                  <circle cx="12" cy="12.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+                  <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
+                <h3>No camera connected</h3>
+                <p>The scanner can't see a camera, so live scanning is paused. You can still scan
+                  photos of your cards, and everything else works as usual.</p>
+                <div class="row">
+                  <button class="btn primary" id="usePhotosBtn">
+                    <svg><use href="#i-photos" /></svg>Scan photos instead
+                  </button>
+                  <a class="btn" href="/maintenance">Run the check-up</a>
+                </div>
+                <p class="sub" id="noCamHint">On the Pi: power off, reseat the ribbon cable (contacts facing the board at both ends), then power on.
+                  It keeps looking, so the picture appears by itself once a camera works.</p>
+              </div>
+            </div>
             <svg
               id="overlay"
               class="overlay"
@@ -240,6 +344,7 @@
               <i></i><i></i><i></i><i></i>
             </div>
             <div class="camera-status" id="camStatus">Starting camera…</div>
+            <div class="others-scanning" id="othersScanning" hidden></div>
             <label class="cam-pick" id="camPick" title="Choose camera">
               <svg><use href="#i-camera" /></svg>
               <select id="camSelect" aria-label="Camera">
@@ -272,9 +377,46 @@
                 Edit slots
               </button>
               <button class="cam-btn" id="clearSlotsBtn" hidden>Clear</button>
+              <button class="cam-btn" id="rotateBtn" title="Turn the picture a quarter turn clockwise" hidden>
+                <svg><use href="#i-rotate" /></svg><span>Rotate</span>
+              </button>
+              <button class="cam-btn" id="cropBtn" aria-pressed="false" title="Drag a box around the scan bed to show only that" hidden>
+                <svg><use href="#i-crop" /></svg><span>Crop</span>
+              </button>
+              <button class="cam-btn" id="uncropBtn" title="Show the whole camera picture again" hidden>Full view</button>
+              <button class="cam-btn" id="straightBtn" title="Lay one card square on the bed against the stop pins, then press: the picture is warped so that card shows as a perfect upright rectangle (undoes the camera's tilt)" hidden>Straighten</button>
+              <button class="cam-btn" id="unstraightBtn" title="Show the camera's picture without the straightening" hidden>Undo straighten</button>
+              <button class="cam-btn" id="autoStraightBtn" aria-pressed="true" title="Straighten by itself: every card recognized for sure tells the scanner how the camera sees a card, and it keeps the picture square (needs about 8 cards; a correction bigger than the camera could be off is refused)" hidden>Auto straighten</button>
+              <button class="cam-btn" id="wholeCardsBtn" aria-pressed="false" title="Whole cards only: lay one card on the bed and press. Anything smaller than that card (its art box, text box or a glare spot) is no longer read as a card of its own" hidden>Whole cards only: off</button>
+              <button class="cam-btn" id="emptyBedBtn" title="With nothing on the bed, press to show the scanner the bare bed, so its ribs are never read as a card. Sort runs keep this up to date by themselves" hidden>Bed is empty</button>
+              <span class="cam-hint" id="cropHint" hidden>Drag a box around the scan bed</span>
+              <label
+                class="cam-btn cam-focus"
+                id="focusPick"
+                title="Camera focus: Auto keeps refocusing, a distance locks the lens there (the scan bed is 12 cm)"
+                hidden>
+                <span>Focus</span>
+                <select id="focusSelect" aria-label="Camera focus"></select>
+              </label>
               <span class="cam-hint" id="slotHint" hidden
                 >Drag a box around each card spot</span
               >
+            </div>
+            <button class="cam-resume" id="camResume" hidden>
+              <svg><use href="#i-camera" /></svg>
+              <b>Camera paused</b>
+              <span id="camResumeWhy">Tap to turn it back on</span>
+            </button>
+            <div class="cam-device" id="camDevice" hidden>
+              <button class="cam-btn" id="torchBtn" aria-pressed="false" title="Light" hidden>
+                <svg><use href="#i-torch" /></svg>
+              </button>
+              <button class="cam-btn" id="flipCamBtn" title="Switch camera" hidden>
+                <svg><use href="#i-flip" /></svg>
+              </button>
+              <button class="cam-btn stop" id="stopDeviceBtn" title="Stop scanning with this device">
+                <svg><use href="#i-stop" /></svg><span>Stop</span>
+              </button>
             </div>
           </div>
 
@@ -301,17 +443,36 @@
                 <div class="sub" id="cardSet"></div>
                 <div class="price" id="cardPrice"></div>
                 <div class="sub opt-source" id="cardSource"></div>
+                <div class="mtl" id="cardMontreal" hidden></div>
                 <div class="badges">
                   <span class="bin" id="cardBin"></span>
                   <span class="match opt-match" id="cardMatch"></span>
+                  <span class="wanted-tag" id="cardWanted" hidden>On your wishlist</span>
                 </div>
-                <button class="link-btn" id="wrongBtn">
-                  Wrong card? <kbd>W</kbd>
-                </button>
+                <div class="fix-links">
+                  <button class="link-btn" id="wrongBtn">
+                    Wrong card? <kbd>W</kbd>
+                  </button>
+                  <button class="link-btn" id="printBtn">
+                    Other printing? <kbd>P</kbd>
+                  </button>
+                </div>
               </div>
             </div>
             <div class="card-list" id="cardList"></div>
             <div class="controls">
+              <div class="sorter" id="sorter" hidden>
+                <button class="btn primary start" id="sortBtn" title="Feed, read and sort every card in the hopper by your Bins rules">
+                  <svg><use href="#i-bolt" /></svg><span id="sortBtnText">Start sorting</span>
+                </button>
+                <small id="sortInfo">Feeds every card, reads it, saves it and drops it into the bin your <a href="/bins">Bins</a> rules give it.</small>
+                <div class="sort-wait" id="sortWait" hidden>
+                  <small id="sortWaitText"></small>
+                  <button class="btn" data-decide="retry">Look again</button>
+                  <button class="btn" data-decide="fallback">Unread bin</button>
+                  <button class="btn ghost" data-decide="stop">Stop</button>
+                </div>
+              </div>
               <button class="btn primary" id="saveBtn" disabled>
                 Save all <kbd>Space</kbd>
               </button>
@@ -360,6 +521,9 @@
               </button>
               <a class="btn ghost" id="csvBtn" href="/api/collection.csv"
                 ><svg><use href="#i-download" /></svg>Download CSV</a
+              >
+              <a class="btn ghost" href="/collection"
+                ><svg><use href="#i-stack" /></svg>Whole collection</a
               >
             </div>
           </div>
@@ -638,6 +802,11 @@
     <div class="toast" id="toast" hidden>
       <svg><use href="#i-check" /></svg><span id="toastText"></span>
     </div>
+    <div class="alert-banner" id="alertBanner" hidden></div>
+    <!-- what the toast and the alert say, read out by screen readers (never shown) -->
+    <div id="toastLive" class="sr-only" role="status" aria-live="polite"></div>
+    <script src="/static/chime.js"></script>
+    <script src="/static/montreal.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>

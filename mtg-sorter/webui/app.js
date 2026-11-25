@@ -3,47 +3,103 @@
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = v => v == null ? "No price" : "$" + v.toFixed(2);
-  const BIN_NAMES = { 0: "Unknown", 1: "Bulk", 2: "$1–10", 3: "$10+" };
+  // Bin names come from the Bins page (state.bin_names); these are the defaults until it answers.
+  let BIN_NAMES = { 0: "Unknown", 1: "Bulk", 2: "$1–10", 3: "$10+" };
   let state = null, shownId = null, toastT;
+  // This page's own scanner, once its device becomes a camera: a token the page made up,
+  // which names that scanner in every request (and the name typed as "who's scanning").
+  // `want`: the person turned this device's camera on and hasn't pressed Stop, so the page
+  // brings the camera back by itself whenever the phone pauses it (screen lock, app switch).
+  const device = { on: false, want: false, stream: null, token: null, facing: "environment", torch: false, who: "",
+    name: /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "Phone camera" : "Computer camera" };
+  try { device.token = sessionStorage.getItem("mtg-cam-token"); device.who = localStorage.getItem("mtg-scanner-who") || ""; } catch (e) {}
+  if (!device.token) {
+    device.token = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now());
+    try { sessionStorage.setItem("mtg-cam-token", device.token); } catch (e) {}
+  }
+  // Set an element's HTML only when it changed. The state arrives several times a second,
+  // and rebuilding unchanged rows restarts their animations and reloads their pictures.
+  const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
 
   function toast(msg) {
     const t = $("toast"); $("toastText").textContent = msg;
     t.hidden = true; void t.offsetWidth; t.hidden = false;   // restart the slide-in
     clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200);
+    speak(msg);
+  }
+  // Screen readers read out what lands in #toastLive (always in the page, never shown).
+  // Emptied first, so the same message twice is read twice.
+  function speak(msg) {
+    const live = $("toastLive"); if (!live) return;
+    live.textContent = "";
+    requestAnimationFrame(() => { live.textContent = msg; });
   }
 
+  // Every request names this page's scanner (see "this device's camera" below). Until the
+  // device scans, that name is unknown to the app and the machine's scanner answers.
+  const scannerHeaders = () => ({ "X-Scanner": device.token });
+  // A failed request throws an Error with the app's own words (err.status: its HTTP status).
+  // A button whose request fails says why in a toast (see "unhandledrejection" below).
   async function api(path, body) {
-    const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error(r.status);
-    return r.json();
+    let r;
+    try {
+      r = await fetch(path, body === undefined ? { headers: scannerHeaders() }
+        : { method: "POST", headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify(body) });
+    } catch (e) {
+      const err = new Error("Can't reach the scanner. Check the connection and try again");
+      err.status = 0; err.fromApi = true; throw err;
+    }
+    if (r.status === 401) { location.href = "/lock?next=/scan"; throw new Error("Locked"); }   // the PIN lock (Settings page)
+    const js = await r.json().catch(() => null);
+    if (!r.ok) {
+      const err = new Error(js?.error || `Something went wrong (error ${r.status}). Try again`);
+      err.status = r.status; err.fromApi = true; throw err;
+    }
+    return js;
   }
+  window.addEventListener("unhandledrejection", ev => {
+    if (ev.reason?.fromApi) { ev.preventDefault(); toast(ev.reason.message); }
+  });
 
   // ---------- look (saved in this browser only) ----------
   const LOOK_KEY = "mtg-scanner-look";
   const ACCENTS = [
-    ["Ember", "#e8772e"], ["Plains", "#d6a93c"], ["Island", "#3b8eea"], ["Swamp", "#9a6bdc"],
+    ["Aether", "#7c5cff"], ["Ember", "#e8772e"], ["Plains", "#d6a93c"], ["Island", "#3b8eea"], ["Swamp", "#9a6bdc"],
     ["Mountain", "#e5484d"], ["Forest", "#2fa66a"], ["Teal", "#14b8a6"], ["Rose", "#ec4899"],
   ];
   const FONTS = {
-    sans: '"Inter", "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif',
+    sans: '"Inter Var", "Inter", "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif',
     rounded: 'ui-rounded, "SF Pro Rounded", "Nunito", "Quicksand", "Varela Round", "Segoe UI Variable Text", "Segoe UI", sans-serif',
     serif: '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif',
     mono: 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace',
   };
   const DEFAULT_LOOK = {
-    theme: "system", accent: "#e8772e", bins: ["#6b7280", "#8b93a1", "#2bb3a3", "#d6a93c"],
-    layout: "left", density: "cozy", font: "sans", size: 15, radius: 16,
+    v: 2, theme: "system", accent: "#7c5cff", bins: ["#6b7280", "#8b93a1", "#22b3a3", "#f2a93b"],
+    layout: "left", density: "cozy", font: "sans", size: 15, radius: 18,
     glow: true, finder: true, shine: true, stats: true, source: true, match: true, time: true, keys: true, motion: true,
   };
   const SWITCHES = ["glow", "finder", "shine", "stats", "source", "match", "time", "keys", "motion"];
 
   let look = { ...DEFAULT_LOOK };
-  try { look = { ...DEFAULT_LOOK, ...JSON.parse(localStorage.getItem(LOOK_KEY) || "{}") }; } catch (e) {}
+  try {
+    const saved = JSON.parse(localStorage.getItem(LOOK_KEY) || "{}") || {};
+    // Saved before SortR with the old defaults (Ember orange, 16 px corners): take the new ones (see look.js).
+    if (!saved.v) {
+      if ((saved.accent || "").toLowerCase() === "#e8772e") delete saved.accent;
+      if (saved.radius === 16) delete saved.radius;
+      if (JSON.stringify(saved.bins) === JSON.stringify(["#6b7280", "#8b93a1", "#2bb3a3", "#d6a93c"])) delete saved.bins;
+      delete saved.v;
+    }
+    look = { ...DEFAULT_LOOK, ...saved, v: 2 };
+  } catch (e) {}
+  // The light/dark button in the top bar changes the theme without going through this panel.
+  window.addEventListener("mtg-look", e => { if (e.detail?.theme) { look.theme = e.detail.theme; syncControls(); } });
 
   // Dark text on light colors, white text on dark ones.
   function onColor(hex) {
     const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
-    return .2126 * r + .7152 * g + .0722 * b > .42 ? "#121417" : "#ffffff";
+    const L = .2126 * r + .7152 * g + .0722 * b;   // whichever ink reads better on it (WCAG contrast)
+    return 1.05 / (L + .05) >= (L + .05) / (.0069 + .05) ? "#ffffff" : "#121417";
   }
 
   function applyLook() {
@@ -105,9 +161,10 @@
   $("closeLook").onclick = $("scrim").onclick = () => setDrawer(false);
 
   // ---------- live ----------
-  const STATUS = { starting: "Starting camera…", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
+  const STATUS = { starting: "Starting camera…", waiting: "No camera connected", paused: "Camera paused", looking: "Looking for cards", recognizing: "Recognizing…", locked: "Cards recognized", unknown: "Not recognized" };
   let selected = null;     // the card shown big: its track id
   let editing = false, drag = null;   // Slots mode: drawing boxes on the picture, and the box being dragged
+  let cropping = false;               // drawing the crop box (the part of the picture to keep)
 
   function selectedCard(s) {
     const cards = s.cards;
@@ -147,26 +204,44 @@
       const [ax, ay] = drag.from, [bx, by] = drag.to;
       drawing = `<rect class="drawing" x="${f(Math.min(ax, bx) * w)}" y="${f(Math.min(ay, by) * h)}" width="${f(Math.abs(bx - ax) * w)}" height="${f(Math.abs(by - ay) * h)}" vector-effect="non-scaling-stroke" ${dashes}/>`;
     }
-    svg.innerHTML = slots + cards + drawing;
+    setHTML(svg, slots + cards + drawing);
   }
 
   function render(s) {
+    const prevStatus = state?.status;
     state = s;
+    if (s.bin_names) BIN_NAMES = s.bin_names;
     $("meta").classList.remove("down");
     $("metaText").textContent = `${s.db_count.toLocaleString()} cards` + (s.learned ? ` + ${s.learned.toLocaleString()} learned` : "") + ` · ${s.prices}`;
-    const st = $("camStatus"); st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status;
+    const others = (s.scanners || []).map(o => o.owner || o.name);
+    $("othersScanning").hidden = !others.length;
+    $("othersScanning").textContent = others.length ? `Also scanning: ${others.join(", ")}` : "";
+    if (device.on && isPhone && s.status === "locked" && prevStatus !== "locked") { try { navigator.vibrate?.(25); } catch (e) {} }
+    const st = $("camStatus");
+    if (!device.on && s.camera?.pi && s.camera.error) {
+      // the sorter's Pi camera, over the network, isn't working: say why (it clears by itself)
+      st.textContent = `${s.camera.error} More on the Maintenance page.`; st.className = "camera-status unknown warn";
+    } else { st.textContent = STATUS[s.status] || s.status; st.className = "camera-status " + s.status; }
+    checkPaused(s);
+    showCamera(s.status !== "waiting");
+    $("noCamHint").textContent = s.on_pi
+      ? "On the Pi: power off, reseat the ribbon cable (contacts facing the board at both ends), then power on. It keeps looking, so the picture appears by itself once a camera works."
+      : navigator.mediaDevices ? `To scan with this ${deviceWord}'s camera, open the app at its https address (through Tailscale: see deploy/UNRAID.md).`
+      : "This browser can't share its camera. Try Chrome, Safari or Firefox, at the app's https address.";
     document.querySelector(".camera").classList.toggle("locked", s.status === "locked");
     const slotsOn = s.mode === "slots";
     if (!slotsOn) editing = false;
     document.querySelector(".camera").classList.toggle("slots", slotsOn);
     $("modeBtn").setAttribute("aria-pressed", slotsOn);
     $("modeText").textContent = slotsOn ? "Slots" : "Auto";
+    renderFocus(s.camera?.focus);
+    renderView(s);
     $("editSlotsBtn").hidden = !slotsOn;
     $("editSlotsBtn").textContent = editing ? "Done" : "Edit slots";
     $("editSlotsBtn").setAttribute("aria-pressed", editing);
     $("clearSlotsBtn").hidden = !editing || !s.slots.length;
     $("slotHint").hidden = !editing;
-    $("overlay").classList.toggle("editing", editing);
+    $("overlay").classList.toggle("editing", editing || cropping);
 
     const sel = selectedCard(s), c = sel?.card;
     drawOutlines(s);
@@ -181,16 +256,18 @@
       $("cardSet").textContent = `${c.set_name} · ${c.set} #${c.number} · ${c.rarity}${c.foil ? " · foil" : ""}`;
       $("cardPrice").textContent = money(c.price);
       $("cardSource").textContent = c.price_source ? c.price_source : "";
+      window.Montreal?.show($("cardMontreal"), c);  // today's prices at Face to Face Games and other Montreal stores
       const b = $("cardBin"); b.textContent = `Bin ${c.bin} · ${c.bin_label}`; b.className = "bin bin-" + c.bin;
       const m = $("cardMatch"); m.className = "match opt-match " + (c.match || "good");
+      $("cardWanted").hidden = !c.wanted;
       m.textContent = c.match == null ? "You picked this" : c.match === "good" ? "Good match" : "Fair match: check the set";
-    } else shownId = null;
+    } else { shownId = null; window.Montreal?.show($("cardMontreal"), null); }
 
     const value = s.cards.reduce((v, x) => v + (x.card?.price || 0), 0);
     $("tableCount").textContent = s.cards.length ? s.cards.length : "";
     $("tableValue").textContent = s.cards.length ? money(value) : "";
     $("cardList").hidden = s.cards.length < 2;
-    $("cardList").innerHTML = s.cards.map(x => {
+    setHTML($("cardList"), s.cards.map(x => {
       const name = x.card ? esc(x.card.name) : x.status === "unknown" ? "Not recognized" : "Recognizing…";
       const sub = x.card ? `${esc(x.card.set)} #${esc(x.card.number)} · ${money(x.card.price)}` : x.status === "unknown" ? "Tell it which card" : "";
       const thumb = x.card ? `<img src="${esc(x.card.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">` : "<i></i>";
@@ -199,15 +276,18 @@
       return `<div class="tcard s-${x.status}${x.saved ? " saved" : ""}${x.track === selected ? " sel" : ""}" data-track="${x.track}">
         <span class="num">${x.number}</span><span class="thumb">${thumb}</span>
         <span class="info"><b>${name}</b><small>${sub}</small></span>${end}</div>`;
-    }).join("");
+    }).join(""));
 
     const save = $("saveBtn");
     const unsaved = s.cards.filter(x => x.card && !x.saved).length, saved = s.cards.filter(x => x.saved).length;
-    save.disabled = !unsaved;
+    const ready = toSave(s), guess = ready ? null : guessToSave(s, sel);
+    save.disabled = !ready && !guess;
     save.classList.toggle("saved", !unsaved && saved > 0);
     save.innerHTML = !unsaved && saved ? '<svg><use href="#i-check"/></svg>All saved'
-      : unsaved > 1 ? `Save all ${unsaved} cards <kbd>Space</kbd>` : "Save card <kbd>Space</kbd>";
+      : guess ? "Save this guess <kbd>Space</kbd>"
+      : ready > 1 ? `Save all ${ready} cards <kbd>Space</kbd>` : "Save card <kbd>Space</kbd>";
     $("learnSwitch").checked = s.learn;
+    showSorter(s);
     $("foilBtn").setAttribute("aria-pressed", s.foil);
     $("autoBtn").setAttribute("aria-pressed", s.auto);
     $("collectBtn").setAttribute("aria-pressed", s.collect);
@@ -221,41 +301,372 @@
     $("statCount").textContent = t.count.toLocaleString();
     $("statValue").textContent = money(t.value);
     const bins = [3, 2, 1, 0].map(b => [b, t.bins[b] || 0]);
-    $("binBar").innerHTML = bins.map(([b, n]) => `<span class="bin-${b}" style="flex-grow:${n}"></span>`).join("");
-    $("binLegend").innerHTML = bins.map(([b, n]) => `<span><i class="bin-${b}"></i>${BIN_NAMES[b]} <b>${n}</b></span>`).join("");
+    setHTML($("binBar"), bins.map(([b, n]) => `<span class="bin-${b}" style="flex-grow:${n}"></span>`).join(""));
+    setHTML($("binLegend"), bins.map(([b, n]) => `<span><i class="bin-${b}"></i>${esc(BIN_NAMES[b])} <b>${n}</b></span>`).join(""));
 
-    $("sessionRows").innerHTML = s.session.length ? s.session.map(r => `<tr>
+    announce(s);
+    const more = (s.session_count || s.session.length) - s.session.length;
+    setHTML($("sessionRows"), (s.session.length ? s.session.map(r => `<tr${r.wanted ? ' class="wanted"' : ""}>
         <td>${esc(r.name)}${r.foil ? '<span class="foil-tag">foil</span>' : ""}</td>
         <td>${esc(r.set)} #${esc(r.number)}</td>
         <td class="num">${money(r.price)}</td>
-        <td><span class="pill bin-${r.bin}">${r.bin} · ${esc(BIN_NAMES[r.bin] || r.bin_label)}</span></td>
+        <td><span class="pill bin-${r.bin}">${r.bin} · ${esc(r.bin_label || BIN_NAMES[r.bin])}</span></td>
         <td class="num opt-time">${esc(r.time)}</td></tr>`).join("")
-      : '<tr class="empty-row"><td colspan="5">No cards saved yet</td></tr>';
+      : '<tr class="empty-row"><td colspan="5">No cards saved yet</td></tr>')
+      + (more > 0 ? `<tr class="empty-row"><td colspan="5">and ${more.toLocaleString()} earlier this session, on the <a href="/history">History</a> page</td></tr>` : ""));
     $("undoBtn").disabled = !s.session.length;
   }
 
+  // ---------- alerts: a valuable card or a wishlist card was just saved (Settings page) ----------
+  // Each saved card has a number that only goes up (seq), so two cards saved in the same
+  // second are both seen.
+  let lastSeq = null, bannerT;
+  function announce(s) {
+    const newest = Math.max(0, ...s.session.map(r => r.seq || 0));
+    if (lastSeq === null) { lastSeq = newest; return; }      // the page just opened: nothing is new
+    if (newest <= lastSeq) return;
+    const fresh = s.session.filter(r => (r.seq || 0) > lastSeq);
+    lastSeq = newest;
+    const a = s.alerts || {};
+    const big = a.big_card != null ? fresh.filter(r => (r.price || 0) >= a.big_card).sort((x, y) => y.price - x.price)[0] : null;
+    const wish = a.wishlist ? fresh.find(r => r.wanted) : null;
+    const hit = wish || big;
+    if (!hit) return;
+    const b = $("alertBanner");
+    b.className = "alert-banner" + (hit === wish ? " wish" : "");
+    b.innerHTML = `<img src="${esc(hit.image.replace("version=normal", "version=small"))}" alt=""><span>${hit === wish ? "On your wishlist!" : "Valuable card!"} ${esc(hit.name)}<small>${money(hit.price)} · ${esc(hit.set)} · bin ${hit.bin}</small></span>`;
+    b.hidden = true; void b.offsetWidth; b.hidden = false;
+    clearTimeout(bannerT); bannerT = setTimeout(() => b.hidden = true, 5000);
+    speak(`${hit === wish ? "On your wishlist!" : "Valuable card!"} ${hit.name}, ${money(hit.price)}, bin ${hit.bin}`);
+    if (a.sound) window.mtgChime?.(hit === wish ? "wish" : "big");
+  }
+  $("alertBanner").onclick = () => $("alertBanner").hidden = true;
+
+  // ---------- no camera: a plain message instead of an empty picture ----------
+  // The picture only streams while there's a camera, so a missing one doesn't keep a
+  // connection to the Pi open for nothing.
+  // With this device's own camera, the page shows its video straight from the camera
+  // (no round trip) and the scanner's outlines are drawn over it.
+  let camShown = null, streamRetry;
+  function showCamera(on) {
+    const want = on ? (device.on ? "local" : "stream") : "off";
+    if (want === camShown) return;
+    camShown = want;
+    document.querySelector(".camera").classList.toggle("no-cam", !on);
+    $("noCamera").hidden = on;
+    $("localCam").hidden = want !== "local";
+    if (want === "stream") $("stream").src = "/stream.mjpg?" + Date.now(); else $("stream").removeAttribute("src");
+    $("stream").hidden = want === "local";
+  }
+  $("stream").onerror = () => {   // the stream dropped (the app restarted, Wi-Fi blinked): try again
+    if (camShown !== "stream") return;
+    $("camStatus").textContent = "Reconnecting to the camera…";
+    clearTimeout(streamRetry);
+    streamRetry = setTimeout(() => { if (camShown === "stream") $("stream").src = "/stream.mjpg?" + Date.now(); }, 3000);
+  };
+  $("usePhotosBtn").onclick = () => showTab("photos");
+
+  // ---------- this device's camera: the phone or computer scans with its own camera ----------
+  // The browser opens the camera, and the page sends a picture to the scanner several
+  // times a second. Browsers only allow the camera on https (or localhost).
+  const isPhone = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
+  const deviceWord = isPhone ? "phone" : "computer";
+  const canUseDevice = !!navigator.mediaDevices?.getUserMedia && window.isSecureContext;
+  const deviceHint = canUseDevice ? "" : !navigator.mediaDevices ? "This browser can't share its camera" : "Needs an https address (see Maintenance)";
+  const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: false });
+  let sendT = null;
+
+  // Open the camera (the back one on a phone, by default) and show it in the picture box.
+  async function openDeviceStream() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+      video: { facingMode: { ideal: device.facing }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    device.stream?.getTracks().forEach(t => t.stop());
+    device.stream = stream;
+    const v = $("localCam"); v.srcObject = stream;
+    try { await v.play(); } catch (e) {}
+    const track = stream.getVideoTracks()[0];
+    // The phone took the camera away (screen locked, another app, a call): get it back
+    // as soon as the page is in front again, instead of giving up on scanning.
+    track.onended = () => { if (device.want) resumeDevice(false); };
+    frameSeen = Date.now(); framesFlowed = false; watchFrames(v);
+    // The picture box takes the camera's shape (a phone held upright gives a tall picture).
+    fitDeviceBox();
+    v.onresize = fitDeviceBox;
+    // Tools that this camera supports: a light, and switching between cameras.
+    const caps = track.getCapabilities?.() || {};
+    $("torchBtn").hidden = !caps.torch;
+    $("torchBtn").setAttribute("aria-pressed", "false"); device.torch = false;
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+      $("flipCamBtn").hidden = cams.length < 2;
+    } catch (e) { $("flipCamBtn").hidden = true; }
+  }
+  function fitDeviceBox() {
+    const v = $("localCam"), box = document.querySelector(".camera");
+    if (device.on && v.videoWidth && v.videoHeight) box.style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`;
+    else box.style.aspectRatio = "";
+    if (state) drawOutlines(state);
+  }
+
+  async function startDeviceCamera() {
+    if (device.on) return true;
+    if (!canUseDevice) { toast(deviceHint); return false; }
+    $("camStatus").textContent = `Opening this ${deviceWord}'s camera…`;
+    try {
+      await openDeviceStream();
+    } catch (e) {
+      toast(e.name === "NotAllowedError" ? "Camera permission was refused" : `Couldn't open this ${deviceWord}'s camera`);
+      return false;
+    }
+    device.on = device.want = true; camIndex = "browser";
+    showDeviceTools();
+    device.who = $("whoInput").value.trim().slice(0, 40);
+    try { localStorage.setItem("mtg-scanner-who", device.who); } catch (e) {}
+    $("camStatus").textContent = "Handing the camera to the scanner…";
+    try { render(await claimScanner()); }
+    catch (e) { stopDeviceCamera(false); toast(e.status === 403 ? e.message : "Couldn't hand the camera to the scanner. Check the connection and try again"); return false; }
+    camsLoadedAt = Date.now(); loadCameras();   // the menu now shows this device as the camera
+    sendFrame();
+    toast(device.who ? `Scanning as ${device.who}` : `Scanning with this ${deviceWord}'s camera`);
+    return true;
+  }
+
+  $("flipCamBtn").onclick = async () => {
+    device.facing = device.facing === "environment" ? "user" : "environment";
+    try { await openDeviceStream(); } catch (e) { toast("Couldn't switch camera"); }
+  };
+  $("torchBtn").onclick = async () => {
+    const track = device.stream?.getVideoTracks()[0]; if (!track) return;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: !device.torch }] });
+      device.torch = !device.torch;
+      $("torchBtn").setAttribute("aria-pressed", device.torch);
+    } catch (e) { toast("This camera's light can't be turned on from here"); }
+  };
+  function showDeviceTools() {
+    document.querySelector(".camera").classList.add("device");
+    $("camDevice").hidden = false;
+    fitDeviceBox();
+  }
+  $("stopDeviceBtn").onclick = () => { stopDeviceCamera(true); toast("Stopped scanning with this device"); loadCameras(); };
+
+  // Asking the scanner for this device's camera. A phone on cellular (or Tailscale waking
+  // up) drops the odd request, so a failed ask is tried again a few times before giving up.
+  async function claimScanner() {
+    const ask = { index: "browser", name: device.name, token: device.token, who: device.who };
+    let wait = 600;
+    for (let tries = 0; ; tries++) {
+      try { return await api("/api/camera", ask); }
+      catch (e) {
+        if (e.message === "Locked" || e.status === 400 || e.status === 403 || tries >= 3 || !device.on) throw e;
+        await new Promise(res => setTimeout(res, wait)); wait *= 2;
+      }
+    }
+  }
+
+  // One picture after another: the next one goes as soon as the scanner took the last,
+  // at most about 8 a second, and not while the page is hidden. Pictures shrink while the
+  // link is slow (a phone on cellular) and grow back once it keeps up: a small picture
+  // several times a second beats a sharp one every second.
+  // Nothing in the loop may hang it: iPhones freeze a request that's under way when the
+  // screen locks and sometimes never finish it, so every step has a time limit and the
+  // next picture is always lined up (a watchdog below restarts the loop if it still stops).
+  const FRAME_WIDTHS = [1280, 1024, 800, 640];
+  let frameSize = 0, quickFrames = 0, loopId = 0, lastTick = 0;
+  const within = (ms, promise) => Promise.race([promise, new Promise(res => setTimeout(() => res(null), ms))]);
+  async function sendFrame() {
+    clearTimeout(sendT);
+    if (!device.on) return;
+    const me = ++loopId, started = lastTick = Date.now();
+    let wait = 125;
+    try {
+      if (document.hidden) { wait = 500; return; }
+      const v = $("localCam");
+      if (!v.videoWidth || device.stream?.getVideoTracks()[0]?.readyState !== "live") return;   // no picture, or a dead camera's last one
+      const w = Math.min(FRAME_WIDTHS[frameSize], v.videoWidth), h = Math.round(v.videoHeight * w / v.videoWidth);
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      ctx.drawImage(v, 0, 0, w, h);
+      const blob = await within(3000, new Promise(res => canvas.toBlob(res, "image/jpeg", frameSize ? 0.7 : 0.8)));
+      if (!blob || !device.on || me !== loopId) return;
+      const sent = Date.now(), abort = new AbortController(), giveUp = setTimeout(() => abort.abort(), 8000);
+      let r;
+      try { r = await fetch("/api/frame", { method: "POST", headers: { "Content-Type": "image/jpeg", ...scannerHeaders() }, body: blob, signal: abort.signal }); }
+      finally { clearTimeout(giveUp); }
+      if (r.status === 409) {   // the app restarted, or dropped this page after a long sleep: ask for a scanner again
+        try { render(await claimScanner()); }
+        catch (e) { lostScanner(); return; }
+      }
+      if (r.status === 401) { location.href = "/lock?next=/scan"; return; }
+      const took = Date.now() - sent;
+      if (took > 450 && frameSize < FRAME_WIDTHS.length - 1) { frameSize++; quickFrames = 0; }
+      else if (took < 150 && frameSize > 0 && ++quickFrames >= 24) { frameSize--; quickFrames = 0; }
+    } catch (e) {   // the scanner is restarting, Wi-Fi blinked, or the request timed out: keep trying
+    } finally {
+      if (me === loopId && device.on) sendT = setTimeout(sendFrame, wait === 500 ? 500 : Math.max(40, wait - (Date.now() - started)));
+    }
+  }
+
+  // ---------- keeping this device's camera going ----------
+  // An iPhone pauses the camera when the screen locks, the app goes to the background or
+  // another app takes the camera, and doesn't always start it again. The page notices
+  // (no new frames, the camera ended, the video stopped playing) and opens it again by
+  // itself. If that needs a tap (the phone refuses without one), a button says so.
+  let frameSeen = 0, framesFlowed = false, watching = false, reviving = false, reviveFails = 0, lastRevive = 0;
+  function watchFrames(v) {   // note when the video last showed a new frame
+    if (watching) return;
+    watching = true;
+    const seen = () => { frameSeen = Date.now(); framesFlowed = true; };
+    if (v.requestVideoFrameCallback) { const cb = () => { seen(); v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb); }
+    v.addEventListener("timeupdate", seen);
+  }
+  function cameraTrouble() {
+    const t = device.stream?.getVideoTracks()[0], v = $("localCam");
+    if (!t || t.readyState !== "live") return "ended";
+    if (v.paused) return "paused";
+    if (framesFlowed && Date.now() - frameSeen > 4000) return "frozen";   // only once frames had come, so a browser that never reports them isn't restarted over and over
+    return null;
+  }
+  async function resumeDevice(tapped) {
+    if (!device.want || reviving || document.hidden) return;
+    reviving = true; lastRevive = Date.now();
+    try {
+      const trouble = cameraTrouble(), v = $("localCam");
+      if (tapped || trouble === "ended" || trouble === "frozen") {
+        $("camStatus").textContent = `Turning this ${deviceWord}'s camera back on…`;
+        await openDeviceStream();
+      } else if (trouble === "paused") await v.play();
+      frameSeen = Date.now();
+      if (!device.on) { device.on = true; camIndex = "browser"; showDeviceTools(); }
+      render(await claimScanner());   // the scanner may have given up on this camera meanwhile
+      reviveFails = 0; showResume(false);
+      sendFrame();
+    } catch (e) {
+      if (e.message === "Locked") return;
+      reviveFails++;
+      if (tapped || reviveFails >= 2) showResume(true, e.name === "NotAllowedError" ? "Allow the camera for this site in Settings, then tap here" : null);
+    } finally { reviving = false; }
+  }
+  // The button over the picture: "Camera paused, tap to turn it back on".
+  function showResume(on, why) {
+    $("camResume").hidden = !on; resumeForPause = false;
+    if (on) $("camResumeWhy").textContent = why || "Tap to turn it back on";
+  }
+  $("camResume").onclick = () => resumeDevice(true);
+  // Every couple of seconds: is the picture loop alive, and is the camera still sending?
+  setInterval(() => {
+    if (!device.want || document.hidden || reviving) return;
+    if (device.on && Date.now() - lastTick > 6000) sendFrame();   // the loop got stuck: start it again
+    if ((!device.on || cameraTrouble()) && $("camResume").hidden && Date.now() - lastRevive > 5000) resumeDevice(false);
+  }, 2000);
+  // The scanner hasn't heard from this phone for a while (status "paused") although the
+  // page is in front: offer the button too, in case the automatic tries don't help.
+  let resumeForPause = false;
+  function checkPaused(s) {
+    if (!device.want) return;
+    if (s.status === "paused") {
+      if ($("camResume").hidden && !reviving && Date.now() - lastRevive > 8000) { showResume(true); resumeForPause = true; }
+    } else if (resumeForPause) { resumeForPause = false; showResume(false); }   // the pictures got through again by themselves
+  }
+  // The scanner couldn't be reached for a while: stop sending and wait for a tap (or the
+  // next time the page comes back to the front).
+  function lostScanner() {
+    clearTimeout(sendT); device.on = false;
+    showResume(true, "Lost the scanner. Tap to try again");
+  }
+
+  function stopDeviceCamera(tellScanner) {
+    clearTimeout(sendT);
+    const was = device.on;
+    device.on = device.want = false; showResume(false);
+    device.stream?.getTracks().forEach(t => t.stop());
+    device.stream = null; $("localCam").srcObject = null;
+    document.querySelector(".camera").classList.remove("device");
+    $("camDevice").hidden = true;
+    fitDeviceBox();
+    if (was && tellScanner) api("/api/camera/release", { token: device.token }).then(() => poll()).catch(() => {});
+    camShown = null; if (state) showCamera(state.status !== "waiting");
+  }
+  // Closing the tab: tell the scanner right away, so it goes back to its own camera.
+  // (An iPhone also does this when it puts the page aside; `want` stays, so coming back
+  // to the page turns the camera on again.)
+  addEventListener("pagehide", () => {
+    if (!device.on) return;
+    device.on = false; clearTimeout(sendT);
+    navigator.sendBeacon?.("/api/camera/release", new Blob([JSON.stringify({ token: device.token })], { type: "application/json" }));
+  });
+  // Back from the background (or the page restored from the back/forward cache): start
+  // the camera again if the phone stopped it, and ask for the scanner again, which may
+  // have given up on this camera meanwhile.
+  const backInFront = () => {
+    if (document.hidden || !device.want) return;
+    frameSeen = Date.now();   // frames stop while the page is hidden: give the video a moment before calling it frozen
+    reviveFails = 0; showResume(false); resumeDevice(false);
+  };
+  document.addEventListener("visibilitychange", backInFront);
+  addEventListener("pageshow", e => { if (e.persisted) backInFront(); });
+  addEventListener("focus", () => { if (device.want && !device.on) backInFront(); });
+  $("noCamDevice").hidden = !canUseDevice;
+  $("noCamOther").hidden = canUseDevice;
+  $("deviceTitle").textContent = `Scan with this ${deviceWord}`;
+  $("useDeviceCamText").textContent = `Use this ${deviceWord}'s camera`;
+  $("whoInput").value = device.who;
+  $("whoInput").onkeydown = e => { if (e.key === "Enter") startDeviceCamera(); };
+  $("useDeviceCamBtn").onclick = startDeviceCamera;
+  $("usePhotosLink").onclick = () => showTab("photos");
+
+  // Fast while watching the camera, slower on the other tabs or with no camera, and
+  // not at all while the page is in the background (it saves the Pi's time).
+  let pollT = null, failures = 0;
+  function nextPoll() {
+    clearTimeout(pollT);
+    if (document.hidden) { pollT = null; return; }
+    const live = !$("tab-live").hidden && state?.status !== "waiting";
+    pollT = setTimeout(poll, failures ? Math.min(5000, 1000 * failures) : live ? 400 : 1500);
+  }
   async function poll() {
     try {
       render(await api("/api/state"));
+      failures = 0;
       if (!camsLoadedAt) { camsLoadedAt = Date.now(); loadCameras(); }
       else if (state.camera?.index !== camIndex && !$("camPick").classList.contains("busy")) { camsLoadedAt = Date.now(); loadCameras(); }
     }
-    catch (e) { $("meta").classList.add("down"); $("metaText").textContent = "Can't reach the scanner. Is app.py still running?"; }
-    setTimeout(poll, 400);
+    catch (e) {
+      failures++;
+      $("meta").classList.add("down");
+      $("metaText").textContent = "Can't reach the scanner. It may be restarting; trying again…";
+    }
+    nextPoll();
   }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); else nextPoll(); });
 
+  // Save (and Space) saves every recognized card not saved yet, as /api/save_all does: an
+  // unsure guess only when it's the card shown big and nothing else is waiting.
+  const toSave = s => s.cards.filter(x => x.status === "locked" && x.card && !x.saved).length;
+  const guessToSave = (s, sel) => sel && sel.status === "unsure" && sel.card && !sel.saved ? sel : null;
+  let saving = false;
   async function saveCurrent() {
-    const n = state ? state.cards.filter(x => x.card && !x.saved).length : 0;
-    if (!n) return;
-    render(await api("/api/save_all", { foil: state.foil }));
-    toast(n === 1 ? `Saved ${state.session[0].name}` : `Saved ${n} cards`);
+    if (!state || saving) return;
+    const guess = toSave(state) ? null : guessToSave(state, selectedCard(state));
+    if (!toSave(state) && !guess) return;
+    const before = state.totals.count;
+    saving = true;
+    try {
+      render(await (guess ? api("/api/add", { id: guess.card.id, foil: state.foil, track: guess.track })
+        : api("/api/save_all", { foil: state.foil })));
+    } finally { saving = false; }
+    const n = state.totals.count - before;
+    toast(n <= 0 ? "Nothing new to save" : n === 1 ? `Saved ${state.session[0]?.name || "1 card"}` : `Saved ${n} cards`);
   }
   $("cardList").onclick = async e => {
     const row = e.target.closest(".tcard"); if (!row) return;
     const b = e.target.closest("[data-save]");
     if (b) {
+      if (b.disabled) return;
       const x = state.cards.find(c => c.track === +b.dataset.save);
-      render(await api("/api/add", { id: x.card.id, foil: state.foil, track: x.track }));
+      if (!x?.card) return;
+      b.disabled = true;   // a double click saves it once
+      try { render(await api("/api/add", { id: x.card.id, foil: state.foil, track: x.track })); }
+      finally { b.disabled = false; }
       return toast(`Saved ${x.card.name}`);
     }
     pickCard(+row.dataset.track);
@@ -266,8 +677,115 @@
     if (state.cards.find(c => c.track === selected)?.status === "unknown") openPicker({ live: true, track: selected });
   }
 
+  // ---------- focus (Pi camera with autofocus): Auto, or locked at a distance ----------
+  function renderFocus(f) {
+    const pick = $("focusPick"), sel = $("focusSelect");
+    pick.hidden = !f;
+    if (!f || pick.classList.contains("busy")) return;
+    const key = f.choices.join();
+    if (sel.dataset.key !== key) {
+      sel.innerHTML = '<option value="auto">Auto</option>' + f.choices.map(c => `<option value="${c}">${c} cm</option>`).join("");
+      sel.dataset.key = key;
+    }
+    const want = f.cm == null ? "auto" : String(f.cm);
+    if (![...sel.options].some(o => o.value === want)) sel.add(new Option(`${f.cm} cm`, want));
+    if (document.activeElement !== sel) sel.value = want;
+  }
+  $("focusSelect").onchange = async e => {
+    const v = e.target.value, pick = $("focusPick");
+    pick.classList.add("busy");
+    try {
+      render(await api("/api/camera/focus", { cm: v === "auto" ? null : +v }));
+      toast(v === "auto" ? "Focus: auto" : `Focus locked at ${v} cm`);
+    } catch (err) { toast("Couldn't change the focus"); }
+    pick.classList.remove("busy");
+    if (state) renderFocus(state.camera?.focus);
+  };
+
+  // ---------- rotate and crop the machine camera's picture (kept on the scanner) ----------
+  function renderView(s) {
+    const machineCam = !!s.camera && !s.camera.browser, v = s.view || {};
+    if (!machineCam) cropping = false;
+    $("rotateBtn").hidden = $("cropBtn").hidden = !machineCam;
+    $("uncropBtn").hidden = !machineCam || !v.crop || cropping;
+    $("cropBtn").setAttribute("aria-pressed", cropping);
+    $("cropBtn").querySelector("span").textContent = cropping ? "Cancel" : "Crop";
+    $("cropHint").hidden = !cropping;
+    $("straightBtn").hidden = !machineCam || cropping;
+    $("straightBtn").textContent = v.straight ? "Straighten again" : "Straighten";
+    $("unstraightBtn").hidden = !machineCam || !v.straight || cropping;
+    $("autoStraightBtn").hidden = !machineCam || cropping;
+    $("autoStraightBtn").setAttribute("aria-pressed", !!v.auto_straight);
+    $("autoStraightBtn").textContent = v.auto_straight
+      ? (v.straight ? "Auto straighten: on" : `Auto straighten: learning (${v.straight_samples || 0} cards)`)
+      : "Auto straighten: off";
+    $("wholeCardsBtn").hidden = !machineCam || cropping;
+    $("wholeCardsBtn").setAttribute("aria-pressed", v.min_card != null);
+    $("wholeCardsBtn").textContent = v.min_card != null ? "Whole cards only: on" : "Whole cards only: off";
+    $("emptyBedBtn").hidden = !machineCam || cropping || v.min_card == null;
+    $("emptyBedBtn").textContent = v.empty_bed ? "Bed is empty ✓" : "Bed is empty";
+  }
+  $("wholeCardsBtn").onclick = async () => {
+    const on = state?.view?.min_card == null;
+    // api() throws on a 400, but "no card in view" is worth showing as it is
+    const r = await fetch("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json", ...scannerHeaders() },
+      body: JSON.stringify({ min_card: on ? "bed" : null }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || "Couldn't measure the card on the bed");
+    render(d);
+    toast(on ? "Only whole cards are read now: parts of a card are ignored" : "Looking for cards of any size again");
+  };
+  $("emptyBedBtn").onclick = async () => {
+    const r = await fetch("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json", ...scannerHeaders() },
+      body: JSON.stringify({ empty_bed: "now" }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || "Couldn't look at the bed");
+    render(d);
+    toast("Got it: the bare bed won't be read as a card");
+  };
+  $("autoStraightBtn").onclick = async () => {
+    const on = !(state?.view?.auto_straight);
+    render(await api("/api/settings", { auto_straight: on }));
+    toast(on ? "The picture now straightens itself from the cards it reads" : "Auto straighten off");
+  };
+  async function straighten(on) {
+    // api() throws on a 400, but "no card found" is worth showing as it is
+    const r = await fetch("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json", ...scannerHeaders() },
+      // Undo also stops it straightening itself again
+      body: JSON.stringify(on ? { straighten: true } : { straighten: false, auto_straight: false }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || "Couldn't straighten the picture");
+    render(d);
+    toast(on ? "Straightened: the card on the bed now shows square" : "Showing the camera's picture as it is");
+  }
+  $("straightBtn").onclick = () => straighten(true);
+  $("unstraightBtn").onclick = () => straighten(false);
+  function setCropping(on) { cropping = on; if (on) editing = false; drag = null; if (state) render(state); }
+  // A new crop turns Whole cards only off, and turning the picture forgets the bare bed
+  // (both were measured on the old picture): say what to do again.
+  function viewNote(before) {
+    const v = state?.view || {};
+    if (before?.min_card != null && v.min_card == null) return " Turn on Whole cards only again.";
+    if (before?.empty_bed && !v.empty_bed) return " Press Bed is empty again, with the bed bare.";
+    return "";
+  }
+  $("cropBtn").onclick = () => setCropping(!cropping);
+  $("uncropBtn").onclick = async () => {
+    const before = state?.view;
+    render(await api("/api/settings", { crop: null }));
+    toast("Showing the whole picture." + viewNote(before));
+  };
+  $("rotateBtn").onclick = async () => {
+    const r = ((state?.view?.rotate || 0) + 90) % 360, before = state?.view;
+    render(await api("/api/settings", { rotate: r }));
+    toast((r ? `Turned ${r}°.` : "Not turned.") + viewNote(before));
+  };
+
   // ---------- slots: boxes you draw on the picture, one per card position ----------
-  function setEditing(on) { editing = on; drag = null; if (state) render(state); }
+  function setEditing(on) { editing = on; if (on) cropping = false; drag = null; if (state) render(state); }
   $("modeBtn").onclick = async () => {
     const mode = state?.mode === "slots" ? "auto" : "slots";
     render(await api("/api/settings", { mode }));
@@ -283,8 +801,8 @@
   }
   const overlay = $("overlay");
   overlay.onpointerdown = async e => {
-    if (!editing || !state || e.button) return;
-    const del = e.target.closest("[data-del]");
+    if (!(editing || cropping) || !state || e.button) return;
+    const del = editing && e.target.closest("[data-del]");
     if (del) { render(await api("/api/settings", { slots: state.slots.filter((_, i) => i !== +del.dataset.del) })); return; }
     drag = { from: framePoint(e), to: framePoint(e) };
     overlay.setPointerCapture(e.pointerId); e.preventDefault();
@@ -295,6 +813,13 @@
     if (!drag) return;
     const [ax, ay] = drag.from, [bx, by] = framePoint(e); drag = null;
     const slot = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
+    if (cropping) {
+      if (slot[2] - slot[0] < 0.05 || slot[3] - slot[1] < 0.05) return drawOutlines(state);   // a click, not a box
+      cropping = false;
+      const before = state.view;
+      render(await api("/api/settings", { crop: slot }));
+      return toast("Cropped. Full view brings back the whole picture." + viewNote(before));
+    }
     if (slot[2] - slot[0] < 0.02 || slot[3] - slot[1] < 0.02) return drawOutlines(state);   // a click, not a box
     render(await api("/api/settings", { slots: [...state.slots, slot] }));
   };
@@ -302,22 +827,85 @@
   const setting = (key) => api("/api/settings", { [key]: !state[key] }).then(render);
 
   $("saveBtn").onclick = saveCurrent;
+
+  // ---------- Start sorting: the machine on its own (sort_run.py) ----------
+  let sortRun = null, sortT = null;
+  const cash = v => v == null ? "" : "$" + Number(v).toFixed(2);
+  function showSortRun(d) {
+    sortRun = d;
+    const btn = $("sortBtn"), running = !!d?.running;
+    btn.classList.toggle("running", running);
+    $("sortBtnText").textContent = running ? "Stop sorting" : "Start sorting";
+    if (!d || d.error) { $("sortInfo").textContent = d?.error || ""; return; }
+    const cards = d.cards || [], c = d.counts || {};
+    if (!cards.length && !running) {
+      $("sortInfo").innerHTML = 'Feeds every card, reads it, saves it and drops it into the bin your <a href="/bins">Bins</a> rules give it.';
+      return;
+    }
+    const last = cards[cards.length - 1];
+    const tally = (d.tally || []).map(t => `bin ${t.bin}: ${t.cards}`).join(", ");
+    const now = running ? (last?.name ? `Last: <b>${last.name}</b> ${cash(last.price)} → bin ${last.bin}${last.wanted ? " (wanted)" : ""}.` : "Working…")
+      : `Done: ${d.done || ""}.`;
+    $("sortInfo").innerHTML = `${now} <b>${c.saved || 0}</b> saved (${cash(d.value)}), ${c.unsure || 0} unsure, ${c.unknown || 0} unread${tally ? ` · ${tally}` : ""}${d.wanted ? ` · wanted: <b>${d.wanted.found}</b> of ${d.wanted.cards} in bin ${d.wanted.bin}` : ""}${d.warning ? ` · <b>${d.warning}</b>` : ""}`;
+    const w = running && d.waiting;
+    $("sortWait").hidden = !w;
+    if (w) $("sortWaitText").textContent = `Card ${w.n}${w.name ? ` (best guess ${w.name})` : ""}: ${w.message}`;
+    if (running && !sortT) sortT = setInterval(pollSortRun, 2000);
+    if (!running && sortT) { clearInterval(sortT); sortT = null; }
+  }
+  for (const b of document.querySelectorAll("[data-decide]")) b.onclick = async () => {
+    try {
+      const d = await sortApi("/api/machine/sort/decide", { action: b.dataset.decide });
+      if (d.error) toast(d.error); else showSortRun(d);
+    } catch (e) { toast("Couldn't reach the sorter."); }
+  };
+  // The run's answers carry their own "error" text (409 when one is already going, 503
+  // when the machine can't), which is worth showing: so no throwing on those statuses.
+  const sortApi = async (path, body) => (await fetch(path, body === undefined ? { headers: scannerHeaders() }
+    : { method: "POST", headers: { "Content-Type": "application/json", ...scannerHeaders() }, body: JSON.stringify(body) })).json();
+  async function pollSortRun() {
+    try { showSortRun(await sortApi("/api/machine/sort")); } catch (e) { /* no machine here */ }
+  }
+  $("sortBtn").onclick = async () => {
+    $("sortBtn").disabled = true;
+    try {
+      if (sortRun?.running) showSortRun(await sortApi("/api/machine/sort/stop", {}));
+      else {
+        const d = await sortApi("/api/machine/sort", {});
+        if (d.error) toast(d.error); else { showSortRun(d); toast("Sorting. Keep your hands out of the machine."); }
+      }
+    } catch (e) { toast("Couldn't reach the sorter."); }
+    $("sortBtn").disabled = false;
+  };
+  let sorterShown = false;
+  function showSorter(s) {
+    if (!s.sorter || sorterShown) return;
+    sorterShown = true;
+    $("sorter").hidden = false;
+    pollSortRun();
+  }
   $("foilBtn").onclick = () => setting("foil");
   $("autoBtn").onclick = () => setting("auto");
   $("collectBtn").onclick = () => setting("collect").then(() => toast(state.collect ? "Collecting scans" : "Stopped collecting"));
   $("collectSwitch").onchange = e => api("/api/settings", { collect: e.target.checked }).then(render);
   $("learnSwitch").onchange = e => api("/api/settings", { learn: e.target.checked }).then(render);
   $("wrongBtn").onclick = markWrong;
+  $("printBtn").onclick = otherPrinting;
   $("whichBtn").onclick = () => openPicker({ live: true, track: selected });
-  $("undoBtn").onclick = async () => { const name = state.session[0]?.name; render(await api("/api/undo", {})); if (name) toast(`Removed ${name}`); };
-  $("stream").onerror = () => { $("camStatus").textContent = "Camera stream lost. Reload the page"; };
+  $("undoBtn").onclick = async () => {
+    const s = await api("/api/undo", {}); render(s);
+    if (s.undo?.undone) toast(`Removed ${s.undo.name}`);
+    else if (s.undo) toast(`${s.undo.name} was already taken out of the collection`);
+  };
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && !$("pick").hidden) return closePicker();
     if (e.key === "Escape" && drawerOpen()) return setDrawer(false);
     if (e.key === "Escape" && editing) return setEditing(false);
-    if (e.target.matches("input, textarea") || e.metaKey || e.ctrlKey || e.altKey || drawerOpen() || !$("pick").hidden) return;
+    if (e.key === "Escape" && cropping) return setCropping(false);
+    if (e.target.matches("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey || drawerOpen() || !$("pick").hidden || window.MTGMenu?.isOpen()) return;
     if (e.key === "c" || e.key === "C") return setDrawer(true);
+    if (e.key === "m" || e.key === "M") return window.MTGMenu?.toggle();
     if ($("tab-live").hidden) return;
     if (e.code === "Space") { e.preventDefault(); saveCurrent(); }
     else if (e.key === "f" || e.key === "F") setting("foil");
@@ -325,6 +913,7 @@
     else if (e.key === "r" || e.key === "R") $("collectBtn").click();
     else if (e.key === "s" || e.key === "S") $("modeBtn").click();
     else if ((e.key === "w" || e.key === "W") && selected != null) markWrong();
+    else if ((e.key === "p" || e.key === "P") && selected != null) otherPrinting();
   });
 
   // ---------- "which card is it?" ----------
@@ -344,6 +933,25 @@
     $("pick").hidden = false;
     $("pickInput").value = ""; $("pickInput").focus();
   }
+  // Right card, wrong set: list every printing of it (Scryfall's full list when online).
+  async function otherPrinting() {
+    const c = state?.cards.find(x => x.track === selected)?.card;
+    if (!c) return;
+    openPicker({ live: true, track: selected });
+    $("pickInput").value = c.name;
+    $("pickResults").innerHTML = '<p class="pick-hint">Looking up every printing…</p>';
+    const n = ++searchN;
+    try {
+      const cards = await api(`/api/printings?name=${encodeURIComponent(c.name)}&foil=${state.foil ? 1 : 0}`);
+      if (n === searchN) showPicks(cards, c.id);
+    } catch (e) { if (n === searchN) $("pickResults").innerHTML = '<p class="pick-hint">Couldn\'t look up the printings</p>'; }
+  }
+  function showPicks(cards, current) {
+    $("pickResults").innerHTML = cards.length ? cards.map(c => `<button class="pick-card${c.id === current ? " is-current" : ""}" data-id="${esc(c.id)}" data-name="${esc(c.name)}">
+        <img src="${esc(c.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">
+        <b>${esc(c.name)}</b><span>${esc(c.set)} #${esc(c.number)} · ${money(c.price)}</span></button>`).join("")
+      : '<p class="pick-hint">No card by that name in the database</p>';
+  }
   function closePicker() { $("pick").hidden = true; pickFor = null; }
   $("pickClose").onclick = closePicker;
   $("pick").onclick = e => { if (e.target === $("pick")) closePicker(); };
@@ -354,10 +962,7 @@
       if (q.length < 2) { $("pickResults").innerHTML = '<p class="pick-hint">Type at least 2 letters of the card\'s name</p>'; return; }
       const cards = await api("/api/search?q=" + encodeURIComponent(q));
       if (n !== searchN) return;     // a newer search already answered
-      $("pickResults").innerHTML = cards.length ? cards.map(c => `<button class="pick-card" data-id="${esc(c.id)}" data-name="${esc(c.name)}">
-          <img src="${esc(c.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">
-          <b>${esc(c.name)}</b><span>${esc(c.set)} #${esc(c.number)} · ${money(c.price)}</span></button>`).join("")
-        : '<p class="pick-hint">No card by that name in the database</p>';
+      showPicks(cards);
     }, 180);
   };
   $("pickInput").onkeydown = e => { if (e.key === "Enter") $("pickResults").querySelector(".pick-card")?.click(); };
@@ -431,14 +1036,23 @@
     try { cams = await api("/api/cameras"); } catch (e) {}
     const sel = $("camSelect"), cur = state?.camera;
     const opts = cams.map(c => `<option value="${c.index}">${esc(c.name)}</option>`);
-    if (!cur) opts.unshift('<option value="" disabled>Demo photos</option>');
+    if (!cur) opts.unshift(`<option value="" disabled>${state?.status === "waiting" ? "No camera" : "Demo photos"}</option>`);
     if (!cams.length) opts.push('<option value="" disabled>No cameras found</option>');
+    if (navigator.mediaDevices) opts.push(`<option value="browser" ${canUseDevice ? "" : "disabled"}>This ${deviceWord}'s camera${deviceHint ? " · " + deviceHint : ""}</option>`);
     sel.innerHTML = opts.join("");
-    sel.value = cur ? String(cur.index) : "";
+    sel.value = cur ? (cur.browser ? "browser" : String(cur.index)) : "";
     camIndex = cur?.index;
   }
   $("camSelect").onchange = async e => {
-    const sel = e.target, index = +sel.value, name = sel.selectedOptions[0].textContent;
+    const sel = e.target, name = sel.selectedOptions[0].textContent;
+    const index = /^-?\d+$/.test(sel.value) ? +sel.value : sel.value;   // "pi" is the sorter Pi's camera
+    if (sel.value === "browser") {
+      $("camPick").classList.add("busy");
+      if (!await startDeviceCamera()) sel.value = camIndex ?? "";
+      $("camPick").classList.remove("busy");
+      return;
+    }
+    if (device.on) stopDeviceCamera(false);   // the scanner switches straight to the chosen camera
     $("camPick").classList.add("busy");
     $("camStatus").textContent = `Switching to ${name}…`;
     try {
@@ -460,27 +1074,48 @@
     ind.style.width = b.offsetWidth + "px";
     ind.style.transform = `translateX(${b.offsetLeft}px)`;
   }
-  for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => {
+  function showTab(name) {
+    const b = document.querySelector(`.tabs button[data-tab="${name}"]`); if (!b) return;
     for (const x of document.querySelectorAll(".tabs button")) x.setAttribute("aria-selected", x === b);
-    for (const s of document.querySelectorAll(".tab")) s.hidden = s.id !== "tab-" + b.dataset.tab;
+    for (const s of document.querySelectorAll(".tab")) s.hidden = s.id !== "tab-" + name;
     moveTabIndicator();
-    if (b.dataset.tab === "train") loadTraining();
-  };
+    if (name === "train") loadTraining();
+    history.replaceState(null, "", name === "live" ? location.pathname : "#" + name);
+    nextPoll();
+  }
+  for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => showTab(b.dataset.tab);
   addEventListener("resize", moveTabIndicator);
   document.fonts?.ready.then(moveTabIndicator);
 
   // ---------- photos ----------
   let photoResults = [];
   async function scanPhotos(files) {
+    files = [...files];
     if (!files.length) return;
     $("photoBar").hidden = false; $("photoSummary").textContent = `Scanning ${files.length} photo${files.length > 1 ? "s" : ""}…`;
     $("addAllBtn").disabled = true;
     const fd = new FormData(); for (const f of files) fd.append("photos", f);
-    const urls = new Map([...files].map(f => [f.name, URL.createObjectURL(f)]));
-    const r = await fetch("/api/photos", { method: "POST", body: fd });
-    const results = (await r.json()).map(x => ({ ...x, preview: urls.get(x.file), added: false, foil: false }));
-    photoResults = [...results, ...photoResults];
-    renderPhotos();
+    // The pictures shown for photos that weren't recognized, by their place in the upload
+    // (a phone names every photo image.jpg).
+    const urls = files.map(f => URL.createObjectURL(f)), kept = new Set();
+    try {
+      const r = await fetch("/api/photos", { method: "POST", body: fd });
+      if (r.status === 401) { location.href = "/lock?next=" + encodeURIComponent("/scan#photos"); return; }
+      const js = await r.json().catch(() => null);
+      if (!r.ok || !Array.isArray(js)) { toast(js?.error || "Couldn't scan the photos. Try again"); return; }
+      const results = js.map(x => {
+        const preview = x.card ? undefined : urls[x.index];
+        if (preview) kept.add(x.index);
+        return { ...x, preview, added: false, foil: false };
+      });
+      photoResults = [...results, ...photoResults];
+    } catch (e) {
+      toast("Couldn't reach the scanner. Check the connection and try again");
+    } finally {
+      urls.forEach((u, i) => { if (!kept.has(i)) URL.revokeObjectURL(u); });
+      $("photoBar").hidden = !photoResults.length;
+      renderPhotos();
+    }
   }
 
   function renderPhotos() {
@@ -526,5 +1161,8 @@
 
   buildControls();
   applyLook();
+  // Other pages link straight to a tab (/scan#photos) or to the look (/scan?customize).
+  if (/^#(photos|train)$/.test(location.hash)) showTab(location.hash.slice(1));
+  if (new URLSearchParams(location.search).has("customize")) setDrawer(true);
   poll();
 })();

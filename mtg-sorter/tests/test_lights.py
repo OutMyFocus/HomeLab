@@ -1,0 +1,216 @@
+"""The light bars, with a fake SPI output (no Pi or LEDs needed)."""
+
+import numpy as np
+import pytest
+
+from app import Scanner, create_app
+from mtgscanner import config, lights as L
+from mtgscanner.lights import Lights, encode
+from test_scanner import db, fake_card  # noqa: F401  (db is a fixture)
+
+
+class FakeSpi:
+    def __init__(self):
+        self.writes = []
+
+    def write(self, data): self.writes.append(data)
+    def close(self): pass
+
+
+@pytest.fixture(autouse=True)
+def data_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(config, "COLLECTION_CSV", tmp_path / "collection.csv")
+    monkeypatch.setattr(config, "CAPTURES_DIR", tmp_path / "captures")
+
+
+@pytest.fixture
+def spi():
+    return FakeSpi()
+
+
+@pytest.fixture
+def lights(spi):
+    return Lights(opener=lambda: spi)
+
+
+@pytest.fixture
+def client(db, lights):  # noqa: F811
+    return create_app(Scanner(db, None, source=None), lights=lights).test_client()
+
+
+def test_bits_become_short_and_long_pulses():
+    data = encode(np.array([[0xFF, 0x00, 0x80]], np.uint8))   # red, green, blue
+    colors = data[len(L.LEAD):len(L.LEAD) + 24]
+    # WS2812 takes green first, then red, then blue.
+    assert colors[:8] == bytes([0b11000000] * 8)                       # green 0x00
+    assert colors[8:16] == bytes([0b11111000] * 8)                     # red 0xFF
+    assert colors[16:] == bytes([0b11111000] + [0b11000000] * 7)       # blue 0x80
+    assert data.endswith(L.RESET)
+
+
+def test_full_frame_fits_one_spi_write():
+    assert len(encode(np.zeros((L.MAX_LEDS, 3), np.uint8))) <= 4096
+
+
+def test_brightness_and_power_limit(lights):
+    lights.update({"color": "#ffffff", "brightness": 100, "count": 60})
+    frame, _ = lights.render(0)
+    assert L.amps(frame) <= config.LIGHTS_MAX_AMPS + 0.01      # 60 LEDs of white would be 3.6 A
+    lights.update({"brightness": 10, "count": 10, "card": {"count": 0}})
+    frame, _ = lights.render(0)
+    assert frame.shape == (10, 3) and frame.max() == round(255 * 0.1)
+
+
+def test_off_is_dark_and_effects_move(lights):
+    lights.update({"on": False, "card": {"on": False}})
+    assert lights.render(0)[0].max() == 0
+    lights.update({"on": True, "effect": "rainbow"})
+    a, moving = lights.render(1.0)
+    b, _ = lights.render(1.5)
+    assert moving and not np.array_equal(a, b)
+
+
+def test_settings_are_kept_and_checked(client):
+    s = client.post("/api/lights", json={"color": "#00ff00", "brightness": 250, "effect": "breathe"}).get_json()
+    assert s["settings"]["color"] == "#00ff00" and s["settings"]["brightness"] == 100
+    assert Lights().settings["effect"] == "breathe"                  # saved in data/lights.json
+    assert client.post("/api/lights", json={"color": "green"}).status_code == 400
+    assert client.post("/api/lights", json={"effect": "disco"}).status_code == 400
+    client.post("/api/lights/reset", json={})
+    assert Lights().settings["color"] == L.DEFAULTS["color"]
+
+
+def test_preview_and_page(client):
+    client.post("/api/lights", json={"color": "#ff0000", "brightness": 50, "count": 5, "effect": "solid",
+                                     "card": {"count": 0}})
+    colors = client.get("/api/lights/preview").get_json()["colors"]
+    assert colors == ["#7f0000"] * 5 or colors == ["#800000"] * 5
+    assert client.get("/lights").status_code == 200
+
+
+def test_flash_shows_then_fades(lights):
+    lights.update({"color": "#000000", "brightness": 100, "count": 4, "card": {"count": 0}})
+    lights.flash("saved")
+    green = L.to_rgb(lights.settings["events"]["saved"]["color"])
+    frame, moving = lights.render(lights._flash[1] + 0.1)
+    assert moving and np.allclose(frame[0], green, atol=2)
+    frame, _ = lights.render(lights._flash[1] + L.FLASH_SECONDS + 0.1)
+    assert frame.max() == 0
+    lights.update({"flashes": False})
+    lights.flash("saved")
+    assert lights._flash is None
+    with pytest.raises(ValueError):
+        lights.flash("party")
+
+
+def test_saving_a_card_flashes(client, lights):
+    client.post("/api/add", json={"id": "id1", "foil": False})
+    assert lights._flash is not None
+
+
+def test_sends_to_spi(lights, spi):
+    lights.update({"color": "#ffffff", "brightness": 20, "count": 3})
+    frame, _ = lights.render(0)
+    lights._send(frame)
+    assert spi.writes and len(spi.writes[-1]) == len(encode(np.zeros((L.MAX_LEDS, 3), np.uint8)))
+
+
+def test_without_spi_it_says_why(db):  # noqa: F811
+    def no_spi():
+        raise FileNotFoundError("/dev/spidev0.0")
+    lights = Lights(opener=no_spi)
+    s = lights.state()
+    assert not s["ok"] and s["error"]
+    client = create_app(Scanner(db, None, source=None), lights=lights).test_client()
+    assert client.post("/api/lights", json={"color": "#123456"}).status_code == 200
+
+
+def test_card_light_follows_the_status_lights_and_never_flashes(lights):
+    lights.update({"color": "#ff0000", "brightness": 50, "count": 14, "effect": "solid",
+                   "card": {"count": 10, "color": "#ffffff", "brightness": 40}})
+    frame, _ = lights.render(0)
+    assert frame.shape == (24, 3)
+    assert (frame[:14] == [round(255 * .5), 0, 0]).all() or (frame[:14] == [127, 0, 0]).all()
+    assert (frame[14:] == round(255 * .4)).all()
+    lights.flash("saved")
+    frame, _ = lights.render(lights._flash[1] + 0.1)
+    assert frame[0, 1] > 100 and (frame[14:] == round(255 * .4)).all()    # only the status lights flash
+    lights.update({"on": False})                                         # status off, card light stays
+    frame, _ = lights.render(0)
+    assert frame[:14].max() == 0 and frame[14:].min() > 0
+    lights.update({"card": {"on": False}})
+    assert lights.render(0)[0].max() == 0
+
+
+def test_card_light_only(lights):
+    lights.update({"count": 0, "card": {"count": 10, "brightness": 100, "color": "#ffffff"}})
+    frame, _ = lights.render(0)
+    assert frame.shape == (10, 3) and frame.min() > 0
+    assert L.amps(frame) <= config.LIGHTS_MAX_AMPS + 0.01
+
+
+def test_card_light_settings_are_checked(client):
+    s = client.post("/api/lights", json={"card": {"count": 6, "brightness": 300}}).get_json()["settings"]
+    assert s["card"]["count"] == 6 and s["card"]["brightness"] == 100 and s["card"]["on"]
+    assert client.post("/api/lights", json={"card": {"color": "white"}}).status_code == 400
+    assert client.post("/api/lights", json={"card": 5}).status_code == 400
+    assert client.post("/api/lights", json={"count": 100, "card": {"count": 100}}).status_code == 400
+    assert Lights().settings["card"]["count"] == 6                       # saved
+
+
+def test_lights_stand_still_while_held(spi):
+    """A feed watching the camera holds the lights: the effect freezes and flashes wait."""
+    import time
+    lights = Lights(opener=lambda: spi)
+    lights.update({"effect": "rainbow", "on": True})
+    t = time.monotonic()
+    a, moving = lights.render(t)
+    assert moving
+    lights.hold()
+    b, moving = lights.render(t + 1.0)
+    c, moving2 = lights.render(t + 2.0)
+    assert not moving and not moving2 and np.array_equal(b, c)
+    lights.flash("unknown", force=True)
+    assert lights._flash is None                 # no flash while held
+    lights.release()
+    _, moving = lights.render(t + 3.0)
+    assert moving
+    lights.flash("unknown", force=True)
+    assert lights._flash is not None
+
+
+def test_dim_turns_the_card_light_down_too_and_saves_nothing(lights):
+    """The sort run's second look at a foil: the card light over the bed is what glares, so
+    it dims as well as the status lights, and nothing goes into lights.json (a restart
+    during the look used to leave the bars at 8 %)."""
+    from mtgscanner.sort_run import SortRun
+    lights.update({"color": "#ffffff", "brightness": 30, "count": 2,
+                   "card": {"count": 2, "color": "#ffffff", "brightness": 60, "on": True}})
+    saved = L.settings_file().read_text()
+    before, _ = lights.render(0)
+    assert before[2].tolist() == [153, 153, 153]                    # card light at 60 %
+    run = SortRun(None, type("Scanner", (), {"lights": lights})(), None)
+    back = run._dim_lights()
+    frame, _ = lights.render(0)
+    assert frame[0].tolist() == [20, 20, 20] and frame[2].tolist() == [20, 20, 20]   # both at 8 %
+    assert lights.state()["dimmed"] == 8
+    assert lights.settings["brightness"] == 30 and lights.settings["card"]["brightness"] == 60
+    assert L.settings_file().read_text() == saved and Lights().settings["brightness"] == 30
+    run._restore_lights(back)
+    assert np.array_equal(lights.render(0)[0], before) and lights.state()["dimmed"] is None
+    lights.dim(50)                       # never brighter than the saved level
+    assert lights.render(0)[0][0].tolist() == [76, 76, 76]
+
+
+def test_unchanged_colors_are_sent_again(spi, monkeypatch):
+    """A strip that got power after the last send lit only when the colors changed (Mk2,
+    2026-11-24): the same frame now goes out again every LIGHTS_REFRESH_SECONDS."""
+    import time
+    monkeypatch.setattr(config, "LIGHTS_REFRESH_SECONDS", 0.05)
+    lights = Lights(opener=lambda: spi)
+    lights.update({"effect": "solid", "on": True, "count": 3, "color": "#ffffff", "brightness": 20})
+    lights.start()
+    time.sleep(1.3)
+    sent = [w for w in spi.writes]
+    assert len(sent) >= 2 and sent[-1] == sent[0]       # the same frame, more than once
