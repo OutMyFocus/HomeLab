@@ -42,6 +42,9 @@
 
   function setData(js) {
     data = js;
+    // [code, name] pairs from the server, in their order (best condition first)
+    data.condOrder = js.conditions || []; data.conditions = Object.fromEntries(data.condOrder);
+    data.langOrder = js.languages || []; data.languages = Object.fromEntries(data.langOrder);
     document.querySelector(".meta").classList.remove("down");
     $("metaText").textContent = js.prices;
     $("refreshBtn").hidden = !js.live;
@@ -64,6 +67,11 @@
     const ch = $("tValueSub");
     ch.className = "sub " + (s.change > 0 ? "up" : s.change < 0 ? "down" : "");
     ch.textContent = s.change ? `${signed(s.change)} since they were scanned` : s.unpriced ? `${s.unpriced} cards have no price` : "";
+    if (s.paid_cards) {   // what you paid, where you entered it, beats "since scanned"
+      ch.className = "sub " + (s.gain > 0 ? "up" : s.gain < 0 ? "down" : "");
+      ch.textContent = `${signed(s.gain)} on the ${money(s.paid)} you paid`;
+      ch.title = `For the ${s.paid_cards.toLocaleString()} cards you entered a price paid for`;
+    }
     const top = s.top.length ? byKey(s.top[0]) : null;
     $("tTop").textContent = top ? top.name : "None yet";
     $("tTopSub").textContent = top ? `${money(top.price)} · ${top.set}${top.foil ? " foil" : ""}` : "";
@@ -128,6 +136,12 @@
     if (prefs.breakdown === "color") return inOrder(s.by_color, Object.keys(COLORS)).map(([k, v]) => ({ label: COLORS[k] ?? k, swatch: `var(--mana-${k})`, n: v[m], filter: ["fColor", k] }));
     if (prefs.breakdown === "rarity") return inOrder(s.by_rarity, RARITIES).map(([k, v]) => ({ label: k ? k[0].toUpperCase() + k.slice(1) : "Unknown", swatch: "var(--accent)", n: v[m], filter: ["fRarity", k] }));
     if (prefs.breakdown === "bin") return Object.entries(s.by_bin).sort((a, b) => b[0] - a[0]).map(([k, v]) => ({ label: `${k} · ${binLabel(k)}`, swatch: `var(--bin${k})`, n: v[m], filter: ["fBin", k] }));
+    if (prefs.breakdown === "tag") return (s.tags || []).map(t => ({ label: t.tag, swatch: "var(--accent)", n: t[m], filter: ["fTag", t.tag] }));
+    if (prefs.breakdown === "condition") {
+      const byCond = {};
+      for (const c of data.cards) { const x = byCond[c.condition] ||= { cards: 0, value: 0 }; x.cards += c.qty; x.value += c.value || 0; }
+      return data.condOrder.map(([k]) => k).filter(k => byCond[k]).map(k => ({ label: `${k} · ${data.conditions[k]}`, swatch: "var(--accent)", n: byCond[k][m], filter: ["fCond", k] }));
+    }
     return s.sets.map(v => ({ label: v.name || v.set, swatch: "var(--accent)", n: v[m], filter: ["fSet", v.set] }));
   }
   function renderBars() {
@@ -135,10 +149,11 @@
     for (const b of $("measureSeg").children) b.setAttribute("aria-pressed", b.dataset.v === prefs.measure);
     const rows = breakdownRows().filter(r => r.n > 0), max = Math.max(1, ...rows.map(r => r.n));
     const fmt = n => prefs.measure === "value" ? money(n) : n.toLocaleString();
+    const none = prefs.breakdown === "tag" ? "No tags yet. Open a card and add one, or tag many with Select." : "Nothing to show yet";
     $("bars").innerHTML = rows.length ? rows.map((r, i) => `<div class="bar-row" data-i="${i}" title="Show only ${esc(r.label)}">
         <span class="name"><i style="background:${r.swatch}"></i>${esc(r.label)}</span>
         <span class="track"><span class="fill" style="width:${(100 * r.n / max).toFixed(1)}%;background:${r.swatch}"></span></span>
-        <span class="n">${fmt(r.n)}</span></div>`).join("") : '<p class="none">Nothing to show yet</p>';
+        <span class="n">${fmt(r.n)}</span></div>`).join("") : `<p class="none">${none}</p>`;
     $("bars").onclick = e => {
       const row = e.target.closest(".bar-row"); if (!row) return;
       const [id, v] = rows[+row.dataset.i].filter;
@@ -150,11 +165,16 @@
   $("measureSeg").onclick = e => { const b = e.target.closest("button"); if (b) { prefs.measure = b.dataset.v; savePrefs(); renderBars(); } };
 
   // ---------- card tiles ----------
+  // Condition (when not near mint) and language (when not English), on the card's corner.
+  const badges = c => {
+    const b = [c.condition && c.condition !== "NM" ? (c.mixed ? c.condition + "+" : c.condition) : "", c.language && c.language !== "EN" ? c.language : ""].filter(Boolean);
+    return b.length ? `<span class="cond-badge" title="${esc([data?.conditions?.[c.condition], data?.languages?.[c.language]].filter(Boolean).join(", "))}">${b.map(esc).join(" · ")}</span>` : "";
+  };
   const PICK_MARK = '<i class="pick-mark" aria-hidden="true"><svg><use href="#i-check"/></svg></i>';
   function tile(c, extra = "", sizes = "(max-width: 600px) 46vw, 170px") {
     const on = selecting && picked.has(c.key);
     return `<button class="tile${c.foil ? " foil" : ""}${on ? " picked" : ""}${extra}" data-key="${esc(c.key)}" title="${esc(c.name)}"${selecting && !extra ? ` aria-pressed="${on}"` : ""}>
-      <span class="art">${picture(c, sizes)}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${selecting && !extra ? PICK_MARK : ""}</span>
+      <span class="art">${picture(c, sizes)}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${badges(c)}${selecting && !extra ? PICK_MARK : ""}</span>
       <b>${esc(c.name)}</b><span>${esc(c.set)} #${esc(c.number)}<em>${money(c.price)}</em></span></button>`;
   }
   function renderTop() {
@@ -164,7 +184,7 @@
   $("topStrip").onclick = e => { const t = e.target.closest(".tile"); if (t) openDetail(t.dataset.key); };
 
   // ---------- filters and sorting ----------
-  const FILTER_IDS = ["q", "fColor", "fRarity", "fSet", "fBin", "fFoil", "fMin", "fMax"];
+  const FILTER_IDS = ["q", "fColor", "fRarity", "fSet", "fBin", "fTag", "fCond", "fLang", "fFoil", "fMin", "fMax"];
   function fillSelect(id, options, first) {
     const sel = $(id), keep = sel.value;
     sel.innerHTML = `<option value="">${first}</option>` + options.map(([v, label]) => `<option value="${esc(v)}">${esc(label)}</option>`).join("");
@@ -179,6 +199,16 @@
     const sets = {}; for (const c of cards) sets[c.set] = c.set_name || c.set;
     fillSelect("fSet", Object.entries(sets).sort((a, b) => a[1].localeCompare(b[1])).map(([k, n]) => [k, `${n} (${k})`]), "All sets");
     fillSelect("fBin", data.bins.map(b => [b.bin, `Bin ${b.bin} · ${b.label}`]), "All bins");
+    const tags = data.summary.tags || [];
+    fillSelect("fTag", tags.map(t => [t.tag, `${t.tag} (${t.cards})`]), tags.length ? "All tags" : "No tags yet");
+    $("fTag").hidden = !tags.length && !$("fTag").value;
+    $("tagList").innerHTML = tags.map(t => `<option value="${esc(t.tag)}">`).join("");
+    const conds = data.condOrder.map(([k]) => k).filter(k => cards.some(c => c.condition === k));
+    fillSelect("fCond", conds.map(k => [k, `${k} · ${data.conditions[k]}`]), "Any condition");
+    $("fCond").hidden = conds.length < 2 && !$("fCond").value;
+    const langs = data.langOrder.map(([k]) => k).filter(k => cards.some(c => c.language === k));
+    fillSelect("fLang", langs.map(k => [k, data.languages[k]]), "Any language");
+    $("fLang").hidden = langs.length < 2 && !$("fLang").value;
     $("sort").value = prefs.sort;
   }
   const SORTS = {
@@ -193,6 +223,8 @@
     qty: (a, b) => b.qty - a.qty,
     up: (a, b) => (b.change ?? -1e9) - (a.change ?? -1e9),
     down: (a, b) => (a.change ?? 1e9) - (b.change ?? 1e9),
+    gain: (a, b) => (b.gain ?? -1e9) - (a.gain ?? -1e9),
+    loss: (a, b) => (a.gain ?? 1e9) - (b.gain ?? 1e9),
   };
   function filtered() {
     const q = $("q").value.trim().toLowerCase(), f = id => $(id).value;
@@ -201,6 +233,8 @@
       (!q || `${c.name} ${c.set} ${c.set_name} #${c.number} ${c.number}`.toLowerCase().includes(q)) &&
       (!f("fColor") || c.color === f("fColor")) && (!f("fRarity") || c.rarity === f("fRarity")) &&
       (!f("fSet") || c.set === f("fSet")) && (!f("fBin") || String(c.bin) === f("fBin")) &&
+      (!f("fTag") || (c.tags || []).includes(f("fTag"))) && (!f("fCond") || c.condition === f("fCond")) &&
+      (!f("fLang") || c.language === f("fLang")) &&
       (!f("fFoil") || c.foil === (f("fFoil") === "foil")) &&
       (isNaN(min) || (c.price ?? -1) >= min) && (isNaN(max) || (c.price != null && c.price <= max))
     ).sort((a, b) => SORTS[prefs.sort](a, b) || a.name.localeCompare(b.name));
@@ -212,7 +246,7 @@
 
   // The filters live in the address too, so Back, a refresh or a bookmark keeps them
   // (/collection?color=U&rarity=mythic&min=5).
-  const URL_KEYS = { q: "q", color: "fColor", rarity: "fRarity", set: "fSet", bin: "fBin", foil: "fFoil", min: "fMin", max: "fMax" };
+  const URL_KEYS = { q: "q", color: "fColor", rarity: "fRarity", set: "fSet", bin: "fBin", tag: "fTag", cond: "fCond", lang: "fLang", foil: "fFoil", min: "fMin", max: "fMax" };
   function syncUrl() {
     const ps = new URLSearchParams();
     for (const [k, id] of Object.entries(URL_KEYS)) if ($(id).value.trim()) ps.set(k, $(id).value.trim());
@@ -230,6 +264,9 @@
     if (f("fRarity")) out.push(["fRarity", label("fRarity")]);
     if (f("fSet")) out.push(["fSet", label("fSet")]);
     if (f("fBin")) out.push(["fBin", label("fBin")]);
+    if (f("fTag")) out.push(["fTag", "Tag: " + f("fTag")]);
+    if (f("fCond")) out.push(["fCond", label("fCond")]);
+    if (f("fLang")) out.push(["fLang", label("fLang")]);
     if (f("fFoil")) out.push(["fFoil", label("fFoil")]);
     const lo = f("fMin"), hi = f("fMax");
     if (lo || hi) out.push(["price", lo && hi ? `$${lo} to $${hi}` : lo ? `$${lo} and up` : `Up to $${hi}`]);
@@ -269,9 +306,9 @@
     else if (prefs.view === "grid") $("results").innerHTML = `<div class="results-grid">${page.map(c => tile(c)).join("")}</div>`;
     else if (prefs.view === "binder") renderBinder();
     else $("results").innerHTML = `<div class="table-wrap"><table class="list"><thead><tr>
-        <th>Card</th><th class="hide-sm">Set</th><th class="hide-sm">Rarity</th><th>Copies</th><th class="num">Price</th><th class="num" title="Face to Face Games, or the next Montreal store">Montreal</th><th class="num hide-sm">Value</th><th class="num hide-sm">Since scanned</th><th class="hide-sm">Bin</th></tr></thead><tbody>
+        <th>Card</th><th class="hide-sm">Set</th><th class="hide-sm">Rarity</th><th>Copies</th><th class="num">Price</th><th class="num" title="Face to Face Games, or the next Montreal store">Montreal</th><th class="num hide-sm">Value</th><th class="num hide-sm">Since scanned</th><th class="num hide-sm" title="What you paid for each, and the gain since">Paid</th><th class="hide-sm">Bin</th></tr></thead><tbody>
       ${page.map(c => `<tr data-key="${esc(c.key)}"${selecting && picked.has(c.key) ? ' class="picked"' : ""}>
-        <td class="card-cell">${c.image ? `<img class="thumb" src="${esc(small(c.image))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}<span><span class="dotc" style="background:var(--mana-${esc(c.color)})" title="${esc(COLORS[c.color] ?? "")}"></span><span class="nm">${esc(c.name)}</span>${c.foil ? '<span class="foil-tag">foil</span>' : ""}<small class="sub show-sm">${esc(c.set)} #${esc(c.number)}</small></span></td>
+        <td class="card-cell">${c.image ? `<img class="thumb" src="${esc(small(c.image))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}<span><span class="dotc" style="background:var(--mana-${esc(c.color)})" title="${esc(COLORS[c.color] ?? "")}"></span><span class="nm">${esc(c.name)}</span>${c.foil ? '<span class="foil-tag">foil</span>' : ""}${c.condition !== "NM" || c.language !== "EN" ? `<span class="foil-tag cond-tag">${esc([c.condition !== "NM" ? c.condition : "", c.language !== "EN" ? c.language : ""].filter(Boolean).join(" · "))}</span>` : ""}${(c.tags || []).map(t => `<span class="tag-pill">${esc(t)}</span>`).join("")}<small class="sub show-sm">${esc(c.set)} #${esc(c.number)}</small></span></td>
         <td class="hide-sm">${esc(c.set)} #${esc(c.number)}</td>
         <td class="rar hide-sm">${esc(c.rarity)}</td>
         <td class="qty-cell"><button data-step="-1" aria-label="One fewer"><svg><use href="#i-minus"/></svg></button><b>${c.qty}</b><button data-step="1" aria-label="One more"><svg><use href="#i-plus"/></svg></button></td>
@@ -279,6 +316,7 @@
         <td class="num mtl-cell">${window.Montreal ? Montreal.cell(c) : ""}</td>
         <td class="num hide-sm">${c.value == null ? "" : money(c.value)}</td>
         <td class="num chg hide-sm ${c.change > 0 ? "up" : c.change < 0 ? "down" : ""}">${c.change ? signed(c.change) : ""}</td>
+        <td class="num hide-sm paid-cell">${c.paid == null ? "" : `${money(c.paid)}${c.gain ? `<small class="${c.gain > 0 ? "up" : "down"}">${signed(c.gain)}</small>` : ""}`}</td>
         <td class="hide-sm"><span class="pill bin-${c.bin}">${c.bin}</span></td></tr>`).join("")}</tbody></table></div>`;
     $("moreBtn").hidden = shown.length <= limit || prefs.view === "binder";
     $("moreBtn").textContent = `Show more (${(shown.length - limit).toLocaleString()} left)`;
@@ -305,7 +343,7 @@
       return `<div class="binder-page" aria-label="Page ${p + 1}">${cards.map(c => {
         const on = selecting && picked.has(c.key);
         return `<button class="pocket${c.foil ? " foil" : ""}${on ? " picked" : ""}" data-key="${esc(c.key)}" title="${esc(c.name)} · ${esc(c.set)} #${esc(c.number)} · ${esc(money(c.price))}"${selecting ? ` aria-pressed="${on}"` : ""}>
-          ${picture(c, "(max-width: 900px) 30vw, 180px")}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${selecting ? PICK_MARK : ""}
+          ${picture(c, "(max-width: 900px) 30vw, 180px")}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${badges(c)}${selecting ? PICK_MARK : ""}
           <span class="pocket-price">${esc(money(c.price))}</span></button>`;
       }).join("")}${'<span class="pocket empty" aria-hidden="true"></span>'.repeat(POCKETS - cards.length)}<small class="page-no">${p + 1}</small></div>`;
     };
@@ -360,7 +398,7 @@
     $("selValue").textContent = cards.length ? `${cards.length.toLocaleString()} printing${cards.length === 1 ? "" : "s"} · ${money(cards.reduce((v, c) => v + (c.value || 0), 0))}` : "";
     const all = shown.length && shown.every(c => picked.has(c.key));
     $("selAll").textContent = all ? "Unpick all" : `Pick all ${shown.length.toLocaleString()} showing`;
-    for (const id of ["selTrade", "selExport", "selDelete"]) $(id).disabled = !cards.length;
+    for (const id of ["selEdit", "selTrade", "selExport", "selDelete"]) $(id).disabled = !cards.length;
   }
   function togglePick(el) {
     const key = el.dataset.key;
@@ -493,7 +531,91 @@
     $("dScryfall").hidden = !c.scryfall; $("dScryfall").href = c.scryfall || "#";
     $("dLookup").href = "/cards?card=" + encodeURIComponent(c.name);
     $("dTrade").setAttribute("aria-pressed", tradeKeys.has(tradeKey(c)));
+    renderCopyDetails(c);
   }
+
+  // ---------- condition, language, what you paid, tags ----------
+  const condButtons = (pressed, mixed) => data.condOrder.map(([k, name]) =>
+    `<button data-cond="${k}" title="${esc(name)}" aria-pressed="${k === pressed && !mixed}">${k}</button>`).join("");
+  const langOptions = (sel, first = "") => (first ? `<option value="">${first}</option>` : "") +
+    data.langOrder.map(([k, name]) => `<option value="${k}"${k === sel ? " selected" : ""}>${esc(name)}</option>`).join("");
+  function renderCopyDetails(c) {
+    $("dCond").innerHTML = condButtons(c.condition, false);
+    $("dCond").title = c.mixed ? "These copies aren't all in the same condition: this is the most common one. Pick one to set them all." : "";
+    $("dLang").innerHTML = langOptions(c.language);
+    if (document.activeElement !== $("dPaid")) $("dPaid").value = c.paid ?? "";
+    $("dGain").className = c.gain > 0 ? "up" : c.gain < 0 ? "down" : "";
+    $("dGain").textContent = c.paid == null ? "Add it to see what it gained" : c.gain == null ? "" :
+      `${signed(c.gain)}${c.paid_qty !== c.qty ? ` on ${c.paid_qty} of ${c.qty}` : c.qty > 1 ? ` on all ${c.qty}` : ""}`;
+    $("dTags").innerHTML = (c.tags || []).map(t => `<button class="chip" data-untag="${esc(t)}" aria-label="Take off ${esc(t)}">${esc(t)}<svg><use href="#i-close"/></svg></button>`).join("");
+  }
+  async function details(keys, change, message) {
+    try {
+      setData(await api("/api/collection/details", { keys, ...change }));
+      if (message) toast(message);
+    } catch (e) { toast(e.message); }
+  }
+  $("dCond").onclick = e => {
+    const b = e.target.closest("[data-cond]"), c = byKey(detailKey); if (!b || !c) return;
+    details([c.key], { condition: b.dataset.cond }, `Condition: ${data.conditions[b.dataset.cond]}`);
+  };
+  $("dLang").onchange = () => { const c = byKey(detailKey); if (c) details([c.key], { language: $("dLang").value }, `Language: ${data.languages[$("dLang").value]}`); };
+  const savePaid = () => {
+    const c = byKey(detailKey); if (!c) return;
+    const raw = $("dPaid").value.trim(), v = raw === "" ? null : Math.round(parseFloat(raw) * 100) / 100;
+    if (raw !== "" && (isNaN(v) || v < 0)) return toast("The price paid is a number, like 4.50");
+    if (v === (c.paid ?? null)) return;
+    details([c.key], { paid: v }, v == null ? "Price paid cleared" : `Paid ${money(v)} each`);
+  };
+  $("dPaid").onchange = savePaid;
+  $("dPaid").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); $("dPaid").blur(); } };
+  const addTag = () => {
+    const c = byKey(detailKey), t = $("dTagInput").value.replace(/,/g, " ").trim(); if (!c || !t) return;
+    $("dTagInput").value = "";
+    details([c.key], { add_tag: t }, `Tagged ${t}`);
+  };
+  $("dTagInput").onkeydown = e => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(); } };
+  $("dTagInput").onchange = () => { if ($("dTagInput").value && [...$("tagList").options].some(o => o.value === $("dTagInput").value)) addTag(); };
+  $("dTags").onclick = e => {
+    const b = e.target.closest("[data-untag]"), c = byKey(detailKey); if (!b || !c) return;
+    details([c.key], { remove_tag: b.dataset.untag }, `Took off ${b.dataset.untag}`);
+  };
+
+  // Select's "Tag, condition…": the same for every picked card at once.
+  function openBulk() {
+    const cards = pickedCards(); if (!cards.length) return;
+    const n = cards.length;
+    $("bulkTitle").textContent = `Change the ${n.toLocaleString()} picked printing${n === 1 ? "" : "s"}`;
+    renderBulk();
+    $("bLang").innerHTML = langOptions("", "Leave as they are");
+    $("bPaid").value = "";
+    openModal("bulk"); $("bTagInput").focus();
+  }
+  function renderBulk() {
+    const cards = pickedCards(), tags = [...new Set(cards.flatMap(c => c.tags || []))].sort((a, b) => a.localeCompare(b));
+    $("bTags").innerHTML = tags.map(t => `<button class="chip" data-untag="${esc(t)}">${esc(t)}<svg><use href="#i-close"/></svg></button>`).join("");
+    $("bTags").hidden = $("bTagsLabel").hidden = !tags.length;
+    const conds = new Set(cards.map(c => c.condition));
+    $("bCond").innerHTML = condButtons(conds.size === 1 ? [...conds][0] : "", cards.some(c => c.mixed));
+    $("bNote").textContent = `${cards.reduce((t, c) => t + c.qty, 0).toLocaleString()} cards. Each change is saved straight away.`;
+  }
+  const bulk = (change, message) => details([...picked], change, message).then(() => { if (!$("bulk").hidden) renderBulk(); });
+  $("selEdit").onclick = openBulk;
+  $("bTagAdd").onclick = () => {
+    const t = $("bTagInput").value.replace(/,/g, " ").trim(); if (!t) return $("bTagInput").focus();
+    $("bTagInput").value = "";
+    bulk({ add_tag: t }, `Tagged ${picked.size.toLocaleString()} with ${t}`);
+  };
+  $("bTagInput").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); $("bTagAdd").click(); } };
+  $("bTags").onclick = e => { const b = e.target.closest("[data-untag]"); if (b) bulk({ remove_tag: b.dataset.untag }, `Took off ${b.dataset.untag}`); };
+  $("bCond").onclick = e => { const b = e.target.closest("[data-cond]"); if (b) bulk({ condition: b.dataset.cond }, `All ${data.conditions[b.dataset.cond]}`); };
+  $("bLang").onchange = () => { if ($("bLang").value) bulk({ language: $("bLang").value }, `All ${data.languages[$("bLang").value]}`); };
+  $("bPaidSet").onclick = () => {
+    const v = Math.round(parseFloat($("bPaid").value) * 100) / 100;
+    if (isNaN(v) || v < 0) return toast("Type what you paid for each, like 4.50");
+    bulk({ paid: v }, `Paid ${money(v)} each`);
+  };
+  $("bPaidClear").onclick = () => bulk({ paid: null }, "Price paid cleared");
   // The trade binder (shown on the Wishlist page).
   let tradeKeys = new Set(), tradeIds = new Map();
   const tradeKey = c => `${c.name}|${c.set}|${c.number}|${c.foil ? 1 : 0}`;
@@ -673,12 +795,13 @@
     for (const [k, id] of [["min", "fMin"], ["max", "fMax"]]) if (ps.get(k) && !isNaN(parseFloat(ps.get(k)))) $(id).value = parseFloat(ps.get(k));
     if (sort && [...$("sort").options].some(o => o.value === sort)) { prefs.sort = sort; $("sort").value = sort; }
     // Home links here with one filter set (/collection?color=U, ?bin=3); applied once the lists are filled.
-    var linked = { fColor: ps.get("color"), fBin: ps.get("bin"), fRarity: ps.get("rarity"), fSet: ps.get("set"), fFoil: ps.get("foil") }; }
+    var linked = { fColor: ps.get("color"), fBin: ps.get("bin"), fRarity: ps.get("rarity"), fSet: ps.get("set"), fFoil: ps.get("foil"),
+      fTag: ps.get("tag"), fCond: ps.get("cond"), fLang: ps.get("lang") }; }
   // The search palette's "Export the collection" and "Add a card" land here as #export / #add.
   load().then(() => {
     let changed = false;
     for (const [id, v] of Object.entries(linked)) if (v != null && [...$(id).options].some(o => o.value === v)) { $(id).value = v; changed = true; }
-    if (changed) applyFilters();
+    if (changed) { fillFilters(); applyFilters(); }   // (fillFilters again: a linked tag's list shows)
     else renderChips();
     if (location.hash === "#export" && data) openExport();
     else if (location.hash === "#add") openAdd();

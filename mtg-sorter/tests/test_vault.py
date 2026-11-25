@@ -144,7 +144,7 @@ def test_wanted_names_and_valuable_printings():
 
 MANABOX = """Name,Set code,Set name,Collector number,Foil,Rarity,Quantity,ManaBox ID,Scryfall ID,Purchase price,Misprint,Altered,Condition,Language,Purchase price currency
 Sol Ring,C21,Commander 2021,263,normal,uncommon,2,1,abc,1.50,false,false,near_mint,en,CAD
-"Ajani, Caller of the Pride",M13,Magic 2013,1,foil,mythic,1,2,def,4.00,false,false,near_mint,en,USD
+"Ajani, Caller of the Pride",M13,Magic 2013,1,foil,mythic,1,2,def,4.00,false,false,light_played,ja,USD
 """
 
 
@@ -159,6 +159,9 @@ def test_manabox_csv_becomes_its_own_source(db):  # noqa: F811
     assert [(r["Name"], r["Quantity"], r["Foil"], r["Source"]) for r in got] == [
         ("Sol Ring", "2", "normal", "New pulls"), ("Ajani, Caller of the Pride", "1", "foil", "New pulls")]
     assert got[0]["Price CAD"] == "1.50" and got[1]["Price CAD"] == ""    # a USD purchase price isn't used
+    assert got[0]["Purchase price"] == "1.50" and got[1]["Purchase price"] == ""
+    assert (got[0]["Condition"], got[0]["Language"]) == ("", "")          # near mint, English: left blank
+    assert (got[1]["Condition"], got[1]["Language"]) == ("LP", "JA")
     again = client.post("/api/sources/manabox", json={"csv": MANABOX, "name": "New pulls"}).get_json()
     assert again["source"] == "New pulls (2)"
     names = [s["name"] for s in client.get("/api/sources").get_json()["sources"]]

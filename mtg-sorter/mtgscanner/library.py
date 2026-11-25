@@ -32,6 +32,52 @@ COLOR_NAMES = {"W": "White", "U": "Blue", "B": "Black", "R": "Red", "G": "Green"
                "M": "Multicolor", "C": "Colorless", "": "Unknown"}
 RARITY_ORDER = ["mythic", "rare", "uncommon", "common", "special", "bonus", ""]
 
+# A card's condition, best first (blank in the file means near mint), and its language
+# (blank means English). Codes as Scryfall and most sites write them.
+CONDITIONS = {"NM": "Near Mint", "LP": "Lightly Played", "MP": "Moderately Played",
+              "HP": "Heavily Played", "DMG": "Damaged"}
+LANGUAGES = {"EN": "English", "FR": "French", "DE": "German", "ES": "Spanish", "IT": "Italian",
+             "PT": "Portuguese", "JA": "Japanese", "KO": "Korean", "RU": "Russian",
+             "ZHS": "Chinese Simplified", "ZHT": "Chinese Traditional", "PH": "Phyrexian"}
+# What other apps write for a condition (ManaBox, Moxfield, Deckbox, TCGplayer...).
+_CONDITION_WORDS = {
+    "m": "NM", "mint": "NM", "nm": "NM", "near mint": "NM", "near_mint": "NM", "nearmint": "NM",
+    "lp": "LP", "ex": "LP", "excellent": "LP", "lightly played": "LP", "light played": "LP",
+    "light_played": "LP", "lightly_played": "LP", "slightly played": "LP", "good (lightly played)": "LP",
+    "mp": "MP", "gd": "MP", "good": "MP", "played": "MP", "moderately played": "MP", "moderately_played": "MP",
+    "pl": "MP", "hp": "HP", "heavily played": "HP", "heavily_played": "HP", "heavy played": "HP",
+    "po": "DMG", "poor": "DMG", "d": "DMG", "dmg": "DMG", "damaged": "DMG",
+}
+MAX_TAG = 30
+MAX_TAGS = 12
+
+
+def condition_code(text) -> str:
+    """NM, LP, MP, HP or DMG for whatever an app wrote ("near_mint", "Lightly Played"...).
+    Blank (or something unknown) is near mint."""
+    return _CONDITION_WORDS.get(str(text or "").strip().lower(), "NM")
+
+
+def language_code(text) -> str:
+    """EN, JA, ZHS... for a code or a name ("ja", "Japanese", "zh_CN"). Blank is English."""
+    t = str(text or "").strip().lower().replace("-", "_")
+    if not t:
+        return "EN"
+    for code, name in LANGUAGES.items():
+        if t in (code.lower(), name.lower()):
+            return code
+    return {"zh_cn": "ZHS", "zh_hans": "ZHS", "cs": "ZHS", "zh_tw": "ZHT", "zh_hant": "ZHT", "ct": "ZHT",
+            "jp": "JA", "kr": "KO", "sp": "ES", "ph": "PH"}.get(t, "EN")
+
+
+def clean_tag(text) -> str:
+    """A tag as it's kept: no commas (they separate tags in the file), one line, not too long."""
+    return " ".join(str(text or "").replace(",", " ").split())[:MAX_TAG]
+
+
+def row_tags(row: dict) -> list[str]:
+    return [t for t in (clean_tag(x) for x in str(row.get("Tags") or "").split(",")) if t]
+
 
 # --- Reading and writing the CSV -----------------------------------------------------
 
@@ -105,12 +151,20 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
     groups: dict[str, dict] = {}
     for r in rows:
         key = make_key(row_id(r), row_foil(r))
-        g = groups.setdefault(key, {"rows": [], "qty": 0, "paid_sum": 0.0, "paid_n": 0})
+        g = groups.setdefault(key, {"rows": [], "qty": 0, "paid_sum": 0.0, "paid_n": 0, "bought_sum": 0.0,
+                                    "bought_n": 0, "cond": {}, "lang": {}, "tags": set()})
         g["rows"].append(r)
         g["qty"] += qty(r)
         if (p := _float(r.get("Price CAD"))) is not None:   # the price of each copy in the row
             g["paid_sum"] += p * qty(r)
             g["paid_n"] += qty(r)
+        if (p := _float(r.get("Purchase price"))) is not None and p >= 0:   # what you paid for each
+            g["bought_sum"] += p * qty(r)
+            g["bought_n"] += qty(r)
+        c, lang = condition_code(r.get("Condition")), language_code(r.get("Language"))
+        g["cond"][c] = g["cond"].get(c, 0) + qty(r)
+        g["lang"][lang] = g["lang"].get(lang, 0) + qty(r)
+        g["tags"].update(row_tags(r))
 
     rules = sort_rules.load()   # once, not once a card
     counting = sort_rules.uses(rules, "copies")
@@ -136,6 +190,8 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
         bin_no, bin_label = bin_for(card, foil, price, rules, copy, live)
         times = [r.get("Scanned at", "") for r in g["rows"] if r.get("Scanned at")]
         set_code = card.set_code.upper()
+        paid = round(g["bought_sum"] / g["bought_n"], 2) if g["bought_n"] else None
+        conds = sorted(g["cond"].items(), key=lambda kv: (-kv[1], list(CONDITIONS).index(kv[0])))
         items.append({
             "key": key,
             "id": card_id,
@@ -155,6 +211,14 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
             "value": None if price is None else round(price * g["qty"], 2),
             "scanned_price": scanned_price,
             "change": None if price is None or scanned_price is None else round(price - scanned_price, 2),
+            # What you paid (each, for the copies you entered it for), and what those copies gained
+            "paid": paid,
+            "paid_qty": g["bought_n"],
+            "gain": None if price is None or paid is None else round((price - paid) * g["bought_n"], 2),
+            "condition": conds[0][0],
+            "mixed": len(conds) > 1,   # copies in different conditions
+            "language": max(g["lang"].items(), key=lambda kv: kv[1])[0],
+            "tags": sorted(g["tags"], key=str.lower),
             "bin": bin_no,
             "bin_label": bin_label,
             "sorted_into": last.get("Bin", ""),
@@ -188,6 +252,14 @@ def summarize(items: list[dict]) -> dict:
         s["cards"] += it["qty"]
         s["value"] = round(s["value"] + (it["value"] or 0), 2)
     priced = [it for it in items if it["value"] is not None]
+    bought = [it for it in priced if it["paid"] is not None]
+    paid = sum(it["paid"] * it["paid_qty"] for it in bought)
+    tags: dict[str, dict] = {}
+    for it in items:
+        for t in it["tags"]:
+            x = tags.setdefault(t, {"tag": t, "cards": 0, "value": 0.0})
+            x["cards"] += it["qty"]
+            x["value"] = round(x["value"] + (it["value"] or 0), 2)
     then = sum((it["scanned_price"] or 0) * it["qty"] for it in priced if it["scanned_price"] is not None)
     now = sum(it["value"] for it in priced if it["scanned_price"] is not None)
     return {
@@ -203,6 +275,13 @@ def summarize(items: list[dict]) -> dict:
         "by_bin": tally("bin"),
         "sets": sorted(sets.values(), key=lambda s: (-s["cards"], s["set"]))[:12],
         "set_count": len(sets),
+        # Only the copies you entered a price paid for
+        "paid": round(paid, 2),
+        "paid_cards": sum(it["paid_qty"] for it in bought),
+        "gain": round(sum(it["gain"] for it in bought), 2),
+        "tags": sorted(tags.values(), key=lambda t: (-t["cards"], t["tag"].lower())),
+        "by_condition": {c: n for c in CONDITIONS
+                         if (n := sum(it["qty"] for it in items if it["condition"] == c))},
         "top": [it["key"] for it in sorted(priced, key=lambda it: -(it["price"] or 0))[:10]],
     }
 
@@ -331,6 +410,40 @@ def delete_many(path: Path, seen: dict[str, int]) -> tuple[int, dict[str, int]]:
     return len(have), {}
 
 
+def set_details(path: Path, keys: list[str], condition: str | None = None, language: str | None = None,
+                paid: float | None | bool = False, tags: list[str] | None = None,
+                add_tag: str = "", remove_tag: str = "") -> int:
+    """Change every copy of these printings at once: their condition, language, the price
+    paid for each (None clears it; False leaves it), their tags (a whole new list), or add
+    or take off one tag. Returns how many printings were found."""
+    wanted = set()
+    for key in keys:
+        wanted.add(split_key(key))
+    with COLLECTION_LOCK:
+        rows = read_rows(path)
+        found = set()
+        for r in rows:
+            k = (row_id(r), row_foil(r))
+            if k not in wanted:
+                continue
+            found.add(k)
+            if condition is not None:
+                r["Condition"] = "" if condition == "NM" else condition
+            if language is not None:
+                r["Language"] = "" if language == "EN" else language
+            if paid is not False:
+                r["Purchase price"] = "" if paid is None else f"{paid:.2f}"
+            if tags is not None or add_tag or remove_tag:
+                have = tags if tags is not None else row_tags(r)
+                have = [t for t in have if t.lower() != remove_tag.lower()] if remove_tag else list(have)
+                if add_tag and add_tag.lower() not in (t.lower() for t in have):
+                    have.append(add_tag)
+                r["Tags"] = ", ".join(have[:MAX_TAGS])
+        if found:
+            write_rows(path, rows)
+    return len(found)
+
+
 def change_quantity(path: Path, key: str, step: int) -> int | None:
     """One more (step 1) or one fewer (step -1) copy than the file has right now, not
     than the page last showed, so copies saved since are kept. Returns the new count,
@@ -394,33 +507,57 @@ def _csv(header: list[str], lines: list[list]) -> str:
     return out.getvalue()
 
 
+def _cond(i) -> str:
+    return i.get("condition") or "NM"
+
+
+def _lang(i) -> str:
+    return i.get("language") or "EN"
+
+
+def _bought(i) -> str:
+    """What you paid for each copy, else today's price (what other sites take as its cost)."""
+    p = i["paid"] if i.get("paid") is not None else i["price"]
+    return "" if p is None else f"{p:.2f}"
+
+
+MANABOX_CONDITIONS = {"NM": "near_mint", "LP": "excellent", "MP": "good", "HP": "played", "DMG": "poor"}
+DECKBOX_CONDITIONS = {"NM": "Near Mint", "LP": "Good (Lightly Played)", "MP": "Played", "HP": "Heavily Played",
+                      "DMG": "Poor"}
+ARCHIDEKT_CONDITIONS = {"NM": "NM", "LP": "LP", "MP": "MP", "HP": "HP", "DMG": "D"}
+
+
 def export_manabox(items):
-    return _csv(["Name", "Set code", "Set name", "Collector number", "Foil", "Rarity", "Quantity", "Scryfall ID"],
+    return _csv(["Name", "Set code", "Set name", "Collector number", "Foil", "Rarity", "Quantity", "Scryfall ID",
+                 "Condition", "Language", "Purchase price", "Purchase price currency"],
                 [[i["name"], i["set"], i["set_name"], i["number"], "foil" if i["foil"] else "normal",
-                  i["rarity"], i["qty"], i["id"] if i["known"] or len(i["id"]) == 36 else ""] for i in items])
+                  i["rarity"], i["qty"], i["id"] if i["known"] or len(i["id"]) == 36 else "",
+                  MANABOX_CONDITIONS[_cond(i)], _lang(i).lower(),
+                  "" if i.get("paid") is None else f"{i['paid']:.2f}", "" if i.get("paid") is None else "CAD"]
+                 for i in items])
 
 
 def export_moxfield(items):
     return _csv(["Count", "Tradelist Count", "Name", "Edition", "Condition", "Language", "Foil", "Tags",
                  "Last Modified", "Collector Number", "Alter", "Proxy", "Purchase Price"],
-                [[i["qty"], 0, i["name"], i["set"].lower(), "Near Mint", "English", "foil" if i["foil"] else "",
-                  "", "", i["number"], "False", "False", "" if i["price"] is None else f"{i['price']:.2f}"]
-                 for i in items])
+                [[i["qty"], 0, i["name"], i["set"].lower(), CONDITIONS[_cond(i)], LANGUAGES[_lang(i)],
+                  "foil" if i["foil"] else "", ", ".join(i.get("tags") or []), "", i["number"], "False", "False",
+                  _bought(i)] for i in items])
 
 
 def export_archidekt(items):
     return _csv(["Quantity", "Name", "Finish", "Condition", "Language", "Edition Name", "Edition Code",
-                 "Collector Number", "Scryfall ID", "Purchase Price"],
-                [[i["qty"], i["name"], "Foil" if i["foil"] else "Normal", "NM", "EN", i["set_name"], i["set"].lower(),
-                  i["number"], i["id"] if len(i["id"]) == 36 else "",
-                  "" if i["price"] is None else f"{i['price']:.2f}"] for i in items])
+                 "Collector Number", "Scryfall ID", "Purchase Price", "Tags"],
+                [[i["qty"], i["name"], "Foil" if i["foil"] else "Normal", ARCHIDEKT_CONDITIONS[_cond(i)], _lang(i),
+                  i["set_name"], i["set"].lower(), i["number"], i["id"] if len(i["id"]) == 36 else "",
+                  _bought(i), ", ".join(i.get("tags") or [])] for i in items])
 
 
 def export_deckbox(items):
     return _csv(["Count", "Tradelist Count", "Name", "Edition", "Card Number", "Condition", "Language", "Foil",
                  "Signed", "Artist Proof", "Altered Art", "Misprint", "Promo", "Textless", "My Price"],
-                [[i["qty"], 0, i["name"], i["set_name"], i["number"], "Near Mint", "English",
-                  "foil" if i["foil"] else "", "", "", "", "", "", "",
+                [[i["qty"], 0, i["name"], i["set_name"], i["number"], DECKBOX_CONDITIONS[_cond(i)],
+                  LANGUAGES[_lang(i)], "foil" if i["foil"] else "", "", "", "", "", "", "",
                   "" if i["price"] is None else f"${i['price']:.2f}"] for i in items])
 
 
@@ -442,12 +579,13 @@ def export_names(items):
 
 def export_prices(items):
     """A spreadsheet of everything with today's prices (opens in Excel or Google Sheets)."""
+    money = lambda v: "" if v is None else f"{v:.2f}"   # noqa: E731
     return _csv(["Name", "Set", "Set name", "Number", "Rarity", "Foil", "Quantity", "Price CAD", "Value CAD",
-                 "Price when scanned", "Price source", "Bin now", "First scanned"],
+                 "Price when scanned", "Paid each", "Gain on what you paid", "Condition", "Language", "Tags",
+                 "Price source", "Bin now", "First scanned"],
                 [[i["name"], i["set"], i["set_name"], i["number"], i["rarity"], "yes" if i["foil"] else "",
-                  i["qty"], "" if i["price"] is None else f"{i['price']:.2f}",
-                  "" if i["value"] is None else f"{i['value']:.2f}",
-                  "" if i["scanned_price"] is None else f"{i['scanned_price']:.2f}",
+                  i["qty"], money(i["price"]), money(i["value"]), money(i["scanned_price"]),
+                  money(i.get("paid")), money(i.get("gain")), _cond(i), _lang(i), ", ".join(i.get("tags") or []),
                   i["price_source"], i["bin_label"], i["first"]] for i in items])
 
 
@@ -517,6 +655,9 @@ def add_collection_routes(app, scanner, web_dir):
                        f"Scryfall {'live ' if live else ''}prices, US$1 = CA${config.USD_TO_CAD:.4f}"),
             "exports": [{"id": k, "label": v[0], "hint": v[1]} for k, v in EXPORTS.items()],
             "bins": [{"bin": int(n), "label": label} for n, label in sort_rules.names().items()],
+            # As [code, name] lists: jsonify would put a dict's keys in A-Z order
+            "conditions": list(CONDITIONS.items()),
+            "languages": list(LANGUAGES.items()),
         })
 
     def body() -> dict:
@@ -611,6 +752,55 @@ def add_collection_routes(app, scanner, web_dir):
         res = everything()
         res.headers["X-Deleted"] = str(deleted)
         return res
+
+    @app.post("/api/collection/details")
+    def collection_details():
+        """Condition, language, price paid and tags, for one card or many (Select):
+        {keys: [...], condition: "LP", language: "JA", paid: 4.5 (null clears it),
+        tags: [...] (the whole list), add_tag: "...", remove_tag: "..."}."""
+        js = body()
+        keys = js.get("keys")
+        if not isinstance(keys, list) or not keys or len(keys) > 20_000:
+            return jsonify({"error": "Pick some cards first"}), 400
+        change: dict = {}
+        if js.get("condition") is not None:
+            if str(js["condition"]).upper() not in CONDITIONS:
+                return jsonify({"error": "The condition is one of " + ", ".join(CONDITIONS)}), 400
+            change["condition"] = str(js["condition"]).upper()
+        if js.get("language") is not None:
+            if str(js["language"]).upper() not in LANGUAGES:
+                return jsonify({"error": "Unknown language"}), 400
+            change["language"] = str(js["language"]).upper()
+        if "paid" in js:
+            p = js["paid"]
+            if p in (None, ""):
+                change["paid"] = None
+            elif isinstance(p, bool) or not isinstance(p, (int, float)) or not 0 <= p <= 1_000_000:
+                return jsonify({"error": "The price paid is a number of dollars, like 4.50"}), 400
+            else:
+                change["paid"] = round(float(p), 2)
+        if js.get("tags") is not None:
+            if not isinstance(js["tags"], list):
+                return jsonify({"error": "Tags are a list"}), 400
+            seen, tags = set(), []
+            for t in map(clean_tag, js["tags"]):
+                if t and t.lower() not in seen:
+                    seen.add(t.lower())
+                    tags.append(t)
+            change["tags"] = tags[:MAX_TAGS]
+        for k in ("add_tag", "remove_tag"):
+            if js.get(k):
+                change[k] = clean_tag(js[k])
+        if not change:
+            return jsonify({"error": "Nothing to change"}), 400
+        try:
+            with scanner.lock, COLLECTION_LOCK:
+                found = set_details(accounts.collection_csv(), [str(k) for k in keys], **change)
+        except ValueError:
+            return jsonify({"error": "Unknown card"}), 400
+        if not found:
+            return jsonify({"error": "Those cards aren't in the collection any more"}), 404
+        return everything()
 
     @app.post("/api/collection/add")
     def collection_add():
