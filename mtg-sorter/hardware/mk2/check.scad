@@ -118,3 +118,5 @@ if (what == "holddown") intersection() { holddowns(); union() { bed(); stop_bar(
 if (what == "holddown_card") intersection() { card_on_bed(); union() { holddowns(); stop_bar(0); } }
 // the skirt presses on the rim on purpose (0.05 mm), nothing else may touch the carrier
 if (what == "holddown_latch") intersection() { holddowns(); carrier(); }
+// 2026-11-25: the fixed gates in the hopper, over the turning wheels and the card's way out
+if (what == "gate_box") intersection() { union() { gate(0); gate(2); } union() { hopper(); stand(); roller(); wheel_sweep(0.3); scan_fixed(); } }

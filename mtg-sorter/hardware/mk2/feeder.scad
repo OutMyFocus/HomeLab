@@ -260,6 +260,52 @@ module shoe() {
         translate([0, Y0 + 1, top_z - 9]) rotate([90, 0, 0]) cylinder(d = 14, h = shoe_t + 2);   // lift it out here
     }
 }
+
+// ============================ FIXED GATE (2026-11-25) ==========================================
+// Nic: "a fixed door for cards. I don't want to keep readjusting it." The shoe floats on the wheels
+// and its cork pads; this gate doesn't. It is the same front wall, but it SITS on the bottoms of the
+// hopper's two slots, so the opening over the wheels is a set gap: more than one card (0.31), less
+// than two (0.62). No cork, no coins to tune. Its underside is flat and its back face is square, so
+// the second card's edge meets a wall, not a ramp, and can't wedge the gate up.
+// Printed in three gaps, marked by 1, 2 or 3 notches in the top edge: 0.42, 0.50, 0.58 mm (square to
+// the bed). Start with 2. Two cards together: go down to 1. Nothing comes out: go up to 3.
+// Drops into the printed hopper in place of the shoe; nothing else changes.
+gate_gaps = [0.42, 0.50, 0.58];
+module gate(i = 1) {
+    gap = gate_gaps[i];
+    under = [shoept(d_front, gap), shoept(d_back, gap)];
+    lift = 0;                                  // the profile is drawn in place: no shift needed
+    sec = [under[0], under[1], [Y0, top_z], [Y0 - shoe_t, top_z], [Y0 - shoe_t, bar_top],
+           [under[0][0] + 1.5, bar_top], [under[0][0], bar_top - 1.5]];
+    difference() {
+        union() {
+            yz(-shoe_half, 2 * shoe_half) polygon(sec);
+            // the tongues reach down to the slots' bottoms: that is what sets the gap
+            for (m = [0, 1]) mirror([m, 0, 0])
+                rbox([shoe_half - 0.01, tongue_y[0], slot_bot], [tongue_out + 0.01, tongue_y[1] - tongue_y[0], top_z - slot_bot]);
+            rbox([-box_half, box_y0, box_z[0]], [2 * box_half, -shoe_t - (box_y0 - Y0) + 0.01, box_z[1] - box_z[0]]);
+        }
+        // the wheels turn under it: clear them by the gap all the way across
+        translate([0, wc[0], wc[1]]) for (x = [-wheel_x, wheel_x])
+            translate([x - wheel_w / 2 - 1, 0, 0]) rotate([0, 90, 0]) cylinder(r = R + gap, h = wheel_w + 2);
+        rbox([-coin_half, coin_y[0], box_z[0] + 2], [2 * coin_half, coin_y[1] - coin_y[0], 40]);   // weight pocket (coins hold it down)
+        translate([0, Y0 + 1, top_z - 9]) rotate([90, 0, 0]) cylinder(d = 14, h = shoe_t + 2);
+        // 1, 2 or 3 notches in the top edge
+        for (k = [0 : i]) translate([-24 + 5 * k, Y0 - shoe_t - 1, top_z - 2]) cube([2, shoe_t + 2, 3]);
+    }
+}
+
+// The stack weight: lies on top of the cards, so the wheels grip the same with 10 cards as with 400.
+// Solid (100 % infill, about 70 g). A finger hole to lift it out.
+module stack_weight() {
+    difference() {
+        translate([-card_w / 2 + 0.5, 0.5, 0]) cube([card_w - 1, card_l - 1, 12]);
+        translate([0, card_l / 2, -1]) cylinder(d = 22, h = 14);
+        for (x = [-card_w / 2 + 0.5, card_w / 2 - 0.5]) for (y = [0.5, card_l - 0.5])
+            translate([x, y, -1]) rotate([0, 0, 45]) cube([4, 4, 30], center = true);
+    }
+}
+
 module pads() color("#b07a43") for (m = [0, 1]) mirror([m, 0, 0]) yz(pad_x0 + 0.3, pad_x1 - pad_x0 - 0.6)
     polygon([shoept(pad_d0 + 0.3, bar_v + pocket - pad_t), shoept(pad_d1 - 0.3, bar_v + pocket - pad_t),
              shoept(pad_d1 - 0.3, bar_v + pocket), shoept(pad_d0 + 0.3, bar_v + pocket)]);
@@ -280,5 +326,7 @@ if (part == "feeder") feeder_assembly();
 if (part == "stand") stand();
 if (part == "hopper") hopper();
 if (part == "shoe") shoe();
+for (i = [0 : 2]) if (part == str("gate", i + 1)) gate(i);
+if (part == "stack_weight") stack_weight();
 if (part == "roller") roller();
 if (part == "motor_lid") motor_lid();

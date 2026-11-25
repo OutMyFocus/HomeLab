@@ -50,6 +50,10 @@ if (part == "lightbar") rotate([90, 0, 0]) rotate([0, 90, 0]) rotate([-bed_a, 0,
 // feeder cartridge (as feeder v4)
 if (part == "fd_stand") stand();
 if (part == "fd_hopper") hopper();
+if (part == "fd_gate1") rotate([0, 90, 0]) rotate([-90, 0, 0]) gate(0);   // fixed gates, on their long edge like the shoe
+if (part == "fd_gate2") rotate([0, 90, 0]) rotate([-90, 0, 0]) gate(1);
+if (part == "fd_gate3") rotate([0, 90, 0]) rotate([-90, 0, 0]) gate(2);
+if (part == "fd_weight") stack_weight();
 if (part == "fd_shoe") rotate([0, 90, 0]) rotate([-90, 0, 0]) shoe();   // on its long edge (brim)
 if (part == "fd_roller") rotate([0, 90, 0]) roller();              // standing on its motor end
 if (part == "fd_motor_lid") rotate([180, 0, 0]) motor_lid();
