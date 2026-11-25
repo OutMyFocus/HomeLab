@@ -130,7 +130,7 @@
       const where = x.where.map(w => `<span class="pill bin-${w.bin}" title="${esc(w.sorted_into || "")}">${esc(w.set)} #${esc(w.number)}${w.foil ? " foil" : ""} ×${w.qty}</span>`).join("");
       const img = x.image ? `<img class="thumb" src="${esc(x.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">` : '<span class="thumb"></span>';
       return `<tr class="${cls}"><td class="card-cell">${img}<span><span class="nm">${esc(x.name)}</span><span class="sec">${esc(x.section)}${x.extra ? " · not counted" : x.basic ? " · basic land" : ""}</span></span></td>
-        <td class="num">${x.need}</td><td class="num">${x.have}</td>
+        <td class="num">${x.need}</td><td class="num">${x.have}<span class="of">/${x.need}</span></td>
         <td class="hide-sm"><span class="where">${where || '<span class="sub">Not in your collection</span>'}</span></td>
         <td class="num hide-sm">${x.missing ? money(x.price) : ""}</td>
         <td class="num miss">${x.missing ? `${x.missing}${x.cost != null ? " · " + money(x.cost) : ""}` : ""}</td></tr>`;

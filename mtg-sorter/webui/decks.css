@@ -28,6 +28,9 @@
 .deck-table tr.ok td:first-child .nm::after { content: " ✓"; color: var(--good); }
 .deck-table tr.short .miss { color: var(--bad); font-weight: 650; }
 .deck-table tr.unknown .nm { color: var(--warn); }
+/* style.css hides every table's 2nd column (Need) on phones, so Have says "1/2" there */
+.deck-table .of { display: none; color: var(--muted); font-size: .8em; }
+@media (max-width: 560px) { .deck-table .of { display: inline; } }
 .where { display: flex; flex-wrap: wrap; gap: 4px; }
 /* Deck result as pictures */
 .deck-pics { display: grid; gap: 18px; padding: 4px 0 2px; }

@@ -16,7 +16,7 @@
     const list = items.filter(i => show === "all" || (show === "deal" ? i.deal : show === "owned" ? i.owned : !i.owned))
       .sort((a, b) => (b.deal - a.deal) || (b.owned > 0) - (a.owned > 0) || a.display.localeCompare(b.display));
     $("wish").innerHTML = list.length ? list.map(i => `<div class="wish-card${i.deal ? " deal" : ""}" data-id="${esc(i.id)}">
-        <span class="art">${i.image ? `<img src="${esc(i.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">` : `<span class="noimg">${esc(i.name)}</span>`}</span>
+        <span class="art">${i.image ? `<img src="${esc(i.image.replace("version=normal", "version=small"))}" srcset="${esc(i.image.replace("version=normal", "version=small"))} 146w, ${esc(i.image)} 488w" sizes="110px" alt="" loading="lazy">` : `<span class="noimg">${esc(i.name)}</span>`}</span>
         <div class="wish-info">
           <b>${esc(i.display)}${i.foil ? '<span class="foil-tag">foil</span>' : ""}</b>
           <span class="sub">${i.found ? `${money(i.price)} today${i.set ? " · " + esc(i.set) : ""}` : "Couldn't find this card. Check the spelling"}</span>
