@@ -1348,3 +1348,11 @@ def test_test_run_feeds_and_drops_round_the_bins_and_stops_at_a_problem(watched,
         time.sleep(0.05)
     assert t["rows"] and t["rows"][0]["ok"] is False and t["rows"][0]["bin"] == 1
     assert "No card came out" in t["reason"] or "twice" in t["reason"]
+
+
+def test_sort_one_sorts_a_card_already_on_the_bed_without_feeding(watched, quick_sort):
+    """A card that slid out late lies on the bed at the next card's start (2026-11-25)."""
+    client, scanner, machine, cams = watched
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=True))
+    out = client.post("/api/machine/sort_one", json={"bin": 1}).get_json()   # learns nothing bare: card stays
+    assert out["dropped"] is False

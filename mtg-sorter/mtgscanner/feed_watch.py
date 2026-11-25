@@ -321,9 +321,23 @@ class FeedWatcher:
             # timer stops it), so the card is on its way before the next one can follow
             # it out of the slot. Measured 2026-11-06: the old order dropped the pins 1.4 s
             # after landing, and the card behind caught the landed one meanwhile.
-            fed = self.feed_one(speed=speed, backoff=0, settle=0, push=push)
+            # A card already on the bed (it slid out late, after the last feed gave up:
+            # 2026-11-25): the "before" picture would hold it, and once it dropped the bed
+            # looked nothing like that picture. Compare with the last bare bed seen: if a card
+            # lies there, sort that one without feeding, and keep the bare bed as the reference.
+            zone_now = feed_zone()
+            bare = getattr(self, "_bare", None)
+            check, gone_share = self._gone_check()
+            if (bare is not None and empty is not None and bare.shape == empty.shape
+                    and changed_share(bare, empty, check) >= gone_share
+                    and changed_share(bare, empty, zone_now) >= config.FEED_LAND_SHARE):
+                fed = {"result": "landed", "landed_ms": 0, "motor_ms": 0, "push_ms": 0, "backoff_ms": 0,
+                       "zone": zone_now, "settled_share": 1.0, "trace": [], "already": True}
+                empty = bare
+            else:
+                fed = self.feed_one(speed=speed, backoff=0, settle=0, push=push)
             retry = getattr(config, "FEED_RETRY_SPEED", None)
-            if fed["result"] in ("none", "stuck") and retry:
+            if fed["result"] in ("none", "stuck") and retry and not fed.get("already"):
                 # The gate held the card part way out (set a hair low, or a sticky new
                 # card): one more push at full power usually gets it through, where the
                 # run used to stop on "nothing came out" (2026-11-08).
@@ -345,7 +359,7 @@ class FeedWatcher:
                 return out
             backoff = self._feeder_setting("backoff", backoff, config.FEED_BACKOFF_SECONDS,
                                            getattr(config, "FEED_BACKOFF_MAX", 1.0))
-            if backoff:
+            if backoff and not fed.get("already"):
                 self.machine.feed(seconds=backoff, speed=speed, backward=True)
                 out["backoff_ms"] = round(1000 * backoff)
             if choose is not None:
@@ -389,6 +403,7 @@ class FeedWatcher:
                 out["left_share"] = round(share, 3)
                 if out["dropped"]:
                     self._bed_clear = True
+                    self._bare = now
                     break
             health.drop_result(out)
             if out.get("result") == "over":
