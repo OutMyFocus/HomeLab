@@ -60,7 +60,7 @@ mp.PER_PART.update({N(k): v for k, v in {
     **{"base_" + n: STRUCTURAL for n in ("fl", "fr", "bl", "br")},
     "bin": TALL, "drawer": TALL,
     "lv1_frame": TALL_TREE, "lv2_frame": TALL_TREE,
-    "carriage1": STRUCT_TREE, "carriage2": STRUCT_TREE, "lever": SOLID,
+    "carriage1": SOLID_TREE, "carriage2": SOLID_TREE, "lever": SOLID,
     "door_b": STRUCTURAL, "door_f": STRUCTURAL, "door_coupler": SOLID_BRIM, "col_front": TALL, "liner_back": STRUCTURAL, "ir_holder": STRUCTURAL,
     "scan_carrier": TALL_TREE, "scan_bed": SMOOTH, "stop_bar": SOLID_TREE, "gate_plug": STRUCTURAL, "holddown_l": STRUCTURAL, "holddown_r": STRUCTURAL, "pi_mount": STRUCTURAL,
     "cam_arch": TALL_TREE, "cam_hood": SOLID, "lightbar": SOLID_BRIM,
@@ -214,10 +214,11 @@ if __name__ == "__main__":
         mp.PLATES = [("1 Camera arch, taller (tree supports)", P("cam_arch"))]
         mp.main()
         sys.exit(0)
-    if "--gate" in sys.argv:     # 2026-11-25: fixed feeder gate with hinged flaps, camera turned 90 degrees
-        mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Gate_And_Camera.3mf")
+    if "--gate" in sys.argv:     # 2026-11-25: fixed feeder gate with hinged flaps, camera turned 90 degrees, heavier pushers
+        mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Overnight.3mf")
         mp.PLATES = [("1 Fixed feeder gate and 2 flaps (solid, brim)", P("fd_gate", "fd_flap*2")),
-                     ("2 Camera arch, camera turned 90 degrees (tree supports)", P("cam_arch"))]
+                     ("2 Camera arch, camera turned 90 degrees (tree supports)", P("cam_arch")),
+                     ("3 Pushers with ballast slots (solid, tree supports), 6 gate plugs", P("carriage1", "carriage2", "gate_plug*6"))]
         mp.main()
         sys.exit(0)
     if "--pimount" in sys.argv:     # the Pi 5 wall mount on its own (added after the rest was printed)
