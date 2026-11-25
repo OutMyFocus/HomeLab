@@ -223,6 +223,8 @@
     qty: (a, b) => b.qty - a.qty,
     up: (a, b) => (b.change ?? -1e9) - (a.change ?? -1e9),
     down: (a, b) => (a.change ?? 1e9) - (b.change ?? 1e9),
+    rise: (a, b) => (b.trend?.change ?? -1e9) - (a.trend?.change ?? -1e9),
+    fall: (a, b) => (a.trend?.change ?? 1e9) - (b.trend?.change ?? 1e9),
     gain: (a, b) => (b.gain ?? -1e9) - (a.gain ?? -1e9),
     loss: (a, b) => (a.gain ?? 1e9) - (b.gain ?? 1e9),
   };
@@ -516,6 +518,7 @@
     $("dSet").textContent = `${c.set_name || c.set} · ${c.set} #${c.number}${c.rarity ? " · " + c.rarity : ""}`;
     $("dPrice").textContent = money(c.price) + (c.qty > 1 && c.value != null ? `  ×${c.qty} = ${money(c.value)}` : "");
     $("dSource").textContent = c.price_source || "";
+    renderSpark(c);
     window.Montreal?.show($("dMontreal"), c);
     const facts = [
       ["Color", COLORS[c.color] ?? "Unknown"],
@@ -532,6 +535,41 @@
     $("dLookup").href = "/cards?card=" + encodeURIComponent(c.name);
     $("dTrade").setAttribute("aria-pressed", tradeKeys.has(tradeKey(c)));
     renderCopyDetails(c);
+  }
+
+  // ---------- its price over time ----------
+  // The prices SortR noted for this printing, one a day, as a small line, with how much it
+  // moved this week. Fetched once per card while the page is open.
+  const sparks = new Map();
+  const shortDay = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  function trendText(t) {
+    if (!t) return "";
+    const pct = t.pct != null ? ` (${t.pct > 0 ? "+" : t.pct < 0 ? "−" : ""}${Math.abs(t.pct)}%)` : "";
+    return `${t.change ? signed(t.change) + pct : "No change"} since ${shortDay(t.since)}`;
+  }
+  async function renderSpark(c) {
+    const box = $("dSpark");
+    if (!c.trend) { box.hidden = true; return; }
+    $("dTrend").textContent = trendText(c.trend);
+    $("dTrend").className = "spark-note " + (c.trend.change > 0 ? "up" : c.trend.change < 0 ? "down" : "");
+    box.hidden = false;
+    let pts = sparks.get(c.key);
+    if (!pts) {
+      $("dSparkSvg").innerHTML = ""; $("dSparkRange").textContent = "";
+      try { pts = (await api("/api/collection/price-history?key=" + encodeURIComponent(c.key))).points; sparks.set(c.key, pts); }
+      catch (e) { return; }
+      if (detailKey !== c.key) return;
+    }
+    if (pts.length < 2) { $("dSparkSvg").innerHTML = ""; $("dSparkRange").textContent = ""; return; }
+    const W = 240, H = 56, pad = 4, ps = pts.map(p => p.price), lo = Math.min(...ps), hi = Math.max(...ps), span = hi - lo || 1;
+    const t0 = Date.parse(pts[0].day), t1 = Date.parse(pts[pts.length - 1].day), tw = t1 - t0 || 1;
+    const xy = pts.map(p => [pad + (Date.parse(p.day) - t0) / tw * (W - 2 * pad), H - pad - (p.price - lo) / span * (H - 2 * pad)]);
+    const daysNoted = Math.round(tw / 864e5) + 1;
+    $("dSparkRange").textContent = `Last ${daysNoted} days · low ${money(lo)} · high ${money(hi)}`;
+    const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+    const cls = ps[ps.length - 1] > ps[0] ? "up" : ps[ps.length - 1] < ps[0] ? "down" : "";
+    $("dSparkSvg").innerHTML = `<path class="area ${cls}" d="${line}L${xy[xy.length - 1][0].toFixed(1)},${H}L${xy[0][0].toFixed(1)},${H}Z"/><path class="line ${cls}" d="${line}"/>
+      <title>${esc(shortDay(pts[0].day))} ${esc(money(ps[0]))} to ${esc(shortDay(pts[pts.length - 1].day))} ${esc(money(ps[ps.length - 1]))}, low ${esc(money(lo))}, high ${esc(money(hi))}</title>`;
   }
 
   // ---------- condition, language, what you paid, tags ----------
