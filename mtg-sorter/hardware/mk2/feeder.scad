@@ -20,7 +20,8 @@
 //     lid holds it in. The hopper drops onto the stand's ridge (as v4). The cartridge's wings carry
 //     dovetail tongues on the walls' feed rail and a magnet holds it home.
 //
-// Parts (set `part`): stand, hopper, shoe, roller, motor_lid; "feeder" = all of it in place.
+// Parts (set `part`): stand, hopper, shoe, roller, motor_lid, gate, flap; "feeder" = all of it in place
+// with the shoe, "feeder_gate" with the fixed gate and its flaps (2026-11-25, see FIXED GATE below).
 include <joints.scad>
 include <layout.scad>
 part = "feeder";
@@ -276,9 +277,131 @@ module feeder_assembly(cards = 40) {
     color("#c9a46a") for (i = [0 : cards - 1]) translate([-card_w / 2, Y0 + 0.5, floor_top + poke + 0.32 * i]) cube([card_w, card_l, 0.3]);
 }
 
+// ============================ FIXED GATE AND FLAPS (2026-11-25) =================================
+// The shoe above slides up and down in its slots. In use it rode up on a card and stayed there, so
+// the gap grew and it had to be pushed back down by hand. This replaces it, in the same slots:
+//   gate   the magazine's front wall, pushed down to the slots' floors and held there by a crush
+//          rib on each tongue. It never moves. Its underside sits gate_v over the line the card
+//          leaves along, so at most about three cards fit under it.
+//   flap   x2, one over each wheel, each on its own hinge (a 1.75 mm piece of filament through
+//          the gate's lugs), with the cork pad under it and a box of coins on top. The coins'
+//          weight presses the pad on its wheel, the same way the shoe's weight did, but a hinge
+//          can't stick, and each pad keeps pressing even when the other side rides on a bent card.
+//          A flap can lift about 1 mm at most (its box meets the gate), so a wad of cards can't
+//          push through.
+// The hinge is behind the pad, so the card pulling on the pad pulls the flap straight, never
+// harder down onto the card. The boxes stand in front of the gate, behind the card's far end as
+// the camera sees it, so they never hide the card.
+gate_v = 1.0;                              // the gate's underside over the exit line
+pv_v = 3.6;                                // the hinge pin's centre over the exit line ...
+pv_y = 138.0;                              // ... at this y (in the gate wall's front half)
+pv_d = (pv_y - nip[0] + pv_v * sin(bed_a)) / cos(bed_a);
+pv = shoept(pv_d, pv_v);                   // (y, z) of the hinge axis
+pin_lug = 1.9;  pin_flap = 2.2;  hub_r = 2.5;
+fl_x = [3.5, 30.0];                        // a flap's x (the right one; the left is its mirror)
+lug_in = [1.0, 3.2];  lug_out = [30.3, shoe_half];
+pin_x0 = 1.5;                              // the pin's hole starts here (blind), so it can't slide in
+lug_y0 = pv[0] - pin_lug / 2 - 0.8;        // the lugs reach this far forward of the gate's face
+car_d = [-5.5, 4.0];  car_v = [1.0, 3.6];  // the pad carrier, in shoe coordinates
+cbox_in = [24.5, 13.4, 25.0];              // the coin box inside: 7 quarters (or 8 nickels) on edge
+cbox_t = 1.0;
+cbox_y1 = lug_y0 - 0.5;                    // the box's back face
+cbox_z0 = pv[1] - 2.3;                     // its floor's underside
+cbox_top = cbox_z0 + cbox_t + cbox_in[2];
+pocket_d = 1.8;                            // the gate's face is let in this deep behind the boxes
+rib_out = 0.8;                             // the crush rib stands this far out of each tongue's end
+
+module gate_noribs() gate(false);
+module gate(ribs = true) {
+    difference() {
+        union() {
+            rbox([-shoe_half, Y0 - shoe_t, floor_z0], [2 * shoe_half, shoe_t, top_z - floor_z0]);
+            for (m = [0, 1]) mirror([m, 0, 0]) {
+                rbox([shoe_half - 0.01, tongue_y[0], slot_bot], [tongue_out + 0.01, tongue_y[1] - tongue_y[0], top_z - slot_bot]);
+                // crush rib down the tongue's end: pushed in, it holds the gate on the slots' floors
+                if (ribs) translate([shoe_half + tongue_out, (tongue_y[0] + tongue_y[1]) / 2, top_z - 70]) cylinder(r = rib_out, h = 60, $fn = 16);
+                // the lugs the hinge pins sit in, reaching forward of the wall round the pin
+                for (l = [lug_in, lug_out]) rbox([l[0], lug_y0, pv[1] - 2.2], [l[1] - l[0], Y0 - lug_y0, 4.4]);
+            }
+        }
+        // the underside: gate_v over the line the card leaves along
+        under_bed(exit_n + gate_v, Y0 + 1);
+        for (m = [0, 1]) mirror([m, 0, 0]) {
+            // room for the flap's hub (and its turn) in the wall's lower edge
+            translate([fl_x[0] - 0.3, 0, 0]) hull() {
+                translate([0, pv[0], pv[1]]) rotate([0, 90, 0]) cylinder(r = hub_r + 0.4, h = fl_x[1] - fl_x[0] + 0.6);
+                translate([0, lug_y0 - 1, floor_z0 - 2]) cube([fl_x[1] - fl_x[0] + 0.6, Y0 - lug_y0 + 0.2, 1]);
+            }
+            // the hinge pin's hole, from the gate's end in to its blind start
+            translate([pin_x0, pv[0], pv[1]]) rotate([0, 90, 0]) cylinder(d = pin_lug, h = shoe_half - pin_x0 + tongue_out + 1, $fn = 24);
+            // the face let in behind the coin box, so the flap can lift about 1 mm
+            rbox([fl_x[0] - 0.2, Y0 - shoe_t - 0.01, pv[1] + 2.6], [fl_x[1] - fl_x[0] + 0.4, pocket_d + 0.01, cbox_top + 1.5 - pv[1] - 2.6]);
+        }
+        translate([0, Y0 + 1, top_z - 9]) rotate([90, 0, 0]) cylinder(d = 14, h = shoe_t + 2);   // lift it out here
+    }
+}
+
+// a flap at rest: its cork pad (2 mm in a 1 mm pocket) sits on the wheel at the nip
+module flap() {
+    w = fl_x[1] - fl_x[0];
+    difference() {
+        union() {
+            translate([fl_x[0], 0, 0]) yz(0, w) {
+                // hub round the pin, its back trimmed short of the magazine's inside face
+                intersection() {
+                    translate([pv[0], pv[1]]) circle(r = hub_r);
+                    square([Y0 - 0.3, 900]);
+                }
+                // the web from the hub to the pad carrier
+                hull() {
+                    translate([pv[0], pv[1]]) circle(r = hub_r - 0.4);
+                    polygon([shoept(car_d[1] - 2, car_v[0]), shoept(car_d[1], car_v[0] + 0.6), shoept(car_d[1], car_v[1]), shoept(car_d[1] - 2, car_v[1])]);
+                }
+                // the pad carrier, its front end turned up so nothing catches it
+                polygon([shoept(car_d[0] + 1.5, car_v[0]), shoept(car_d[1], car_v[0]), shoept(car_d[1], car_v[1]),
+                         shoept(car_d[0], car_v[1]), shoept(car_d[0], car_v[0] + 1.2)]);
+            }
+            // the coin box: coins stand on edge in it, faces to the front and back; loaded from the top
+            difference() {
+                rbox([fl_x[0], cbox_y1 - cbox_in[1] - 2 * cbox_t, cbox_z0], [w, cbox_in[1] + 2 * cbox_t, cbox_top - cbox_z0]);
+                rbox([(fl_x[0] + fl_x[1]) / 2 - cbox_in[0] / 2, cbox_y1 - cbox_t - cbox_in[1], cbox_z0 + cbox_t], [cbox_in[0], cbox_in[1], 50]);
+            }
+            // the box's floor joins the carrier
+            hull() {
+                rbox([fl_x[0], cbox_y1 - cbox_in[1] - 2 * cbox_t, cbox_z0], [w, cbox_in[1] + 2 * cbox_t, cbox_t]);
+                translate([fl_x[0], 0, 0]) yz(0, w) polygon([shoept(car_d[0] + 1.5, car_v[1] - 0.6), shoept(car_d[1] - 1, car_v[1] - 0.6), shoept(car_d[1] - 1, car_v[1]), shoept(car_d[0] + 1.5, car_v[1])]);
+            }
+        }
+        // the cork pad's pocket, over the wheel
+        translate([pad_x0, 0, 0]) yz(0, pad_x1 - pad_x0) polygon([shoept(pad_d0, -1), shoept(pad_d1, -1), shoept(pad_d1, car_v[0] + pocket), shoept(pad_d0, car_v[0] + pocket)]);
+        // the hinge pin turns freely in the hub
+        translate([fl_x[0] - 1, pv[0], pv[1]]) rotate([0, 90, 0]) cylinder(d = pin_flap, h = w + 2, $fn = 24);
+        // nothing of the flap but its cork reaches down to the card
+        under_bed(exit_n + car_v[0] - 0.01, Y0 + 1);
+    }
+}
+module flap_pad() color("#b07a43") translate([pad_x0 + 0.3, 0, 0]) yz(0, pad_x1 - pad_x0 - 0.6)
+    polygon([shoept(pad_d0 + 0.3, car_v[0] + pocket - 2), shoept(pad_d1 - 0.3, car_v[0] + pocket - 2), shoept(pad_d1 - 0.3, car_v[0] + pocket), shoept(pad_d0 + 0.3, car_v[0] + pocket)]);
+module flaps() for (m = [0, 1]) mirror([m, 0, 0]) { flap(); flap_pad(); }
+module flap_pins() color("silver") for (m = [0, 1]) mirror([m, 0, 0]) translate([pin_x0 + 0.2, pv[0], pv[1]]) rotate([0, 90, 0]) cylinder(d = 1.75, h = shoe_half - pin_x0 - 0.3, $fn = 16);
+module feeder_assembly_gate(cards = 40) {
+    color("#3a3f47") stand();
+    color("#2b2b2b") motor_lid();
+    color("orange") roller();
+    color("#5a6068") hopper();
+    color("#2b2b2b") gate();
+    color("#e8772e") flaps();
+    flap_pins();
+    n20();
+    color("#c9a46a") for (i = [0 : cards - 1]) translate([-card_w / 2, Y0 + 0.5, floor_top + poke + 0.32 * i]) cube([card_w, card_l, 0.3]);
+}
+
 if (part == "feeder") feeder_assembly();
 if (part == "stand") stand();
 if (part == "hopper") hopper();
 if (part == "shoe") shoe();
 if (part == "roller") roller();
 if (part == "motor_lid") motor_lid();
+if (part == "feeder_gate") feeder_assembly_gate();
+if (part == "gate") gate();
+if (part == "flap") flap();

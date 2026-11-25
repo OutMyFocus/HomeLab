@@ -64,7 +64,7 @@ mp.PER_PART.update({N(k): v for k, v in {
     "door_b": STRUCTURAL, "door_f": STRUCTURAL, "door_coupler": SOLID_BRIM, "col_front": TALL, "liner_back": STRUCTURAL, "ir_holder": STRUCTURAL,
     "scan_carrier": TALL_TREE, "scan_bed": SMOOTH, "stop_bar": SOLID_TREE, "gate_plug": STRUCTURAL, "holddown_l": STRUCTURAL, "holddown_r": STRUCTURAL, "pi_mount": STRUCTURAL,
     "cam_arch": TALL_TREE, "cam_hood": SOLID, "lightbar": SOLID_BRIM,
-    "fd_stand": STRUCT_TREE, "fd_hopper": TALL, "fd_shoe": SOLID_BRIM,
+    "fd_stand": STRUCT_TREE, "fd_hopper": TALL, "fd_shoe": SOLID_BRIM, "fd_gate": SOLID_BRIM, "fd_flap": SOLID,
     "fd_roller": SOLID, "fd_motor_lid": STRUCTURAL,
     "etray": STRUCT_TREE, "pca_comb": STRUCTURAL,
     "key": SOLID, "trunk_lid": {}, "branch_lid": {},
@@ -212,6 +212,12 @@ if __name__ == "__main__":
     if "--camarch" in sys.argv:     # the taller camera arch on its own (camera 135 mm over the card, 2026-11-24)
         mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Camera_Arch.3mf")
         mp.PLATES = [("1 Camera arch, taller (tree supports)", P("cam_arch"))]
+        mp.main()
+        sys.exit(0)
+    if "--gate" in sys.argv:     # 2026-11-25: fixed feeder gate with hinged flaps, camera turned 90 degrees
+        mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Gate_And_Camera.3mf")
+        mp.PLATES = [("1 Fixed feeder gate and 2 flaps (solid, brim)", P("fd_gate", "fd_flap*2")),
+                     ("2 Camera arch, camera turned 90 degrees (tree supports)", P("cam_arch"))]
         mp.main()
         sys.exit(0)
     if "--pimount" in sys.argv:     # the Pi 5 wall mount on its own (added after the rest was printed)

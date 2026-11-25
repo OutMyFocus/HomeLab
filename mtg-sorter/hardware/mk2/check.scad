@@ -76,6 +76,15 @@ if (what == "feeder_frame") intersection() { feeder_fixed(); union() { walls(); 
 if (what == "feeder_parts") intersection() { stand(); union() { hopper(); shoe(); roller(); motor_lid(); } }
 if (what == "feeder_shoe") intersection() { shoe(); union() { hopper(); roller(); } }
 if (what == "wheels") intersection() { wheel_sweep(0.3); union() { scan_fixed(); stand(); hopper(); shoe(); motor_lid(); } }
+// 2026-11-25: the fixed gate and its flaps, in place of the shoe. The gate's crush ribs press into the
+// slots on purpose, so the hopper check leaves them out (gate_ribs = false); the flaps at rest and
+// lifted 1 mm at the pad clear the gate, the hopper, the bed and the wheels (the cork is left out).
+module flaps_at(t = 0) for (m = [0, 1]) mirror([m, 0, 0]) translate([0, pv[0], pv[1]]) rotate([-t, 0, 0]) translate([0, -pv[0], -pv[1]]) flap();
+if (what == "gate_hopper") intersection() { gate_noribs(); hopper(); }
+if (what == "gate_flaps") intersection() { union() { flaps_at(0); flaps_at(4); } union() { gate(); hopper(); bed(); stand(); } }
+if (what == "gate_wheels") intersection() { wheel_sweep(0.3); union() { gate(); flaps_at(0); flaps_at(4); } }
+// lifted 9 degrees (about 1.2 mm at the pad) a flap's box must meet the gate: that's its stop (must CLASH)
+if (what == "flap_stop_latch") intersection() { flaps_at(9); gate(); }
 // the covers close round everything without touching it
 module covers_all() { front_cover(); back_low(); back_high(); lid_front(); lid_back(); }
 if (what == "covers") intersection() { covers_all(); union() { walls(); base_full(); frames(); scan_fixed(); stop_bar(1); feeder_fixed(); etray(); bins(); } }

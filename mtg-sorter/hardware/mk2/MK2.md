@@ -85,6 +85,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
    - Lay the motor in its pod and snap the motor lid over it. Fit the roller on the shaft.
    - Drop the magazine onto the stand's ridge.
    - Stick the two PTFE strips in the magazine floor's tracks and the cork pads on the shoe.
+   - **Fixed gate instead of the shoe (2026-11-25, MTG_Sorter_Mk2_Gate_And_Camera.3mf):** the shoe rode up on cards and stayed up, so it had to be pushed back down. The gate goes in the shoe's slots, pushed all the way down (its crush ribs hold it there) and never moves. Each wheel gets its own hinged flap: stick a cork pad (2 mm, 7 x 7.5 mm) in each flap's pocket, cut two 31 mm pieces of 1.75 mm filament, hold a flap in its notch in the gate's lower edge and push a piece of filament in from the gate's end through the outer lug and the flap into the blind inner lug. Then push the gate into the slots. Put 7 quarters (or 8 nickels) on edge in each flap's box, the same in both. Each flap should drop onto its wheel by itself and lift about 1 mm before its box meets the gate.
    - Slide the cartridge in from the back on the top rail. The upper back panel comes out to let it in.
 7. **Electronics tray:**
    - Fit the boards on their pegs, the relay and DRV8833 in their cradles, and the Wagos in their holder.
