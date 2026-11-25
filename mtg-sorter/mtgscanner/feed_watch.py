@@ -243,6 +243,17 @@ class FeedWatcher:
             self.busy.release()
 
 
+    def _gone_check(self):
+        """(zone, cut-off) for "has the card left the bed?": the Scanner page's saved bed box
+        when there is one (Mk2 on its new camera spot, 2026-11-25: the fixed SORT_CHECK_ZONE
+        took in both light bars, whose glare made an empty bed read 6-11 % changed, around the
+        8 % cut-off; inside the bed box an empty bed is 3-6 % and a card 60 %), else the old zone."""
+        box = clean_zone(getattr(self.scanner, "bed_box", None))
+        if box is not None:
+            return box, float(getattr(config, "SORT_GONE_BOX_SHARE", 0.18))
+        return (clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95],
+                float(getattr(config, "SORT_GONE_SHARE", 0.05)))
+
     def bed_check(self, empty, zone):
         """A short look after landing, before anything drops. Returns None when one card
         lies at the stop, else why not: "over" (the stop area is empty again: the card went
@@ -260,7 +271,7 @@ class FeedWatcher:
             return None
         if changed_share(empty, now, zone) < config.FEED_LAND_SHARE / 2:
             return "over"
-        check = clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95]
+        check, _ = self._gone_check()
         share = changed_share(empty, now, check)
         self._last_bed_share = round(share, 3)
         if len(self._card_shares) >= 3:
@@ -344,7 +355,7 @@ class FeedWatcher:
                 finally:
                     self.tap.watching += 1
                 out["bin"] = bin_no
-            check = clean_zone(getattr(config, "SORT_CHECK_ZONE", None)) or [0.05, 0.05, 0.95, 0.95]
+            check, gone_share = self._gone_check()
             latest = {"seq": seq}
 
             def card_gone():
@@ -374,7 +385,7 @@ class FeedWatcher:
                 # picture (not just the landing band: a card the pins pushed up or turned
                 # leaves the band but not the bed, and counted as dropped, 2026-11-06).
                 share = changed_share(empty, now, check)
-                out["dropped"] = share < getattr(config, "SORT_GONE_SHARE", 0.05)
+                out["dropped"] = share < gone_share
                 out["left_share"] = round(share, 3)
                 if out["dropped"]:
                     self._bed_clear = True
