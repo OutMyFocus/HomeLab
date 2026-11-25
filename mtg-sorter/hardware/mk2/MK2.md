@@ -60,6 +60,7 @@ The same steps with a picture each: [`MTG_Sorter_Mk2_Picture_Assembly.html`](MTG
 3. **Level 2** (do this on the bench, before it goes in):
    - Press the lever's horn into its pocket and a 3 x 16 mm pin through the lever's end, so 5 mm stands out of its flat face.
    - Lay the carriage on the frame's guide, slide it to the middle, and lower the lever in from above so its pin drops into the fork at the top of the crossbar.
+   - **Heavier pushers (2026-11-25, MTG_Sorter_Mk2_Upgrades.3mf plate 2):** the lever's pin sliding up and down the fork dragged the carriage up with it, and a light carriage lifted off its rail. The new carriages print solid and have four slots in the crossbar's top: stand a quarter on edge in each (a drop of glue keeps it there). Stick a strip of PTFE tape (cut to 4 mm) on each inside face of the fork, and press a gate plug into each of the beam's three gates. The lever, its pin and the servo stay as they are.
    - Slide the pusher servo in from the back of its box, shaft first into the lever's horn, until the latch clicks over the back of its body. To take it out, lift the latch finger with a fingernail and pull.
    - Lay a hall sensor flat in each shelf's pocket, legs back along the groove (it reads the bin's magnet through the bin's floor).
    - Slide the frame in from the front on the lowest rail until its magnet clicks.

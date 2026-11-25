@@ -60,7 +60,7 @@ mp.PER_PART.update({N(k): v for k, v in {
     **{"base_" + n: STRUCTURAL for n in ("fl", "fr", "bl", "br")},
     "bin": TALL, "drawer": TALL,
     "lv1_frame": TALL_TREE, "lv2_frame": TALL_TREE,
-    "carriage1": STRUCT_TREE, "carriage2": STRUCT_TREE, "lever": SOLID,
+    "carriage1": SOLID_TREE, "carriage2": SOLID_TREE, "lever": SOLID,
     "door_b": STRUCTURAL, "door_f": STRUCTURAL, "door_coupler": SOLID_BRIM, "col_front": TALL, "liner_back": STRUCTURAL, "ir_holder": STRUCTURAL,
     "scan_carrier": TALL_TREE, "scan_bed": SMOOTH, "stop_bar": SOLID_TREE, "gate_plug": STRUCTURAL, "fd_gate1": SOLID_BRIM, "fd_gate2": SOLID_BRIM, "fd_gate3": SOLID_BRIM, "fd_weight": SOLID_TREE, "holddown_l": STRUCTURAL, "holddown_r": STRUCTURAL, "pi_mount": STRUCTURAL,
     "cam_arch": TALL_TREE, "cam_hood": SOLID, "lightbar": SOLID_BRIM,
@@ -207,7 +207,10 @@ if __name__ == "__main__":
     if "--tonight" in sys.argv:   # 2026-11-25: every upgrade part in one file
         mp.OUT = os.path.join(mp.HERE, "MTG_Sorter_Mk2_Upgrades.3mf")
         mp.PLATES = [("1 All upgrades - gates 1-2-3, stack weight, stop bar, hold-downs, plugs x6",
-                      P("fd_gate1", "fd_gate2", "fd_gate3", "stop_bar", "fd_weight", "holddown_l", "holddown_r", "gate_plug*6"))]
+                      P("fd_gate1", "fd_gate2", "fd_gate3", "stop_bar", "fd_weight", "holddown_l", "holddown_r", "gate_plug*6")),
+                     # the camera turned 90 degrees, and the heavier pushers (same lever, pin and servo)
+                     ("2 Camera arch, camera turned 90 degrees, 2 pushers with ballast slots (tree supports)",
+                      P("cam_arch", "carriage1", "carriage2"))]
         mp.main(mp.PLATES, mp.OUT)
         sys.exit(0)
     if "--fixes" in sys.argv:     # 2026-11-24: hooded stop bar, foil hold-downs, pusher gate plugs
