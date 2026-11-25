@@ -41,7 +41,8 @@ def test_feeder_can_be_turned_around(db, data):  # noqa: F811
     assert ("forward", 0.5) in m._motor.calls
     # Saving the usual push keeps the direction.
     s = client.post("/api/machine/save", json={"seconds": 0.8, "speed": 0.7}).get_json()
-    assert s["feeder_defaults"] == {"seconds": 0.8, "speed": 0.7, "reverse": True}
+    assert s["feeder_defaults"] == {"seconds": 0.8, "speed": 0.7, "reverse": True,
+                                    "backoff": config.FEED_BACKOFF_SECONDS, "push": config.FEED_PUSH_SECONDS}
     client.post("/api/machine/stop", json={})
 
 
@@ -165,6 +166,30 @@ def test_the_servers_machine_page_moves_the_pi(db, pi):  # noqa: F811
     assert server.post("/api/machine/move", json={"part": "nope", "position": "x"}).status_code == 400
 
 
+def test_the_pi_being_busy_reaches_the_servers_page_as_busy(db, pi):  # noqa: F811
+    """A run on the Pi keeps the server's Machine page buttons out with the Pi's own words."""
+    m, pi_client = pi
+    _, server = server_with(db, pi_client)
+    m.run = "sort run"
+    r = server.post("/api/machine/move", json={"part": "pins", "position": "down"})
+    assert r.status_code == 409 and "sort run" in r.get_json()["error"]
+    m.run = None
+    assert server.post("/api/machine/move", json={"part": "pins", "position": "down"}).status_code == 200
+
+
+def test_the_server_sends_its_bins_rules_when_it_starts_a_sort(db, pi, monkeypatch):  # noqa: F811
+    """The wanted list is made on the server's Bins page; the Pi sorts by it."""
+    from mtgscanner import sort_rules
+    _, pi_client = pi
+    remote, server = server_with(db, pi_client)
+    sent = []
+    monkeypatch.setattr(remote, "sort_start", lambda body: sent.append(body) or {"running": True})
+    sort_rules.save({**sort_rules.default_rules(), "wanted": {"on": True, "text": "4 Lightning Bolt"}})
+    assert server.post("/api/machine/sort", json={"max_cards": 5}).status_code == 200
+    assert sent[0]["max_cards"] == 5 and sent[0]["rules"]["wanted"]["cards"] == [{"name": "Lightning Bolt", "qty": 4}]
+    sort_rules.reset()
+
+
 def test_an_unreachable_pi_is_explained(db, data):  # noqa: F811
     remote = RemoteMachine("http://10.0.0.247:5000")
 
@@ -215,8 +240,299 @@ def test_wider_servo_travel(db, data):  # noqa: F811
     m._kit.servo = [Servo() for _ in range(16)]
     client = create_app(Scanner(db, None, source=None), m).test_client()
     client.post("/api/machine/move", json={"channel": 2, "angle": 180})
+    assert m._kit.servo[2].pulse == config.SERVO_PULSE_WIDE == (500, 2500)   # on until saved off
+    s = client.post("/api/machine/save", json={"wide_travel": False}).get_json()
+    assert s["wide_travel"] is False
+    client.post("/api/machine/move", json={"channel": 2, "angle": 180})
     assert m._kit.servo[2].pulse == config.SERVO_PULSE
     s = client.post("/api/machine/save", json={"wide_travel": True}).get_json()
     assert s["wide_travel"] is True
     client.post("/api/machine/move", json={"channel": 2, "angle": 180})
-    assert m._kit.servo[2].pulse == config.SERVO_PULSE_WIDE == (500, 2500)
+    assert m._kit.servo[2].pulse == config.SERVO_PULSE_WIDE
+
+
+# --- calibration kept, and home at startup -----------------------------------------
+
+def test_home_uses_the_saved_angles(db, data):  # noqa: F811
+    m = pi_machine()
+    client = create_app(Scanner(db, None, source=None), m).test_client()
+    client.post("/api/machine/save", json={"part": "pins", "position": "up", "angle": 117})
+    s = client.post("/api/machine/home", json={}).get_json()
+    assert m._kit.servo[0].angle == 117
+    for part, position in config.SERVO_HOME.items():
+        assert s["parts"][part]["angle"] == s["parts"][part]["positions"][position]
+
+
+def test_home_at_startup_can_be_turned_off(db, data, monkeypatch):  # noqa: F811
+    from mtgscanner.machine import home_at_startup
+    m = pi_machine()
+    client = create_app(Scanner(db, None, source=None), m).test_client()
+    assert client.get("/api/machine").get_json()["home_at_startup"] is True
+    home_at_startup(m)
+    assert m._kit.servo[0].angle == config.SERVOS["pins"][1]["up"]
+    m._kit.servo[0].angle = None
+    s = client.post("/api/machine/save", json={"home_at_startup": False}).get_json()
+    assert s["home_at_startup"] is False
+    home_at_startup(m)
+    assert m._kit.servo[0].angle is None
+
+
+def test_home_at_startup_waits_for_the_servo_board(data, monkeypatch):
+    from mtgscanner.machine import home_at_startup
+    m = pi_machine()
+    kit, m._kit = m._kit, None
+    finds = []
+    def board():
+        finds.append(1)
+        m._kit = kit if len(finds) > 1 else None
+        m.servo_error = None if m._kit else "Servo board not found"
+        return m._kit
+    monkeypatch.setattr(m, "_servos", board)
+    monkeypatch.setattr(m, "home", lambda pause=0: Machine.home(m, 0))
+    home_at_startup(m, wait=0)
+    assert kit.servo[0].angle == config.SERVOS["pins"][1]["up"]
+
+
+def test_reset_keeps_a_copy_of_the_calibration(db, data):  # noqa: F811
+    m = pi_machine()
+    client = create_app(Scanner(db, None, source=None), m).test_client()
+    client.post("/api/machine/save", json={"part": "chute", "position": "left", "angle": 71})
+    s = client.post("/api/machine/reset", json={}).get_json()
+    assert s["customized"] is False
+    assert '"left": 71' in (data / "machine_settings.json.bak").read_text()
+
+
+def test_the_servers_lights_page_drives_the_pis_light_bars(db, pi, monkeypatch):  # noqa: F811
+    from mtgscanner.remote_machine import RemoteLights
+    _, pi_client = pi
+    remote = RemoteLights("http://10.0.0.247:5000")
+    remote.http = Wire(pi_client)
+    server = create_app(Scanner(db, None, source=None), RemoteMachine("http://10.0.0.247:5000"), remote).test_client()
+    s = server.get("/api/lights").get_json()
+    assert s["remote"] == "http://10.0.0.247:5000" and "settings" in s and "effects" in s
+    # A change made on the server lands in the Pi's settings file.
+    s = server.post("/api/lights", json={"on": True, "count": 14, "color": "#ff8800"}).get_json()
+    assert s["settings"]["count"] == 14 and s["settings"]["color"] == "#ff8800"
+    assert pi_client.get("/api/lights").get_json()["settings"]["count"] == 14
+    assert server.post("/api/lights/flash", json={"event": "saved"}).status_code == 200
+    assert isinstance(server.get("/api/lights/preview").get_json()["colors"], list)
+    assert server.post("/api/lights", json={"count": "lots"}).status_code == 400   # the Pi's complaint comes through
+    # Turning SPI on asks the Pi's helper, which this test machine doesn't have.
+    r = server.post("/api/lights/spi-on", json={})
+    assert r.status_code == 503 and "helper" in r.get_json()["error"].lower()
+    assert "sorter's Pi" in next(c for c in server.get("/api/system").get_json()["checks"] if c["id"] == "lights")["summary"]
+
+
+def test_the_servers_lights_page_without_the_pi(db, data):  # noqa: F811
+    from mtgscanner.remote_machine import RemoteLights
+    remote = RemoteLights("http://10.0.0.247:5000")
+
+    class Down:
+        def get(self, *a, **k):
+            import requests
+            raise requests.ConnectionError("no route")
+        post = get
+    remote.http = Down()
+    s = remote.state()
+    assert not s["ok"] and "Can't reach the sorter's Pi" in s["error"] and "settings" in s
+    assert remote.preview() == []
+    remote.event("saved")   # never raises
+
+
+# --- the Pi's camera, watched from the server --------------------------------------
+
+def _jpeg(color):
+    import cv2
+    import numpy as np
+    img = np.full((48, 64, 3), color, np.uint8)
+    return cv2.imencode(".jpg", img)[1].tobytes()
+
+
+class StreamWire:
+    """Stands in for the network: a GET of /stream.mjpg answers with a few MJPEG frames, the
+    way app.py's stream() writes them; everything else goes to the Pi's test client."""
+
+    def __init__(self, pi_client, frames):
+        self.pi, self.frames, self.gets = pi_client, frames, []
+
+    def get(self, url, headers=None, stream=False, timeout=None):
+        self.gets.append(url)
+        if url.endswith("/stream.mjpg?full=1"):      # the server asks for the full-size picture
+            frames = self.frames
+
+            class R:
+                status_code = 200
+                def __enter__(self): return self
+                def __exit__(self, *a): pass
+                def close(self): pass
+                def iter_content(self, chunk_size=65536):
+                    body = b"".join(b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + f + b"\r\n" for f in frames)
+                    for i in range(0, len(body), 1000):   # small chunks: frames arrive in pieces
+                        yield body[i:i + 1000]
+            return R()
+        res = self.pi.get(url.split("5000", 1)[1], headers=headers, environ_base=TOWER)
+
+        class R2:
+            status_code = res.status_code
+            def json(self): return res.get_json()
+        return R2()
+
+    def post(self, url, json=None, headers=None, timeout=None):
+        res = self.pi.post(url.split("5000", 1)[1], json=json, headers=headers, environ_base=TOWER)
+
+        class R:
+            status_code = res.status_code
+            def json(self): return res.get_json()
+        return R()
+
+
+def test_the_server_watches_the_pis_camera(db, pi, data, monkeypatch):  # noqa: F811
+    import time
+    from mtgscanner.remote_machine import RemoteCameraSource
+    _, pi_client = pi
+    monkeypatch.setenv("MTG_MACHINE_URL", "http://10.0.0.247:5000")
+    wire = StreamWire(pi_client, [_jpeg((0, 0, 255)), _jpeg((0, 255, 0))])
+    source = RemoteCameraSource("http://10.0.0.247:5000", http=wire)
+    source.RETRY = 0.05
+    frames = [f for f in (source.read(timeout=1.0) for _ in range(3)) if f is not None]
+    # read() hands out the newest picture, so on a busy machine the stream may already be past the
+    # red one when the test first looks: either of the two frames sent is right.
+    assert frames and frames[0].shape == (48, 64, 3) and max(frames[0][0, 0][1:]) > 250   # red or green
+    info = source.info()
+    assert info["index"] == "pi" and info["remote"] == "http://10.0.0.247:5000" and info["size"] == [64, 48]
+    # Focus goes to the Pi's own camera (the test Pi has a webcam stand-in, which can't focus).
+    assert source.set_focus(12) is False
+    source.release()
+    assert source.read(timeout=0.2) is None
+
+    # On the server's Scan page the Pi's camera is in the menu, and picking it switches the scanner.
+    class PiCam(RemoteCameraSource):   # the same source, with the fake network
+        def __init__(self, url, key=None, name=None, http=None):
+            super().__init__(url, key, name, http=StreamWire(pi_client, [_jpeg((9, 9, 9))]))
+    monkeypatch.setattr("app.RemoteCameraSource", PiCam)
+    monkeypatch.setattr("app.SETTINGS_FILE", data / "app_settings.json")
+    server = create_app(Scanner(db, None, source=None), RemoteMachine("http://10.0.0.247:5000")).test_client()
+    cams = server.get("/api/cameras").get_json()
+    assert cams[-1]["index"] == "pi" and cams[-1]["name"] == "Sorter's Pi camera"
+    s = server.post("/api/camera", json={"index": "pi", "name": "Sorter's Pi camera"}).get_json()
+    assert s["camera"]["index"] == "pi" and s["camera"]["pi"] is True
+    assert server.post("/api/camera", json={"index": "pi"}).get_json()["camera"]["index"] == "pi"   # already on it
+    assert "pi" == __import__("json").loads((data / "app_settings.json").read_text())["camera"]["index"]
+    time.sleep(0.1)
+
+
+def test_without_a_pi_the_menu_has_no_pi_camera(db, data, monkeypatch):  # noqa: F811
+    monkeypatch.delenv("MTG_MACHINE_URL", raising=False)
+    client = create_app(Scanner(db, None, source=None), pi_machine()).test_client()
+    assert all(c["index"] != "pi" for c in client.get("/api/cameras").get_json())
+    assert client.post("/api/camera", json={"index": "pi"}).status_code == 400
+
+
+def test_a_locked_pi_lets_the_server_see_its_camera_and_lights(db, pi, data):  # noqa: F811
+    from mtgscanner.remote_machine import key_file
+    _, pi_client = pi
+    key_file().write_text("secret-key\n")
+    pi_client.post("/api/lock/set", json={"pin": "1234"})   # PIN on: everything needs the PIN or the key
+    pi_client.delete_cookie("mtg_unlocked")                   # ...and this client hasn't typed it
+    assert pi_client.get("/api/lights", environ_base=TOWER).status_code == 401
+    assert pi_client.get("/api/lights", headers={"X-Machine-Key": "secret-key"}, environ_base=TOWER).status_code == 200
+    from mtgscanner.remote_machine import server_allowed
+    with pi_client.application.test_request_context("/stream.mjpg", headers={"X-Machine-Key": "secret-key"}, environ_base=TOWER):
+        assert server_allowed()                                # the live stream the server's camera watches
+    assert pi_client.get("/api/collection", headers={"X-Machine-Key": "secret-key"}, environ_base=TOWER).status_code == 401
+
+
+# --- every RemoteMachine call reaches the Pi's route with the body it expects --------------
+
+class RecordingServo:
+    """A servo that remembers every angle it was sent, so a quick move and back still shows."""
+    def __init__(self):
+        self.sent = []
+
+    @property
+    def angle(self):
+        return self.sent[-1] if self.sent else None
+
+    @angle.setter
+    def angle(self, value):
+        self.sent.append(value)
+
+
+def _drop(remote, m):
+    pins = config.SERVOS["pins"][0]
+    m._kit.servo[pins] = RecordingServo()
+    remote.drop(1, 0.01, 0.01, 0.01)
+    assert config.SERVOS["pins"][1]["down"] in m._kit.servo[pins].sent
+
+
+def _save_sort(remote, m):
+    remote.save_sort(pins_seconds=0.3)
+    assert m.sort_defaults()["pins_seconds"] == 0.3
+    assert remote.sort_defaults()["pins_seconds"] == 0.3
+
+
+def _save_feeder(remote, m):
+    remote.save_feeder(0.8, 0.6, backoff=0.2, push=0.1)
+    d = m.state()["feeder_defaults"]
+    assert (d["seconds"], d["speed"], d["backoff"], d["push"]) == (0.8, 0.6, 0.2, 0.1)
+    assert remote.feeder_defaults() == d
+
+
+def _switches(remote, m):
+    remote.set_feeder_reverse(True)
+    remote.set_wide_travel(not config.SERVO_WIDE_TRAVEL)
+    remote.set_home_at_startup(False)
+    s = m.state()
+    assert s["feeder_defaults"]["reverse"] is True and s["wide_travel"] is (not config.SERVO_WIDE_TRAVEL)
+    assert s["home_at_startup"] is False
+
+
+def _feed_zone(remote, m):
+    remote.save_feed_zone([0.1, 0.2, 0.6, 0.7])
+    assert remote.feed_zone() == [0.1, 0.2, 0.6, 0.7]
+
+
+def _reset(remote, m):
+    remote.save_position("pins", "down", 61)
+    assert m.servos()["pins"][1]["down"] == 61
+    remote.reset_saved()
+    assert m.servos()["pins"][1]["down"] == config.SERVOS["pins"][1]["down"]
+
+
+def _self_test(remote, m):
+    report = remote.self_test()
+    assert report and all(t["ok"] for t in report), report
+
+
+def _statuses(remote, m):
+    assert remote.tune_status().get("running") is False
+    assert remote.sort_status().get("running") is False
+
+
+def _sort_decide(remote, m):
+    try:
+        answer = remote.sort_decide("stop")
+    except ValueError as e:       # nothing is waiting for a decision: the Pi says so in words
+        answer = {"error": str(e)}
+    assert isinstance(answer, dict) and answer
+    with pytest.raises(ValueError):   # a word the Pi doesn't know comes back as the Pi's own error
+        remote.sort_decide("skip")
+
+
+def _relax_and_angle(remote, m):
+    remote.set_angle(1, 77)
+    assert m._kit.servo[1].angle == 77
+    remote.relax_all()
+    remote.home()
+    assert remote.servos()["pins"] == m.servos()["pins"]
+
+
+@pytest.mark.parametrize("case", [_drop, _save_sort, _save_feeder, _switches, _feed_zone, _reset, _self_test,
+                                  _statuses, _sort_decide, _relax_and_angle], ids=lambda f: f.__name__.strip("_"))
+def test_each_remote_machine_call_works_on_the_pi(db, pi, monkeypatch, case):  # noqa: F811
+    """feed_one and sort_one are left out: they wait for the Pi's camera to see a card."""
+    m, pi_client = pi
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    remote = RemoteMachine("http://10.0.0.247:5000", key="")
+    remote.http = Wire(pi_client)
+    case(remote, m)

@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#fff}</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script></head>
+<body><script type="module">
+import * as THREE from 'three';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+const sc = await (await fetch('w/scene.json?' + Math.random())).json();
+const W = sc.w || 1600, H = sc.h || 1200;
+const r = new THREE.WebGLRenderer({antialias: true, preserveDrawingBuffer: true});
+r.setSize(W, H); r.setClearColor(0xffffff); document.body.appendChild(r.domElement);
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 1.6));
+const d1 = new THREE.DirectionalLight(0xffffff, 1.4); d1.position.set(...(sc.light || [0.5, -1, 1.4])); scene.add(d1);
+const d2 = new THREE.DirectionalLight(0xffffff, 0.5); d2.position.set(-1, 0.6, 0.3); scene.add(d2);
+const loader = new STLLoader();
+for (const m of sc.meshes) {
+  const g = loader.parse(await (await fetch(m.file)).arrayBuffer());
+  g.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({color: m.color, roughness: 0.75, metalness: 0.0, flatShading: true,
+    transparent: (m.opacity ?? 1) < 1, opacity: m.opacity ?? 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1});
+  if (m.pos) g.translate(...m.pos);
+  const mesh = new THREE.Mesh(g, mat); scene.add(mesh);
+  if (m.edges !== false) {
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({color: m.edge || 0x1a1a1a, transparent: true, opacity: m.edgeOpacity ?? 0.45}));
+    scene.add(e);
+  }
+}
+for (const a of (sc.arrows || [])) {
+  const f = new THREE.Vector3(...a[0]), t = new THREE.Vector3(...a[1]); const d = t.clone().sub(f); const L = d.length();
+  scene.add(new THREE.ArrowHelper(d.normalize(), f, L, a[2] || 0xd62828, Math.min(14, L * 0.35), Math.min(8, L * 0.2)));
+}
+const cam = new THREE.PerspectiveCamera(sc.fov || 30, W / H, 1, 10000);
+cam.up.set(0, 0, 1); cam.position.set(...sc.eye); cam.lookAt(...sc.ctr);
+r.render(scene, cam); window.DONE = true;
+</script></body></html>

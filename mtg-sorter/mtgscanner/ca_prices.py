@@ -20,7 +20,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import requests
 
@@ -51,29 +51,79 @@ def norm(s: str) -> str:
     return re.sub(r"\s+", " ", str(s).lower().replace("’", "'")).strip()
 
 
-class Shop:
-    """Talks to the stores' Shopify JSON, politely (a short pause before every request)."""
+def _retry_after(e) -> float | None:
+    """How long a store asked us to wait (HTTP 429 and its Retry-After), at most 30 s."""
+    try:
+        return max(0.0, min(30.0, float(e.response.headers.get("Retry-After") or 5)))
+    except (AttributeError, TypeError, ValueError):
+        return 5.0
 
-    def __init__(self, get=None, pause: float = 0.25):
+
+class Shop:
+    """Talks to the stores' Shopify JSON, politely (a short pause before every request).
+
+    Only network trouble, a busy store (429) and store errors (5xx) are tried again; a store
+    that says "no such page" (404 and the like) is not. A store that fails `limit` requests
+    in a row is left alone for `cooldown` seconds, so a store that's down doesn't hold up
+    the whole check."""
+
+    def __init__(self, get=None, pause: float = 0.25, tries: int = 3, timeout: float = 25,
+                 limit: int = 5, cooldown: float = 300):
         self.session = requests.Session()
         self._get = get or self._http
-        self.pause = pause
+        self.pause, self.tries, self.timeout = pause, max(1, tries), timeout
+        self.limit, self.cooldown = limit, cooldown
+        self.sleep = time.sleep
+        self.answered = 0             # requests a store answered (the price check counts them)
+        self._lock = threading.Lock()
+        self._fails: dict[str, int] = {}     # host -> failed requests in a row
+        self._down: dict[str, float] = {}    # host -> time it's tried again
 
     def _http(self, url: str):
-        r = self.session.get(url, headers=HEADERS, timeout=25)
+        r = self.session.get(url, headers=HEADERS, timeout=self.timeout)
         r.raise_for_status()
         return r.json()
 
     def get(self, url: str):
-        for attempt in range(3):
+        host = urlsplit(url).netloc
+        with self._lock:
+            if self._down.get(host, 0) > time.time():
+                return None
+        for attempt in range(self.tries):
             if self.pause:
-                time.sleep(self.pause)
+                self.sleep(self.pause)
             try:
-                return self._get(url)
-            except Exception:
-                if self.pause:
-                    time.sleep(1.5 + 2 * attempt)
+                got = self._get(url)
+            except requests.HTTPError as e:
+                code = getattr(e.response, "status_code", 0) or 0
+                if code == 429:
+                    if attempt + 1 < self.tries:
+                        self.sleep(_retry_after(e))
+                    continue
+                if 0 < code < 500:      # the store answered: it just has no such page
+                    self._ok(host, answered=False)
+                    return None
+            except OSError:             # can't connect, timed out, connection dropped
+                pass
+            except Exception:           # an answer that isn't JSON (a bot check, a broken page)
+                break
+            else:
+                self._ok(host)
+                return got
+            if self.pause and attempt + 1 < self.tries:
+                self.sleep(1.5 + 2 * attempt)
+        with self._lock:
+            self._fails[host] = n = self._fails.get(host, 0) + 1
+            if n >= self.limit:
+                self._down[host] = time.time() + self.cooldown
         return None
+
+    def _ok(self, host: str, answered: bool = True):
+        with self._lock:
+            self._fails.pop(host, None)
+            self._down.pop(host, None)
+            if answered:
+                self.answered += 1
 
     def search(self, host: str, q: str) -> list[dict] | None:
         d = self.get(host + "/search/suggest.json?" + urlencode(
@@ -84,8 +134,15 @@ class Shop:
 
     def variants(self, host: str, handle: str) -> list[tuple[str, float, bool]]:
         d = self.get(f"{host}/products/{handle}.js")
-        return [(v.get("title", ""), v["price"] / 100, bool(v.get("available")))
-                for v in (d or {}).get("variants", []) if v.get("price")]
+        out = []
+        for v in (d.get("variants") or [] if isinstance(d, dict) else []):
+            try:
+                price = float(v.get("price")) / 100
+            except (AttributeError, TypeError, ValueError):
+                continue   # a variant without a usable price
+            if price:
+                out.append((str(v.get("title", "")), price, bool(v.get("available"))))
+        return out
 
 
 def _base(store: str, title: str) -> str:
@@ -130,7 +187,8 @@ def store_price(shop: Shop, store: str, name: str) -> list | None:
             low = float(p.get("price_min") or p.get("price"))
         except (TypeError, ValueError):
             continue
-        cands.append((low, p["handle"], _title_foil(store, title)))
+        if p.get("handle"):
+            cands.append((low, p["handle"], _title_foil(store, title)))
     if not cands:
         return None
     cands.sort()
@@ -179,7 +237,7 @@ def printing_price(shop: Shop, key: str) -> list | None:
         nums = re.findall(r"\[(\d+[a-z★]*)\]", t)
         if not nums or nums[0].lstrip("0") != cn or _title_foil("f2f", t) != foil:
             continue
-        if r := nm_variant(host, p["handle"]):
+        if p.get("handle") and (r := nm_variant(host, p["handle"])):
             got.append((r[0], r[1], "Face to Face Games"))
     host = STORES["hob"][1]
     for p in shop.search(host, f"{front} {set_code}-{number}") or []:
@@ -188,7 +246,7 @@ def printing_price(shop: Shop, key: str) -> list | None:
             continue
         if f"({set_code.upper()}-{cn})" not in t.replace(f"-{number}", f"-{cn}") or _title_foil("hob", t) != foil:
             continue
-        if r := nm_variant(host, p["handle"]):
+        if p.get("handle") and (r := nm_variant(host, p["handle"])):
             got.append((r[0], r[1], "Hobbiesville"))
     if not got:
         return None
@@ -242,12 +300,18 @@ def save(data: dict, path: Path | None = None):
 
 def check(names: list[str], keys: list[str], shop: Shop | None = None, progress=None, workers: int = 4) -> dict:
     """Price every name and printing, and save the result over the old prices (cards the
-    stores didn't answer for keep last week's price). Returns the new price data."""
+    stores didn't answer for keep last week's price). Returns the new price data, plus
+    "failed": how many cards hit an error (those keep last week's price too).
+
+    When no store answered at all (the internet or the stores were down) nothing is saved,
+    so last week's prices and trends stay, and the check is tried again later."""
     shop = shop or Shop()
+    shop.answered = 0
     old = load()
-    prices, printings = dict(old.get("prices") or {}), dict(old.get("printings") or {})
-    prev = {n: p for n, s in prices.items() if (p := main_price(s)) is not None}
-    done = [0]
+    old_prices = old.get("prices") if isinstance(old.get("prices"), dict) else {}
+    old_prev = old.get("prev") if isinstance(old.get("prev"), dict) else {}
+    prices, printings = dict(old_prices), dict(old.get("printings") or {})
+    done, failed, errors = [0], [0], []
     total = len(names) + len(keys)
     lock = threading.Lock()
 
@@ -257,26 +321,52 @@ def check(names: list[str], keys: list[str], shop: Shop | None = None, progress=
             if progress:
                 progress(done[0], total, what)
 
-    def one(name):
-        found = card_prices(shop, name)
-        tick(name)
-        return name, found
+    def fail(e):
+        with lock:
+            failed[0] += 1
+            errors.append(e)
 
+    def one(name):
+        try:
+            return name, card_prices(shop, name)
+        except Exception as e:   # one odd product never stops the whole check
+            fail(e)
+            return name, {}
+        finally:
+            tick(name)
+
+    def exact(key):
+        try:
+            return key, printing_price(shop, key)
+        except Exception as e:
+            fail(e)
+            return key, None
+        finally:
+            tick(key)
+
+    updated = set()
     with ThreadPoolExecutor(workers) as pool:
         for name, found in pool.map(one, names):
             if found:
                 prices[name] = found
-        def exact(key):
-            found = printing_price(shop, key)
-            tick(key)
-            return key, found
-
+                updated.add(name)
         for key, found in pool.map(exact, keys):
             if found:
                 printings[key] = found
+    if total and failed[0] == total:
+        raise RuntimeError(f"every card hit an error ({errors[0]!r})")
+    if total and not shop.answered:
+        raise RuntimeError(f"No store answered, so the prices from {old.get('date') or 'before'} are kept")
+    # Last week's price, for the trends. A card no store answered for this time keeps its
+    # old price, so it also keeps the trend it had.
+    prev = {}
+    for n, stores in old_prices.items():
+        p = main_price(stores) if n in updated else old_prev.get(n, main_price(stores))
+        if p is not None:
+            prev[n] = p
     today = date.today()
     data = {"date": f"{today:%b} {today.day}, {today.year}",
             "checked": time.strftime("%Y-%m-%dT%H:%M:%S"), "condition": "Near Mint",
             "stores": [s[0] for s in STORES.values()], "prices": prices, "printings": printings, "prev": prev}
     save(data)
-    return data
+    return data | {"failed": failed[0]}

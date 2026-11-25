@@ -6,7 +6,7 @@
 #viewSpares > .panel { padding: var(--pad); }
 .sets-tools .search { flex: 1 1 260px; }
 
-.set-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.set-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; }
 .set-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; text-align: left; cursor: pointer; color: inherit; font: inherit;
   transition: border-color var(--speed), transform var(--speed) var(--ease); }
 .set-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }

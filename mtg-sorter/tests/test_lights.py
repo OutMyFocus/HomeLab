@@ -157,3 +157,60 @@ def test_card_light_settings_are_checked(client):
     assert client.post("/api/lights", json={"card": 5}).status_code == 400
     assert client.post("/api/lights", json={"count": 100, "card": {"count": 100}}).status_code == 400
     assert Lights().settings["card"]["count"] == 6                       # saved
+
+
+def test_lights_stand_still_while_held(spi):
+    """A feed watching the camera holds the lights: the effect freezes and flashes wait."""
+    import time
+    lights = Lights(opener=lambda: spi)
+    lights.update({"effect": "rainbow", "on": True})
+    t = time.monotonic()
+    a, moving = lights.render(t)
+    assert moving
+    lights.hold()
+    b, moving = lights.render(t + 1.0)
+    c, moving2 = lights.render(t + 2.0)
+    assert not moving and not moving2 and np.array_equal(b, c)
+    lights.flash("unknown", force=True)
+    assert lights._flash is None                 # no flash while held
+    lights.release()
+    _, moving = lights.render(t + 3.0)
+    assert moving
+    lights.flash("unknown", force=True)
+    assert lights._flash is not None
+
+
+def test_dim_turns_the_card_light_down_too_and_saves_nothing(lights):
+    """The sort run's second look at a foil: the card light over the bed is what glares, so
+    it dims as well as the status lights, and nothing goes into lights.json (a restart
+    during the look used to leave the bars at 8 %)."""
+    from mtgscanner.sort_run import SortRun
+    lights.update({"color": "#ffffff", "brightness": 30, "count": 2,
+                   "card": {"count": 2, "color": "#ffffff", "brightness": 60, "on": True}})
+    saved = L.settings_file().read_text()
+    before, _ = lights.render(0)
+    assert before[2].tolist() == [153, 153, 153]                    # card light at 60 %
+    run = SortRun(None, type("Scanner", (), {"lights": lights})(), None)
+    back = run._dim_lights()
+    frame, _ = lights.render(0)
+    assert frame[0].tolist() == [20, 20, 20] and frame[2].tolist() == [20, 20, 20]   # both at 8 %
+    assert lights.state()["dimmed"] == 8
+    assert lights.settings["brightness"] == 30 and lights.settings["card"]["brightness"] == 60
+    assert L.settings_file().read_text() == saved and Lights().settings["brightness"] == 30
+    run._restore_lights(back)
+    assert np.array_equal(lights.render(0)[0], before) and lights.state()["dimmed"] is None
+    lights.dim(50)                       # never brighter than the saved level
+    assert lights.render(0)[0][0].tolist() == [76, 76, 76]
+
+
+def test_unchanged_colors_are_sent_again(spi, monkeypatch):
+    """A strip that got power after the last send lit only when the colors changed (Mk2,
+    2026-11-24): the same frame now goes out again every LIGHTS_REFRESH_SECONDS."""
+    import time
+    monkeypatch.setattr(config, "LIGHTS_REFRESH_SECONDS", 0.05)
+    lights = Lights(opener=lambda: spi)
+    lights.update({"effect": "solid", "on": True, "count": 3, "color": "#ffffff", "brightness": 20})
+    lights.start()
+    time.sleep(1.3)
+    sent = [w for w in spi.writes]
+    assert len(sent) >= 2 and sent[-1] == sent[0]       # the same frame, more than once

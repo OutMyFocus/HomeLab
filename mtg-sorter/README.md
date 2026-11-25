@@ -1,6 +1,6 @@
-# MTG Card Scanner & Sorter
+# SortR: MTG Card Scanner & Sorter
 
-A machine that looks at your Magic: The Gathering cards, works out which card each one is,
+SortR (the app's name) is a machine that looks at your Magic: The Gathering cards, works out which card each one is,
 records it in your collection, and drops it into a bin by price.
 
 It has three parts, built in this order:
@@ -8,10 +8,17 @@ It has three parts, built in this order:
 | Phase | What | Status |
 |---|---|---|
 | 1. Scanner software | Webcam recognizes cards, saves a collection CSV | **Done (this folder)** |
-| 2. Raspberry Pi + camera rig | Same software on a Pi, 3D-printed camera stand + light | Stand designed ([`hardware/`](hardware/)) |
-| 3. Feeder & sorter | Motors pull one card at a time and push it into the right bin | After that |
+| 2. Raspberry Pi + camera rig | Same software on a Pi 5 with Camera Module 3 and light bars | **Done** (the Pi can run the same Docker image as the server: [`deploy/PI_DOCKER.md`](deploy/PI_DOCKER.md)) |
+| 3. Feeder & sorter, Mk1 | Feeder, scan bed, tilting tray and trapdoors in the enclosure | Built and tested; out of service since its tilting bed broke on 2026-11-09 |
+| 4. Sorter Mk2 | Screwless rebuild: slide-in modules, 4 bins, 450-card magazine, one plug | Printed and being put together: [`hardware/mk2/MK2.md`](hardware/mk2/MK2.md). The app still drives Mk1 until Mk2 is built and its software changes are in |
 
-**Looking after it:** Maintenance, under the gear in the menu at the top of every page (under
+**How it was built:** the week-by-week development log is in [DEVLOG.md](DEVLOG.md).
+
+**On your phone:** open the app's address in Safari or Chrome and pick *Add to Home Screen*
+(Safari: the Share button). It gets its own icon and opens full screen like an app, with the
+page menu along the bottom.
+
+**Looking after it:** Maintenance, at the bottom of the sidebar on every page (under
 More on a phone), has the health check-up, updates, restart, backups and logs. It gets a yellow or red dot
 when something needs a look. What to do when something goes wrong:
 [MAINTENANCE.md](MAINTENANCE.md).
@@ -29,6 +36,12 @@ when something needs a look. What to do when something goes wrong:
 4. **Look it up.** `build_db.py` already downloaded every card image from
    [Scryfall](https://scryfall.com) and fingerprinted it. The scanner finds the closest
    fingerprint. That gives the card name, set, collector number and price.
+5. **Tell the printings apart.** A card and its reprint with the same art and frame look
+   alike to the fingerprint. For those, the scan is laid over Scryfall's pictures of each
+   printing and compared only where they differ (the set symbol, the small print at the
+   bottom). The pictures are fetched the first time such a card is seen and kept in
+   `data/stock/` (a cache: safe to delete). With `--offline`, or on the sorter's scan bed
+   ("Whole cards only"), the fingerprint's choice stands.
 
 ## Setup (once)
 
@@ -46,7 +59,7 @@ pip install -r requirements.txt
 The scanner can only recognize cards that are in its database, so get every card. The
 easiest way is the **Download every card** button on the Maintenance page (it runs in the
 background, scanning keeps working, and new cards are recognized as they arrive). From a
-terminal it's:
+terminal it's this, but then the app needs a restart to see the new cards (see below):
 
 ```bash
 python build_db.py --all       # every card: an 80 MB list, then 108,000 small pictures, 30-60 minutes
@@ -58,6 +71,9 @@ To try it out quickly, fetch a few sets, or just the sets of the cards in your c
 python build_db.py --sets dmu,one
 python build_db.py --mine
 ```
+
+When one of these finishes, restart the app (Maintenance → **Restart app**, or `mtg restart`
+on the Pi) so the scanner picks up the new cards. The button does that by itself as it goes.
 
 Set codes are the 3-letter codes on Scryfall (for example `mkm`, `blb`, `fdn`, `cmm`). You
 can stop any of these and run it again to resume. Run it again later to add new sets and
@@ -92,18 +108,41 @@ Then open **http://localhost:5000** in your browser. You get:
 - **Wrong card?** (W): pick the right card by name. It's saved instead, and remembered for training.
 - **Other printing?** (P): right card, wrong set. Lists every printing of it (Scryfall's full
   list when online) so you can pick the one you really have.
-- **Home** (`/`, the logo on every page): the whole machine at a glance. Whether the camera,
-  servo board, feeder and Pi are OK, the collection's value and a value chart, cards scanned in
-  the last 14 days, the newest cards, the most valuable ones, the biggest price changes and how
-  full each bin is. The scanner itself is at `/scan`.
-- **Page menu**: the same on every page, and short: **Home**, **Scanner**, then **Cards**
-  (Collection, Sets, Wishlist, Card lookup, Scan history), **Decks** (Decks, Play), **Machine**
-  (Machine, Bins, Lights) and the gear (Settings, Maintenance), each a small drop-down. Press M
-  on the scanner to see every page at once. On a phone it's a bar along the bottom: Home,
-  Scanner, Cards, Decks and More. With no camera connected, the scanner says so and offers **Scan photos instead**.
+- **Home** (`/`, the logo on every page): the whole machine at a glance. The collection's value
+  with its best cards fanned out, whether the camera, servo board, feeder and Pi are OK, a value
+  chart (7 days, 30 days or all; hover or drag a finger along it for any day), your colors as a
+  donut (by value or by cards; tap one to filter the Collection), cards scanned in the last 14
+  days, **Insights** (what stands out: how much the value moved, this week against last week,
+  how much of the value sits in bin 3, cards whose price jumped, wishlist cards you already
+  own), the newest cards, the most valuable ones, the biggest price changes and each bin's cards
+  and value. The scanner itself is at `/scan`.
+- **Page menu**: on a computer, a sidebar with every page in its group: **Home**, **Scanner**,
+  then **Cards** (Collection, Sets, Wishlist, News, Card lookup, Scan history), **Decks** (Decks,
+  Play), **Machine** (Machine, Bins, Lights) and **Settings** (Settings, Maintenance). Its
+  bottom shows SortR's health (green, or what needs a look) and the light/dark switch; the
+  button next to them shrinks it to icons (it does that by itself on a tablet). On a phone it's a
+  bar along the bottom: Home, Scanner, Cards, Decks and More. The bar at the top names the page.
+- **Search everything** (Ctrl K, ⌘ K on a Mac, the search box at the top, or M on the scanner):
+  one box for the cards you own (with their picture and price), every page, and actions like
+  Start scanning, Add a card, Export, New deck or Switch light or dark. Anything else you type
+  can be looked up in Card lookup. With no camera connected, the scanner says so and offers **Scan photos instead**.
+- **Light or dark**: the moon/sun button at the top switches between matching your device,
+  dark and light. The scanner's **Customize** (C) still has the rest: accent color, black
+  (OLED) theme, bin colors, font, text size and corners. If SortR can't be reached (it's
+  restarting, or the Wi-Fi dropped), a red bar says so at the top until it's back.
 - **Collection** (in the menu, or **Whole collection**): everything you've ever saved.
   Search and filter by color, rarity, set, bin, foil and price, sort it, and switch between
-  pictures and a list. Tap a card to change how many you have, mark it foil, pick a different
+  pictures, a list and a **binder** (9-pocket pages, two side by side on a computer: turn them
+  with the arrows, the arrow keys or a swipe). On a phone the filters fold behind **Filters**;
+  each filter shows as a chip you can take off, and the page's address keeps them, so Back or a
+  bookmark comes back to the same cards. **Select** (S) ticks several cards to put in the trade
+  binder, export or delete together. In a card's details, the arrows (or ← →, or a swipe on
+  the picture) go to the next card. Each card also keeps its **condition** (NM to damaged),
+  **language**, what you **paid** for each copy (the page then shows what they gained, card by card
+  and in total) and **tags** of your own (Binder 2, Cube, To sell...), all in `collection.csv`, with
+  filters, sorts and a breakdown for them. With **Select**, **Tag, condition…** changes all the
+  picked cards at once. ManaBox imports bring their condition, language and purchase price, and the
+  Moxfield, Archidekt, Deckbox and ManaBox exports send them back out. Tap a card to change how many you have, mark it foil, pick a different
   printing or delete it. **Add a card** adds one you didn't scan. It shows the total value,
   how much it changed since you scanned the cards, a value-over-time chart, a breakdown by
   color, rarity, bin and set, and your 10 most valuable cards. **Refresh prices** gets today's
@@ -119,6 +158,13 @@ Then open **http://localhost:5000** in your browser. You get:
   **Spare copies** lists what you have beyond a playset (or however many you keep), cheapest
   printings first, with their value and a list to copy for a trade or a shop. Basic lands are
   left out unless you ask.
+- **News**: Magic news in one place. Articles from the official site (magic.wizards.com) and
+  community sites (MTGGoldfish, EDHREC, Hipsters of the Coast; MTG Arena Zone and r/magicTCG can
+  be turned on under **Sources**), sets coming out soon or just out (from Scryfall), the newest
+  previewed cards, and a red banner when Wizards posts a ban list announcement. Filter by
+  Official, Bans, Previews or Arena, or search. The news is fetched every 30 minutes and saved in
+  `data/news_cache.json`, so it still shows when the internet is down; `--offline` turns
+  fetching off.
 - **Decks**: paste a decklist from Moxfield, Archidekt, MTG Arena, MTGO or
   any website. It shows how much of the deck you already own (any printing counts), which cards
   are missing, what they'd cost at today's prices, and which bin your copies are in. **Copy the
@@ -158,9 +204,18 @@ Then open **http://localhost:5000** in your browser. You get:
   **Prices and card data** shows when the weekly Canadian price check and card database update
   last ran, with buttons to run them now. **Bring in Commander Vault** imports everything from
   a Commander Vault export file (see below).
-- **Bins**: choose what goes into each of the sorter's 4 bins, by price, color,
-  rarity, set and foil, without editing any code. Pick a ready-made setup (by price, by rarity,
-  by color, keep the good stuff, pull valuable then by color) or write your own rules. The
+- **Bins**: choose what goes into each of the Mk2's four bins with a rule builder, without
+  editing any code. A rule is any mix of conditions (all or any of them, each one can be
+  turned around with NOT): price, no price, foil, extra copies beyond the first N, card type
+  (lands, tokens, creatures...), words in the type line, color, color identity, number of
+  colors, mana value, rarity, set, name, rules text, format legality, the cards in your decks
+  or that fit a deck's colors, your wishlist, EDHREC rank and Game Changers. Rules are checked
+  from the top; the catch-all bin gets the rest and the cards it can't read. Type, mana value,
+  text and formats come from the card list (Settings, Update now). Bin 0 (the original price
+  bins' "Unknown price") has no tray and drops into another bin; the page says which. Pick a
+  ready-made setup (by price, lands in their own bin, tokens out, lands and tokens out, cards
+  for my decks, fits my decks' colors, keep 4 and extras out, by rarity, by color...) or
+  write your own rules. The
   counts show how your collection would be split before you save. Saved in
   `data/sort_rules.json`; **Back to the original price bins** undoes it.
 - **Train** tab: teach the scanner from your own scans (see below).
@@ -240,7 +295,7 @@ permission, and every card, deck, wishlist and trade already in the app stays yo
 (nothing is moved; a backup is saved in `data/backups/` first). From then on everyone
 logs in, and the login replaces the PIN lock.
 
-Add people under **People and permissions**. Each person gets their own collection,
+Add people under **People and permissions**, or make an **invite link** there (for one person, or up to 5 or 20; it runs out after 1, 7 or 30 days) and text it to them: they pick their own username and password and join as a member or viewer. Only a hash of each link is kept, so copy it when it's shown. Each person gets their own collection,
 decks, wishlist, alerts, trade binder, games and value history (in `data/users/<username>/`),
 and scans from their phone land in their own collection. Pick a role or tick permissions:
 
@@ -254,7 +309,10 @@ and scans from their phone land in their own collection. Pick a role or tick per
 Member = Scan + Edit, Viewer = look only. The card database, prices, bins and the machine
 are shared. Requests from the Pi or server itself always count as the owner. Locked out?
 Delete `data/users.json` and the login is gone (everyone's cards stay; turn accounts on
-again to get them back).
+again to get them back). `data/users.json.bak` next to it is a copy from the last save,
+which the app uses by itself if `users.json` gets damaged. If neither can be read, the pages
+say "users.json is damaged, so nobody can log in" and only the Pi or server itself gets in:
+put back `users.json` from a backup, or delete it to turn accounts off.
 
 ## Commander Vault is part of the app now
 
@@ -318,8 +376,9 @@ pytest
 
 ## Known limits (for now)
 
-- **Same art, different set.** Reprints that reuse the exact same art and frame can look
-  identical to the camera. The scanner picks one of them, so double-check the set on cards that matter.
+- **Same art, different set.** Reprints that reuse the exact same art and frame differ only
+  in small details. The scanner compares those (step 5 above) and gets most of them right,
+  not all: double-check the set on cards that matter.
 - **Foil glare** can hide the card. Tilt your light or use a diffuser.
 - **Low-contrast art** (hazy, pale artwork) under warm lighting can fail to match.
   The camera rig's white LED and fixed card position fix most of this.
@@ -327,19 +386,23 @@ pytest
 
 ---
 
-## Hardware roadmap
+## Hardware
 
-### Shopping list (about $150–200 CAD to start)
+The parts list is [SHOPPING.md](SHOPPING.md): a Raspberry Pi 5 with Camera Module 3, four
+MG90S servos on a PCA9685 servo board (with its own 5 V supply, apart from the Pi's), and the
+feeder motor and its driver. The Mk2 build is in [`hardware/mk2/MK2.md`](hardware/mk2/MK2.md).
 
-| Part | Why | Approx. |
-|---|---|---|
-| Raspberry Pi 5 (4 GB) + power supply + 32 GB microSD | The brain. Runs this exact code | $110 |
-| Raspberry Pi Camera Module 3 + Pi 5 camera cable (300 mm) | Sharp, autofocus. The Pi 5 needs its own cable | $40 |
-| Small LED strip or ring light (5 V) | Even lighting is the #1 factor in accuracy | $10 |
-| 2× SG90 / MG90S servos | Bin selector + card pusher | $10 |
-| 1× N20 gear motor + rubber wheel, or a 28BYJ-48 stepper + ULN2003 board | Feeder that pulls one card off the stack | $8 |
-| Jumper wires, small breadboard | Connections | $10 |
-| PLA filament | Printed frame, hopper, bins | (you have a printer) |
+Sorting already works: **Machine → Start sorting** feeds each card, scans it, and drops it
+into its bin ([`mtgscanner/machine.py`](mtgscanner/machine.py) moves the parts,
+[`mtgscanner/sort_run.py`](mtgscanner/sort_run.py) runs the sort).
+
+**Machine → Machine health** (`/machine/health`) shows everything the sorter reports in one
+place, live: the Pi's temperature, power and throttling, the camera, where each servo is and
+when it last moved (with saved angles outside 10-170° flagged), every feeder pulse and what each
+fed card did, the bin-full and bin-in sensors, the lights and power relay, recent scans and
+misreads, and the jams and errors since the app started. The same data is JSON at
+`/api/machine/health` (`?download=1` saves it as a file). On the server it comes from the Pi
+through `MTG_MACHINE_URL` ([`mtgscanner/health.py`](mtgscanner/health.py)).
 
 ### Phase 2: camera rig
 
@@ -347,21 +410,6 @@ pytest
   card pocket, with LED light from the sides. The card always lands in the same spot, which makes
   recognition very reliable.
 - Install Raspberry Pi OS, copy this folder over, and run `scan.py` as-is.
-
-### Phase 3: feeder and sorter
-
-The usual design people build:
-
-1. **Hopper.** Cards stack face-up in a printed tray.
-2. **Feeder.** A rubber wheel touches the top card and spins briefly to push one card out
-   through a slot that's only one card thick, so only one gets through.
-3. **Camera bay.** The card stops under the camera and the scanner recognizes it.
-4. **Sorter.** A servo turns a printed chute, or a "gate" arm, toward bin 0–3, then a
-   second wheel or a tilt drops the card in.
-
-When you get there, the code change is small. Where `scan.py` saves a card, it will also
-call a `send_to_bin(bin_number)` function that moves the servos with the
-[`gpiozero`](https://gpiozero.readthedocs.io) library.
 
 ### RGB light bars (optional)
 

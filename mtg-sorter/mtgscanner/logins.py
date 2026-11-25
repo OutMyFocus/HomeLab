@@ -14,22 +14,24 @@ from . import accounts, config, security, system
 from .remote_machine import server_allowed
 
 OPEN_PATHS = {"/login", "/api/login", "/api/logout", "/api/me", "/api/health", "/favicon.ico",
-              "/lock", "/api/lock"}
+              "/lock", "/api/lock", "/join", "/api/join"}
 
 # Looking at these needs a permission (path, or path prefix ending in /).
 GET_NEEDS = [
     ("/maintenance", "admin"), ("/api/system/", "admin"), ("/api/system", "admin"),
-    ("/api/accounts", "admin"),
+    ("/api/accounts", "admin"), ("/api/pi_sync", "admin"),
     ("/machine", "machine"), ("/api/machine", "machine"), ("/lights", "machine"), ("/api/lights", "machine"),
     ("/api/training", "machine"), ("/captures/", "machine"),
 ]
 # Pressing these needs a permission. Ones that only look (export, check, preview) need none.
 POST_NEEDS = {
     "": ["/api/collection/export", "/api/collection/refresh", "/api/decks/check", "/api/bins/preview",
+         "/api/bins/wanted/list",
          "/api/history/export", "/api/password", "/api/logout/everywhere"],
     "scan": ["/api/frame", "/api/camera", "/api/camera/release", "/api/add", "/api/save_all",
              "/api/correct", "/api/undo", "/api/wrong", "/api/photos", "/api/settings"],
-    "edit": ["/api/collection/edit", "/api/collection/add", "/api/decks/save", "/api/decks/delete",
+    "edit": ["/api/collection/edit", "/api/collection/add", "/api/collection/delete", "/api/collection/details",
+             "/api/decks/save", "/api/decks/delete",
              "/api/wishlist/", "/api/alerts", "/api/games/", "/api/trades/", "/api/sources/",
              "/api/history/delete", "/api/vault/import"],
     "machine": ["/api/machine/", "/api/lights", "/api/bins", "/api/train", "/api/forget", "/api/label"],
@@ -67,8 +69,15 @@ def install(app, web_dir):
         if not accounts.enabled():
             return None
         if server_allowed():     # the server driving this Pi's machine (remote_machine.py)
+            accounts.set_current(accounts.owner())   # its camera and focus are the owner's machine
             return None
         path = request.path
+        if accounts.damaged():   # users.json broke: only the Pi itself gets in until it's fixed
+            if security.is_local() or path == "/api/health":
+                return None
+            if path.startswith(("/api/", "/captures/")) or path.endswith(".mjpg"):
+                return jsonify({"error": accounts.DAMAGED, "locked": True}), 503
+            return make_response(accounts.DAMAGED, 503, {"Content-Type": "text/plain; charset=utf-8"})
         username = who()
         accounts.set_current(username)
         if path in OPEN_PATHS or path.startswith("/static/"):
@@ -103,7 +112,7 @@ def install(app, web_dir):
     def signed_in(username):
         resp = jsonify({"ok": True, "me": me_info(username)})
         resp.set_cookie(accounts.COOKIE, accounts.session_token(username), max_age=accounts.DAYS * 86400,
-                        httponly=True, samesite="Lax", secure=request.is_secure)
+                        httponly=True, samesite="Lax", secure=security.via_https())
         return resp
 
     def me_info(username):
@@ -126,15 +135,16 @@ def install(app, web_dir):
     def login():
         if not accounts.enabled():
             return jsonify({"ok": True, "me": None})
-        where = request.remote_addr or "?"
-        if accounts.too_many_tries(where):
-            return jsonify({"error": f"Too many wrong passwords. Wait {accounts.PAUSE} seconds and try again"}), 429
+        where = security.client_ip()
         js = body()
         username = str(js.get("username") or "").strip().lower()
-        ok = accounts.check_password(username, js.get("password"))
-        accounts.note_try(where, ok)
-        if not ok:
+        also = accounts.login_limit(username)
+        wait = accounts.take_try(where, also=also)   # counted before the slow check
+        if wait:
+            return jsonify({"error": f"Too many wrong passwords. Wait {accounts.wait_words(wait)} and try again"}), 429
+        if not accounts.check_password(username, js.get("password")):
             return jsonify({"error": "That username and password don't match"}), 403
+        accounts.clear_tries(where, also_key=also and also[0])
         return signed_in(username)
 
     @app.post("/api/logout")
@@ -170,14 +180,59 @@ def install(app, web_dir):
     @app.get("/api/accounts")
     def accounts_list():
         return jsonify({"accounts": accounts.enabled(), "users": accounts.everyone(), "me": accounts.current(),
-                        "perms": list(accounts.PERMS), "roles": accounts.ROLES})
+                        "perms": list(accounts.PERMS), "roles": accounts.ROLES, "invites": accounts.invites()})
+
+    # --- Invite links: an admin makes one, the person signs themselves up ---
+
+    @app.post("/api/accounts/invite")
+    def invite_make():
+        js = body()
+        try:
+            code = accounts.create_invite(accounts.current() or accounts.owner(), js.get("role") or "member",
+                                          js.get("uses", 1), js.get("days", 7), js.get("note") or "")
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"code": code, "path": "/join#" + code, "invites": accounts.invites()})
+
+    @app.post("/api/accounts/invite/cancel")
+    def invite_cancel():
+        try:
+            accounts.cancel_invite(body().get("id"))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"invites": accounts.invites()})
+
+    @app.get("/join")
+    def join_page():
+        return send_from_directory(web_dir, "join.html")
+
+    @app.post("/api/join")
+    def join():
+        """{code} checks a link; {code, username, password, name} makes the account and
+        logs it in."""
+        where = "join:" + security.client_ip()   # its own count, so wrong links don't stop logins
+        wait = accounts.too_many_tries(where)
+        if wait:
+            return jsonify({"error": f"Too many tries. Wait {accounts.wait_words(wait)} and try again"}), 429
+        js = body()
+        invite = accounts.check_invite(js.get("code"))
+        if invite is None:
+            accounts.note_try(where, False)
+            return jsonify({"error": "This invite link is used up, ran out or was cancelled. Ask for a new one"}), 404
+        if "username" not in js:
+            return jsonify({"invite": invite})
+        try:
+            username = accounts.join(js.get("code"), js.get("username"), js.get("password"), js.get("name") or "")
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        return signed_in(username)
 
     @app.post("/api/accounts/setup")
     def accounts_setup():
         """Turn accounts on. Whoever does it becomes the owner and keeps every card already
         here. A backup of everything is saved first."""
         if accounts.enabled():
-            return jsonify({"error": "Accounts are on already"}), 400
+            return jsonify({"error": accounts.DAMAGED if accounts.damaged() else "Accounts are on already"}), 400
         js = body()
         try:
             accounts._clean_username(js.get("username"))
@@ -209,6 +264,8 @@ def install(app, web_dir):
         perms = js.get("perms")
         if js.get("role") in accounts.ROLES and perms is None:
             perms = accounts.ROLES[js["role"]]
+        if js.get("password") and username == accounts.owner() and accounts.current() != username:
+            return jsonify({"error": "Only the owner can change the owner's password"}), 403
         try:
             accounts.update(username, name=js.get("name"), perms=perms, password=js.get("password") or None)
         except ValueError as e:

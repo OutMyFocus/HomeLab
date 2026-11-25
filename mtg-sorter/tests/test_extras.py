@@ -1,6 +1,7 @@
 """History, wishlist, alerts and the PIN lock."""
 
 import csv
+import json
 from datetime import date
 
 import pytest
@@ -159,5 +160,9 @@ def test_too_many_wrong_pins_pause(client):
 
 def test_pin_is_stored_hashed():
     security.set_pin("2468")
-    assert "2468" not in security.pin_file().read_text()
+    # Not "2468" in the text: the random salt and hash are hex, and now and then they hold
+    # those 4 digits by chance (it failed CI once). The PIN itself must be no stored value.
+    stored = json.loads(security.pin_file().read_text())
+    assert "2468" not in [str(v) for v in stored.values()]
+    assert '"2468"' not in security.pin_file().read_text()
     assert security.right_pin("2468") and not security.right_pin("2469")

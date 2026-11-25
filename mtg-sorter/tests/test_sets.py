@@ -50,6 +50,17 @@ def test_set_completion(client):
     assert client.get("/api/sets/zzz").status_code == 404
 
 
+def test_numbers_the_database_lacks_dont_make_a_set_complete(client):
+    # #0, #1, #2 and a variant the database doesn't have: 3 of 4, on the list and the set's page.
+    write_csv([("Card 0", "id0", "0", 1, False), ("Card 1", "id1", "1", 1, False), ("Card 2", "id2", "2", 1, False),
+               ("Card 2", "", "2★", 1, False)])
+    listed = client.get("/api/sets").get_json()["sets"][0]
+    page = client.get("/api/sets/tst").get_json()
+    assert (listed["owned"], listed["percent"], listed["copies"]) == (3, 75.0, 4)
+    assert listed["owned"] == page["owned"] == 3
+    assert [c["number"] for c in page["cards"] if not c["qty"]] == ["3"]
+
+
 def test_empty_collection_has_no_started_sets(client):
     sets = client.get("/api/sets").get_json()["sets"]
     assert sets[0]["owned"] == 0 and sets[0]["percent"] == 0

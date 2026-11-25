@@ -242,7 +242,7 @@ The mechanism goes in, gets wired, and the top closes over it.
 - Screw the Camera Module 3 onto the top of `camera_head`, lens down through the window (4 × M2).
 - Push the head onto the top of the camera post and plug the ribbon in.
 - `head_cover` over the head and arm.
-- `tower` down over the hopper into the well in the deck, then `tower_lid` on top.
+- `tower` down over the hopper into the well in the deck, then `tower_lid` on top. The tower is open at the front: nothing may rest on the feeder's front (gate or shoe), or the motor stalls.
 
 **Parts:** `camera_head`, `head_cover`, `tower`, `tower_lid`  
 **You need:** 4 × M2 × 6, Camera Module 3

@@ -92,8 +92,14 @@ _POPCOUNT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint16)
 
 
 def _popcount(x: np.ndarray) -> np.ndarray:
+    """The 1-bits in each row of 64-bit numbers."""
     if hasattr(np, "bitwise_count"):
-        return np.bitwise_count(x).sum(axis=1, dtype=np.uint32)
+        # Column by column: a sum along each short row is about twice as slow over 100k rows.
+        counts = np.bitwise_count(x)
+        total = counts[:, 0].astype(np.uint16)
+        for k in range(1, counts.shape[1]):
+            total += counts[:, k]
+        return total
     return _POPCOUNT[x.view(np.uint8)].sum(axis=1)
 
 
@@ -130,6 +136,11 @@ def _distances(table: tuple, fp: bytes) -> np.ndarray:
     return d
 
 
+def fingerprint_distance(a: bytes, b: bytes) -> int:
+    """How far apart two fingerprints are, on the same scale as a match's distance."""
+    return int(_distances(_split([a]), b)[0])
+
+
 def _name_key(name: str) -> str:
     """Printings of the same card count as one answer, whatever the set."""
     return name.split(" // ")[0].strip().lower()
@@ -141,6 +152,9 @@ class Matcher:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
         self._lock = threading.Lock()
+        # Stock pictures to tell look-alike printings apart (printings.StockPictures), when
+        # the app has the internet for them. None: the fingerprint's choice stands.
+        self.pictures = None
         self.reload()
 
     def reload(self):
@@ -163,6 +177,8 @@ class Matcher:
         self.card_count, self.learned_count = len(rows) - len(learned), len(learned)
         # Cards still on the whole-card-only fingerprint (built before the art one was added).
         self.old_count = int((~hashes[2][:self.card_count]).sum())
+        # Where each card's own (stock) fingerprint is in the table, for distance_to().
+        self._rows = {card_id: i for i, card_id in reversed(list(enumerate(ids[:self.card_count])))}
         self._table = ids, hashes, names   # swapped in one step, so a scan never sees half of it
 
     def add_learned(self, scan: str, card_id: str, fp: bytes):
@@ -180,6 +196,22 @@ class Matcher:
             self._table = (ids + [card_id], hashes, np.append(names, np.int32(number)))
             self.learned_count += 1
 
+    def learned_scans(self, card_ids: list[str], most: int) -> dict[str, list[str]]:
+        """The scans taught to each of these cards (pictures in data/captures), newest
+        first, at most `most` each."""
+        if not card_ids:
+            return {}
+        marks = ",".join("?" * len(card_ids))
+        with self._lock:
+            rows = self.conn.execute(f"SELECT card_id, scan FROM learned WHERE card_id IN ({marks}) "
+                                     "ORDER BY added DESC, rowid DESC", list(card_ids)).fetchall()
+        found: dict[str, list[str]] = {}
+        for card_id, scan in rows:
+            scans = found.setdefault(card_id, [])
+            if len(scans) < most:
+                scans.append(scan)
+        return found
+
     def _closest(self, dists: np.ndarray) -> int:
         # On a tie, the last one wins: learned scans come after the cards, and what
         # you taught it beats the stock picture.
@@ -187,6 +219,35 @@ class Matcher:
         if i >= self.card_count and dists[i] > config.MAX_LEARNED_DISTANCE:
             i = int(dists[:self.card_count].argmin())   # not close enough to trust: stock pictures only
         return i
+
+    def distance_to(self, card_id: str, fp: bytes) -> int | None:
+        """How far a fingerprint is from one card's stock picture (None: no such card).
+        Much cheaper than rank(), which compares with every card."""
+        ids, (whole, art, has_art), _ = self._table
+        i = self._rows.get(card_id)
+        if i is None or i >= len(ids) or ids[i] != card_id:
+            return None
+        return int(_distances((whole[i:i + 1], art[i:i + 1], has_art[i:i + 1]), fp)[0])
+
+    def lookalikes(self, card_id: str, fp: bytes, window: int, most: int) -> list[tuple[str, int]]:
+        """The printings of this card that the fingerprint can hardly tell apart from it:
+        same name, and no more than `window` bits further from fp than the closest of
+        them. (card id, distance), this card first, then the closest ones."""
+        ids, hashes, names = self._table
+        i = self._rows.get(card_id)
+        if i is None or i >= len(ids) or ids[i] != card_id:
+            return []
+        same = np.flatnonzero(names[:self.card_count] == names[i])
+        if len(same) < 2:
+            return []
+        whole, art, has_art = hashes
+        dists = _distances((whole[same], art[same], has_art[same]), fp)
+        close = [(int(d), ids[int(j)]) for d, j in zip(dists, same) if d <= int(dists.min()) + window]
+        mine = next((d for d, other in close if other == card_id), None)
+        if mine is None or len(close) < 2:
+            return []
+        rest = sorted((d, other) for d, other in close if other != card_id)[:most - 1]
+        return [(card_id, mine)] + [(other, d) for d, other in rest]
 
     def best_match(self, fp: bytes) -> tuple[str, int]:
         """Return (card id, distance) of the closest card. Smaller distance is better."""
@@ -242,6 +303,15 @@ class Matcher:
         with self._lock:
             return self.conn.execute("SELECT upper(set_code), max(set_name), count(*) FROM cards "
                                      "GROUP BY upper(set_code)").fetchall()
+
+    def set_numbers(self) -> dict[str, set[str]]:
+        """{SET: every collector number the database has for it}, in one query."""
+        out: dict[str, set[str]] = {}
+        with self._lock:
+            rows = self.conn.execute("SELECT upper(set_code), collector_number FROM cards").fetchall()
+        for code, number in rows:
+            out.setdefault(code, set()).add(number)
+        return out
 
     def set_cards(self, set_code: str) -> list[Card]:
         """Every card of one set in the database."""

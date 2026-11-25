@@ -13,11 +13,12 @@ and the lock is gone.
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import secrets
-import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import jsonify, make_response, request, send_from_directory
 
@@ -26,11 +27,12 @@ from .remote_machine import server_allowed
 
 COOKIE = "mtg_unlocked"
 DAYS = 30
-TRIES = 5            # wrong PINs in a row before a pause...
-PAUSE = 30           # ...of this many seconds
+TRIES = accounts.TRIES   # wrong PINs in a row before a pause...
+PAUSE = accounts.PAUSE   # ...of this many seconds, twice as long after each wrong one after that
+FORGET = 24 * 3600   # wrong PINs are forgotten a day after the last one
+ALL_CAP, ALL_SPAN = 50, 10 * 60   # wrong PINs from everywhere together, in ALL_SPAN seconds
 OPEN_PATHS = {"/lock", "/api/unlock", "/api/lock", "/api/health", "/favicon.ico"}
 _tries: dict[str, tuple[int, float]] = {}
-_lock = threading.Lock()
 
 
 def pin_file() -> Path:
@@ -106,18 +108,76 @@ def is_local() -> bool:
     return request.remote_addr in ("127.0.0.1", "::1") and not forwarded
 
 
+def client_ip() -> str:
+    """Who is asking, for counting wrong passwords and PINs. A tunnel (cloudflared) reaches
+    the app from the same address for everyone, so behind one the address it passes on
+    (CF-Connecting-IP) is used. Only from a local or private address, which is where a
+    tunnel runs: from anywhere else the header could be made up."""
+    addr = request.remote_addr or "?"
+    try:
+        here = ipaddress.ip_address(addr)
+    except ValueError:
+        return addr
+    if here.is_loopback or here.is_private:
+        try:
+            return str(ipaddress.ip_address(request.headers.get("CF-Connecting-IP", "").strip()))
+        except ValueError:
+            pass
+    return addr
+
+
+def via_https() -> bool:
+    """The browser reached the app over https: directly, or through a tunnel on the Pi or
+    server itself (Cloudflare, Tailscale Serve) that turns it into plain http. Login cookies
+    are then marked Secure, so the browser never sends them over plain http."""
+    if request.is_secure:
+        return True
+    proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
+    return request.remote_addr in ("127.0.0.1", "::1") and proto == "https"
+
+
+def from_another_site() -> bool:
+    """A change (POST and the like) that a page on some other website made the browser send.
+    The browser says where a request came from (Sec-Fetch-Site; older ones only Origin).
+    Requests with neither (the mtg command, the server driving the Pi) aren't from a page."""
+    site = request.headers.get("Sec-Fetch-Site", "").strip().lower()
+    if site in ("same-origin", "none"):
+        return False
+    if site == "cross-site":
+        return True
+    origin = request.headers.get("Origin")
+    if origin is None:
+        return bool(site)    # same-site without an Origin: can't tell, so no
+    if origin == "null":
+        return True
+    host = urlsplit(origin).netloc.lower()
+    forwarded = request.headers.get("X-Forwarded-Host", "").split(",")[0].strip().lower()
+    return host not in (request.host.lower(), forwarded) or not host
+
+
 def allowed() -> bool:
     return not enabled() or is_local() or has_valid_cookie()
 
 
 def _grant(resp, data):
     expires = int(time.time()) + DAYS * 86400
-    resp.set_cookie(COOKIE, _token(data, expires), max_age=DAYS * 86400, httponly=True, samesite="Lax")
+    resp.set_cookie(COOKIE, _token(data, expires), max_age=DAYS * 86400, httponly=True, samesite="Lax",
+                    secure=via_https())
     return resp
 
 
 def install(app, web_dir):
     """Guard every route, and add the lock page and its API."""
+
+    def same_site_only():
+        """Another website can't press this app's buttons through your browser (with no PIN
+        or accounts, the Pi would otherwise do whatever any web page asks)."""
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") and from_another_site():
+            return jsonify({"error": "Blocked a request from another website"}), 403
+        return None
+
+    # First of all the checks, before the login (logins.py) and the PIN.
+    app.before_request_funcs.setdefault(None, []).insert(0, same_site_only)
 
     @app.before_request
     def guard():
@@ -146,22 +206,18 @@ def install(app, web_dir):
 
     @app.post("/api/unlock")
     def unlock():
-        who = request.remote_addr or "?"
-        with _lock:
-            count, since = _tries.get(who, (0, 0.0))
-            if count >= TRIES and time.time() - since < PAUSE:
-                return jsonify({"error": f"Too many wrong PINs. Wait {PAUSE} seconds and try again"}), 429
+        who = client_ip()
         pin = (request.get_json(force=True, silent=True) or {}).get("pin")
         data = _load()
         if not data:
             return jsonify({"ok": True})
+        # Counted before the slow check, so PINs sent all at once can't slip past the limit.
+        wait = accounts.take_try(who, _tries, FORGET, also=("*", ALL_CAP, ALL_SPAN))
+        if wait:
+            return jsonify({"error": f"Too many wrong PINs. Wait {accounts.wait_words(wait)} and try again"}), 429
         if not right_pin(pin):
-            with _lock:
-                count, _ = _tries.get(who, (0, 0.0))
-                _tries[who] = (count % TRIES + 1, time.time())
             return jsonify({"error": "That's not the PIN"}), 403
-        with _lock:
-            _tries.pop(who, None)
+        accounts.clear_tries(who, _tries, "*")
         return _grant(jsonify({"ok": True}), data)
 
     @app.post("/api/lock/set")
