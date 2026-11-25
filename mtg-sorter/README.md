@@ -379,6 +379,14 @@ Sorting already works: **Machine → Start sorting** feeds each card, scans it, 
 into its bin ([`mtgscanner/machine.py`](mtgscanner/machine.py) moves the parts,
 [`mtgscanner/sort_run.py`](mtgscanner/sort_run.py) runs the sort).
 
+**Machine → Machine health** (`/machine/health`) shows everything the sorter reports in one
+place, live: the Pi's temperature, power and throttling, the camera, where each servo is and
+when it last moved (with saved angles outside 10-170° flagged), every feeder pulse and what each
+fed card did, the bin-full and bin-in sensors, the lights and power relay, recent scans and
+misreads, and the jams and errors since the app started. The same data is JSON at
+`/api/machine/health` (`?download=1` saves it as a file). On the server it comes from the Pi
+through `MTG_MACHINE_URL` ([`mtgscanner/health.py`](mtgscanner/health.py)).
+
 ### Phase 2: camera rig
 
 - Print the scan station in [`hardware/`](hardware/). It holds the Pi camera 12 cm above a white

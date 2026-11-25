@@ -165,7 +165,7 @@ The rest of the plan:
 - **Pusher speed:** about 120 mm/s, so about 0.6 s per stroke. The scotch-yoke lever already slows the paddle at both ends of its travel. Move the servo at a steady rate through ±80°.
 - **Relay:** GPIO22 high at start, low at shutdown. Home moves the stop bar up, the doors shut and the pushers to centre.
 - **Feeder:** the 60 RPM motor feeds the card at about 90 mm/s, so start with `FEEDER_SECONDS` around 1.0 and let the camera's landing check stop it, as now.
-- **Bin sensors:** pause a run if a bin is pulled out (its hall sensor) or full (its IR sensor), and say which on the Run page.
+- **Bin sensors:** pause a run if a bin is pulled out (its hall sensor) or full (its IR sensor), and say which on the Run page. Done so far: the Machine health page reads them (after its "are wired" switches are on) and lists a full or pulled-out bin as a problem. Power the TCRT5000 modules from the Pi's 3.3 V, not 5 V, so their DO pin is safe for the Pi.
 
 ## Checking the design
 

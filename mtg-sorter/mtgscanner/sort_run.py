@@ -41,7 +41,7 @@ import time
 
 from flask import jsonify, request
 
-from . import config, sort_rules
+from . import config, health, sort_rules
 from .machine import claim, release
 
 log = logging.getLogger(__name__)
@@ -91,6 +91,7 @@ class SortRun:
             self.state = {"running": True, "cards": [], "done": None, "speed": speed,
                           "max_cards": max_cards, "started_at": time.time(), "waiting": None}
             self.thread = threading.Thread(target=self._run, args=(speed, max_cards), daemon=True)
+            health.event("run", f"Sort run started (speed {speed}" + (f", {max_cards} cards" if max_cards else "") + ")")
             try:
                 self.thread.start()
             except Exception:
@@ -209,6 +210,7 @@ class SortRun:
                 self.state["running"] = False
                 self.state["waiting"] = None
                 self.state["done"] = reason
+            health.run_ended(reason)
 
     @staticmethod
     def _apart(tracks) -> bool:

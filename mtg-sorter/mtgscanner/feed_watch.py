@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 from flask import jsonify, request
 
-from . import config
+from . import config, health
 from .machine import Busy, claim, load_saved, release
 
 SMALL_W = 160   # pictures are compared at this width: plenty to see a card, and quick
@@ -231,10 +231,12 @@ class FeedWatcher:
                 result = "landed" if share >= config.FEED_LAND_SHARE else "none"
             else:
                 result = "landed" if share >= config.FEED_LAND_SHARE / 2 else "over"
-            return {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms,
-                    "push_ms": round(1000 * (push if landed_ms is not None else 0)) if landed_ms is not None else 0,
-                    "backoff_ms": round(1000 * backoff) if landed_ms is not None else 0,
-                    "zone": zone, "settled_share": round(share, 3), "trace": trace}
+            out = {"result": result, "landed_ms": landed_ms, "motor_ms": motor_ms,
+                   "push_ms": round(1000 * (push if landed_ms is not None else 0)) if landed_ms is not None else 0,
+                   "backoff_ms": round(1000 * backoff) if landed_ms is not None else 0,
+                   "zone": zone, "settled_share": round(share, 3), "trace": trace}
+            health.feed_result(out)
+            return out
         finally:
             self._hold_lights(False)
             self.tap.watching -= 1
@@ -328,6 +330,7 @@ class FeedWatcher:
             look = self.bed_check(empty, fed["zone"])
             if look:
                 out["result"] = look
+                health.feed_result({"result": look, "landed_ms": fed.get("landed_ms"), "motor_ms": fed.get("motor_ms")})
                 return out
             backoff = self._feeder_setting("backoff", backoff, config.FEED_BACKOFF_SECONDS,
                                            getattr(config, "FEED_BACKOFF_MAX", 1.0))
@@ -376,6 +379,9 @@ class FeedWatcher:
                 if out["dropped"]:
                     self._bed_clear = True
                     break
+            health.drop_result(out)
+            if out.get("result") == "over":
+                health.event("feed", f"Bin {bin_no}: the card went over the stop teeth (the feed was too fast)", "warn")
             if out.get("result") == "landed" and out.get("dropped") and out.get("bed_share"):
                 self._card_shares = (self._card_shares + [out["bed_share"]])[-10:]
         finally:
