@@ -592,8 +592,9 @@ def add_collection_routes(app, scanner, web_dir):
             seen = {str(k): whole(v, 0, 1_000_000, "seen") for k, v in cards.items()}
             for k in seen:
                 split_key(k)
-        except (ValueError, TypeError) as e:
-            return jsonify({"error": str(e) or "Bad request"}), 400
+        except (ValueError, TypeError):
+            # A message of its own, not the exception's text (that stays out of answers)
+            return jsonify({"error": "Each card needs its key and how many the page showed (a whole number)"}), 400
         with scanner.lock, COLLECTION_LOCK:
             deleted, changed = delete_many(accounts.collection_csv(), seen)
         if changed:
