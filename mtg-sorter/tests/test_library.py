@@ -530,3 +530,36 @@ def test_big_json_is_gzipped_and_streams_are_left_alone(client):
     assert "Content-Encoding" not in res.headers and res.get_data(as_text=True) == big
     res = client.get("/test-already", headers={"Accept-Encoding": "gzip"})
     assert gzip.decompress(res.data).decode() == big                # not gzipped twice
+
+
+# --- Select many (bulk delete) -------------------------------------------------------------
+
+def test_delete_many_at_once(client):
+    for card_id, foil in [("id1", False), ("id1", False), ("id1", True), ("id2", False)]:
+        client.post("/api/add", json={"id": card_id, "foil": foil})
+    res = client.post("/api/collection/delete", json={"cards": {"id1#normal": 2, "id2#normal": 1}})
+    assert res.status_code == 200 and res.headers["X-Deleted"] == "2"
+    assert [c["key"] for c in res.get_json()["cards"]] == ["id1#foil"]
+    assert [(r["Scryfall ID"], r["Foil"]) for r in rows()] == [("id1", "foil")]
+
+
+def test_delete_many_refuses_when_more_were_saved_since(client):
+    client.post("/api/add", json={"id": "id1"})
+    client.post("/api/add", json={"id": "id2"})
+    client.post("/api/add", json={"id": "id2"})          # saved after the page showed 1
+    res = client.post("/api/collection/delete", json={"cards": {"id1#normal": 1, "id2#normal": 1}})
+    assert res.status_code == 409 and res.get_json()["changed"] == {"id2#normal": 2}
+    assert len(rows()) == 3                              # nothing deleted, not even id1
+
+
+def test_delete_many_bad_requests(client):
+    assert client.post("/api/collection/delete", json={}).status_code == 400
+    assert client.post("/api/collection/delete", json={"cards": {"id1#normal": -1}}).status_code == 400
+    assert client.post("/api/collection/delete", json={"cards": {"#normal": 1}}).status_code == 400
+    # a card that's already gone is fine: there's nothing left to delete
+    assert client.post("/api/collection/delete", json={"cards": {"id9#normal": 1}}).status_code == 200
+
+
+def test_delete_many_needs_the_edit_permission():
+    from mtgscanner import logins
+    assert logins.needed("POST", "/api/collection/delete") == "edit"

@@ -306,6 +306,31 @@ def set_quantity(path: Path, key: str, count: int) -> bool:
     return True
 
 
+def delete_many(path: Path, seen: dict[str, int]) -> tuple[int, dict[str, int]]:
+    """Delete every copy of these printings in one go. seen maps each key to the count the
+    page showed. If any of them has a different count now (more were saved since, or some
+    were taken away elsewhere), nothing is deleted, so no card goes unseen. Returns
+    (how many printings were deleted, {key: count now} for the ones that changed)."""
+    keys = {}
+    for key, count in seen.items():
+        card_id, foil = split_key(key)
+        keys[(card_id, foil)] = (key, int(count))
+    with COLLECTION_LOCK:
+        rows = read_rows(path)
+        have: dict[tuple, int] = {}
+        for r in rows:
+            k = (row_id(r), row_foil(r))
+            if k in keys:
+                have[k] = have.get(k, 0) + qty(r)
+        changed = {key: have.get(k, 0) for k, (key, count) in keys.items() if have.get(k, 0) not in (count, 0)}
+        if changed:
+            return 0, changed
+        keep = [r for r in rows if (row_id(r), row_foil(r)) not in keys]
+        if len(keep) != len(rows):
+            write_rows(path, keep)
+    return len(have), {}
+
+
 def change_quantity(path: Path, key: str, step: int) -> int | None:
     """One more (step 1) or one fewer (step -1) copy than the file has right now, not
     than the page last showed, so copies saved since are kept. Returns the new count,
@@ -560,6 +585,32 @@ def add_collection_routes(app, scanner, web_dir):
         if not ok:
             return jsonify({"error": "That card isn't in the collection any more"}), 404
         return everything()
+
+    @app.post("/api/collection/delete")
+    def collection_delete():
+        """Delete many printings at once (the Collection page's Select): {cards: {key: seen}},
+        seen being how many the page showed. Refused, with nothing deleted, when any of
+        them has more or fewer copies now."""
+        js = body()
+        cards = js.get("cards")
+        if not isinstance(cards, dict) or not cards or len(cards) > 20_000:
+            return jsonify({"error": "Pick some cards to delete"}), 400
+        try:
+            seen = {str(k): whole(v, 0, 1_000_000, "seen") for k, v in cards.items()}
+            for k in seen:
+                split_key(k)
+        except (ValueError, TypeError):
+            # A message of its own, not the exception's text (that stays out of answers)
+            return jsonify({"error": "Each card needs its key and how many the page showed (a whole number)"}), 400
+        with scanner.lock, COLLECTION_LOCK:
+            deleted, changed = delete_many(accounts.collection_csv(), seen)
+        if changed:
+            return jsonify({"error": f"{len(changed)} of these changed since the page loaded (more were saved, "
+                                     "or some taken away). Nothing was deleted: have another look, then try again.",
+                            "changed": changed}), 409
+        res = everything()
+        res.headers["X-Deleted"] = str(deleted)
+        return res
 
     @app.post("/api/collection/add")
     def collection_add():

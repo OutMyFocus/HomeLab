@@ -37,6 +37,12 @@
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z" fill="currentColor" /></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.7" /></symbol>
+    <symbol id="i-binder" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M12 4v16M6.5 8h3M6.5 12h3M14.5 8h3M14.5 12h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-select" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="m8.5 12.2 2.4 2.4 4.8-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 9h13l-3.5-3.5M19 15H6l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
   </svg>
 
@@ -82,11 +88,13 @@
 
     <!-- browse -->
     <section class="panel browse">
-      <div class="toolbar">
+      <div class="toolbar find-bar">
         <label class="search">
           <svg><use href="#i-search" /></svg>
           <input id="q" type="search" placeholder="Search name, set or number  ( / )" autocomplete="off" spellcheck="false">
         </label>
+        <button class="btn ghost filter-btn" id="filterBtn" aria-expanded="false" aria-controls="filterSet"><svg><use href="#i-filter" /></svg>Filters<span class="count" id="filterCount" hidden></span></button>
+        <div class="filter-set" id="filterSet">
         <select id="fColor" aria-label="Color"><option value="">All colors</option></select>
         <select id="fRarity" aria-label="Rarity"><option value="">All rarities</option></select>
         <select id="fSet" aria-label="Set"><option value="">All sets</option></select>
@@ -95,6 +103,7 @@
           <option value="">Foil and normal</option><option value="foil">Foil only</option><option value="normal">Normal only</option>
         </select>
         <label class="price-range">$<input id="fMin" type="number" min="0" step="0.5" placeholder="min" aria-label="Lowest price"> – <input id="fMax" type="number" min="0" step="0.5" placeholder="max" aria-label="Highest price"></label>
+        </div>
         <select id="sort" aria-label="Sort">
           <option value="value">Most value first</option>
           <option value="price">Highest price first</option>
@@ -108,20 +117,29 @@
           <option value="up">Price went up most</option>
           <option value="down">Price went down most</option>
         </select>
-        <button class="btn ghost" id="clearFilters" hidden>Clear filters</button>
       </div>
+      <div class="chips" id="chips" hidden></div>
       <div class="toolbar second">
         <span class="sub" id="showing"></span>
         <div class="actions">
           <div class="seg small view-seg" id="viewSeg">
-            <button data-v="grid" aria-pressed="true" title="Pictures (G)"><svg><use href="#i-grid" /></svg></button><button data-v="list" aria-pressed="false" title="List (L)"><svg><use href="#i-list" /></svg></button>
+            <button data-v="grid" aria-pressed="true" title="Pictures (G)" aria-label="Pictures"><svg><use href="#i-grid" /></svg></button><button data-v="list" aria-pressed="false" title="List (L)" aria-label="List"><svg><use href="#i-list" /></svg></button><button data-v="binder" aria-pressed="false" title="Binder (B)" aria-label="Binder"><svg><use href="#i-binder" /></svg></button>
           </div>
+          <button class="btn ghost" id="selectBtn" aria-pressed="false" title="Pick several cards to trade, export or delete (S)"><svg><use href="#i-select" /></svg>Select</button>
           <button class="btn ghost" id="addBtn" title="Add a card you didn't scan (N)"><svg><use href="#i-plus" /></svg>Add a card</button>
           <button class="btn ghost" id="refreshBtn" title="Get today's Scryfall price for every card"><svg><use href="#i-refresh" /></svg><span id="refreshText">Refresh prices</span></button>
           <button class="btn primary" id="exportBtn" title="Export (E)"><svg><use href="#i-download" /></svg>Export</button>
         </div>
       </div>
       <div id="results"></div>
+      <div class="select-bar" id="selectBar" hidden role="region" aria-label="Selected cards">
+        <span class="sel-count"><b id="selCount">0 picked</b><small id="selValue"></small></span>
+        <button class="btn ghost" id="selAll">Pick all showing</button>
+        <button class="btn ghost" id="selTrade">For trade</button>
+        <button class="btn ghost" id="selExport"><svg><use href="#i-download" /></svg>Export</button>
+        <button class="btn ghost danger" id="selDelete"><svg><use href="#i-trash" /></svg>Delete</button>
+        <button class="btn primary" id="selDone">Done</button>
+      </div>
       <div class="more"><button class="btn ghost" id="moreBtn" hidden>Show more</button></div>
     </section>
     <section class="panel vault sources-panel" style="padding: var(--pad)">
@@ -134,7 +152,7 @@
       <p class="sub" id="mbPreview">In ManaBox: Collection, Export, CSV. Each import becomes its own source here. Everything from Commander Vault comes in from Settings.</p>
       <div id="sourceList"></div>
     </section>
-    <p class="hint center">Everything here is <code>data/collection.csv</code>, the file ManaBox and Moxfield also read. Shortcuts: <kbd>/</kbd> search, <kbd>G</kbd>/<kbd>L</kbd> pictures or list, <kbd>N</kbd> add a card, <kbd>E</kbd> export.</p>
+    <p class="hint center">Everything here is <code>data/collection.csv</code>, the file ManaBox and Moxfield also read. Shortcuts: <kbd>/</kbd> search, <kbd>G</kbd>/<kbd>L</kbd>/<kbd>B</kbd> pictures, list or binder, <kbd>S</kbd> select, <kbd>N</kbd> add a card, <kbd>E</kbd> export, <kbd>←</kbd>/<kbd>→</kbd> turn the page or go to the next card.</p>
   </main>
 
   <!-- one card -->
@@ -142,6 +160,7 @@
     <div class="modal-box detail-box" role="dialog" aria-modal="true" aria-labelledby="dName">
       <div class="modal-head">
         <h3 id="dName"></h3>
+        <span class="d-nav" id="dNav"><button class="icon-btn" id="dPrev" aria-label="Card before (←)" title="Card before (←)"><svg><use href="#i-left" /></svg></button><small id="dPos"></small><button class="icon-btn" id="dNext" aria-label="Next card (→)" title="Next card (→)"><svg><use href="#i-right" /></svg></button></span>
         <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-close" /></svg></button>
       </div>
       <div class="detail-body">
