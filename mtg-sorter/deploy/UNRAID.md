@@ -39,6 +39,14 @@ Unraid's Docker tab: **Check for updates**, then **Update** next to mtg-sorter. 
 stays in `/mnt/user/appdata/mtg-sorter` and is never touched by an update. (The app's own
 Maintenance page says the same; it can't update itself inside Docker.)
 
+### If the container stops and stays stopped
+
+Unraid's form sets no Docker restart policy, so a container whose app exits (a crash, or an
+older version's Restart button) stays stopped until you press Start. Give it one: **Docker →
+mtg-sorter → Edit**, switch to **Advanced view** (top right), and put `--restart=unless-stopped`
+in **Extra Parameters**, then Apply. The template in this folder already has it. Also turn the
+**Autostart** toggle on next to the container, so it comes back after a server reboot.
+
 ### Without Unraid's form
 
 Any Docker host works the same way:
@@ -64,8 +72,8 @@ Tailscale, at home or away, with no port opened on your router.
 2. **Docker → mtg-sorter → Edit**. Turn on **Use Tailscale**.
 3. **Tailscale hostname:** `mtg` (or anything unique on your tailnet).
 4. Leave exit node, userspace networking and SSH alone.
-5. **Serve:** on. (Not Funnel: that would put the app, which has no login unless you set a PIN
-   in Settings, on the public internet.) Leave the port on auto-detect; it uses the WebUI port.
+5. **Serve:** on. (Not Funnel: that would put the app, which has no login unless you turn on
+   Accounts or set a PIN in Settings, on the public internet.) Leave the port on auto-detect; it uses the WebUI port.
 6. **Apply**, then open the container's log and click the **To authenticate, visit...** link
    to approve it on your tailnet.
 7. The log (or the Tailscale admin console) shows the address, like
@@ -92,16 +100,49 @@ move in one zip:
 1. On the Pi's app (`http://mtgsorter.local:5000`): **Maintenance → Backup → Download** (the
    zip holds the card database with everything it learned, your collection, decks, bins,
    wishlist and settings).
-2. On the server's app: **Maintenance → Restore a backup…**, pick that zip. The app restarts
-   with your cards in it.
+2. On the server's app: **Maintenance → Restore a backup…**, pick that zip. The page sees it
+   was made on the Pi and ticks **Cards and collection only**, so the server keeps its own
+   camera and login settings. Press **Restore**. The app restarts with your cards in it.
 
 From then on, scan on the server. The Pi keeps its own copy for the sorter; do the same
 backup-and-restore the other way whenever the sorter should know about cards you added on
-the server (merging the two automatically is a later step).
+the server (merging the two automatically is a later step). On that return trip, keep
+**Cards and collection only** ticked: otherwise the server's backup would replace the Pi's
+camera and scan-bed set-up, its servo angles and its logins.
 
 To make the server know every card: **Maintenance → Card database → Download every card**
 (30-60 minutes; scanning keeps working). From the server's terminal it's
-`docker exec mtg-sorter python build_db.py --all` (stop and resume it any time).
+`docker exec mtg-sorter python build_db.py --all` (stop and resume it any time). When it
+finishes, restart the app (**Maintenance → Restart app**, or `docker restart mtg-sorter`) so
+the scanner picks up the new cards. The button does that by itself as it goes.
+
+## The sorter's own camera and machine, from the server
+
+Give the container the Pi's address (the **Sorter's Pi** field, `MTG_MACHINE_URL`, e.g.
+`http://10.0.0.247:5000`) and the server's pages reach the machine:
+
+- **Scan:** the camera menu gains **Sorter's Pi camera**. The server watches the Pi's live
+  stream and recognizes the cards on the scan bed itself, so what you scan on the machine lands
+  in the server's collection. With no camera of its own, the server starts on the Pi's camera.
+  (The Pi's own page keeps scanning too; turn its Auto-save off if you don't want the Pi's
+  separate collection to fill up as well.)
+- **Machine** and **Lights:** the servos, feeder and light bars are the Pi's, driven over the
+  network.
+- **One collection:** a sort run happens on the Pi, so the Pi saves those cards first. Every
+  15 seconds the server copies whatever the Pi saved since last time into its own collection
+  (the Pi owner's cards to the owner here, another Pi account's to the same username here).
+  The first time it only notes where the Pi's collection ends: cards the Pi held before stay
+  on the Pi. Maintenance shows the link as **Cards from the sorter**.
+- **One address:** while the server keeps asking, opening the Pi's own address
+  (`http://10.0.0.247:5000`) sends the browser to the server's site, so there's only one app to
+  look at. The server learns its site from the Cloudflare tunnel the first time you open a
+  page through it; set `MTG_PUBLIC_URL` (e.g. `https://mtg.example.com`, the **Site address**
+  field) to pick it yourself. The Pi's own screen, its API and its camera stream stay as they
+  are, the Pi's pages come back by themselves when the server is off, and adding `?stay=1` to
+  a Pi address keeps that browser on the Pi (for its Maintenance page, say).
+
+If the Pi has a PIN or accounts on, also set `MTG_MACHINE_KEY` to the Pi's `data/machine_key`
+(`mtg machine-key` on the Pi prints it).
 
 ## How scanning from a phone works
 
@@ -118,8 +159,10 @@ background pauses and picks up again when it comes back. Everything else on the 
 **Away from home:** the Tailscale address works anywhere your phone has Tailscale on.
 **Friends:** they need a way in first. Cloudflare Tunnel with Cloudflare Access (an emailed
 code; see [REMOTE_ACCESS.md](REMOTE_ACCESS.md), step 3) is the easy one, since they install
-nothing. Set a PIN in Settings before sharing any link: without one, anyone with the link can
-scan into, delete from and download your collection.
+nothing. Before sharing any link, turn on Accounts (Settings, **Accounts**, Turn on accounts)
+and give each friend their own login, or an invite link, as a member or viewer. They get their
+own cards and can't reach Maintenance. Don't use a PIN for this: it's one shared code that
+unlocks everything, Restart, Restore and Wi-Fi included.
 
 ## The sorter machine
 

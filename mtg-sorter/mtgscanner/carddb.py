@@ -3,8 +3,8 @@ builder (the part of Commander Vault that knew every card).
 
 The scanner's own cards.db only holds the cards it can recognize. This is a separate,
 small list of every card that's legal (or banned) in Commander: name, mana cost, type,
-rules text, color identity, power/toughness, rarity, Game Changer and banned marks, and
-EDHREC rank. It's built on the Pi from Scryfall's "Oracle Cards" file (about 25 MB to
+rules text, color identity, power/toughness, rarity, Game Changer and banned marks, EDHREC
+rank, and the formats it's legal in. It's built on the Pi from Scryfall's "Oracle Cards" file (about 25 MB to
 download) and kept as data/carddb.json, plus a gzipped copy the pages download once and
 keep in the browser.
 
@@ -45,7 +45,9 @@ def info() -> dict:
         meta = {}
     return {"cards": meta.get("n"), "built": meta.get("built") or time.strftime(
         "%Y-%m-%dT%H:%M:%S", time.localtime(path.stat().st_mtime)), "bytes": gz_file().stat().st_size
-        if gz_file().exists() else path.stat().st_size}
+        if gz_file().exists() else path.stat().st_size,
+        # What the browser counts while downloading: it unpacks the gzip copy as it comes.
+        "raw_bytes": path.stat().st_size}
 
 
 def card_row(c: dict) -> dict | None:
@@ -79,6 +81,14 @@ def card_row(c: dict) -> dict | None:
         row["l"] = c["loyalty"]
     if c.get("edhrec_rank"):
         row["e"] = c["edhrec_rank"]
+    # The formats it's legal (or restricted) and banned in, one letter each, for the Bins
+    # page's format rules (card_facts.FORMATS).
+    from .card_facts import FORMATS
+    legalities = c.get("legalities") or {}
+    row["lg"] = "".join(k for f, k in FORMATS.items() if legalities.get(f) in ("legal", "restricted"))
+    banned = "".join(k for f, k in FORMATS.items() if legalities.get(f) == "banned")
+    if banned:
+        row["bn"] = banned
     return row
 
 

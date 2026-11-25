@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/app-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <meta name="theme-color" content="#0e1013">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="SortR">
+  <meta name="color-scheme" content="dark light">
+  <title>SortR · Machine health</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/collection.css">
+  <link rel="stylesheet" href="/static/extras.css">
+  <script src="/static/look.js"></script>
+  <style>
+    /* Machine health: everything the sorter reports. Builds on style.css. */
+    .hw { max-width: 1180px; margin: 0 auto; padding: 20px 16px 72px; display: grid; gap: 18px; }
+    .hw .panel { padding: 18px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+    .hw h2 { margin: 0; font-size: 1.02rem; display: flex; align-items: center; gap: 8px; }
+    .hw h2 .tag { margin-left: auto; }
+    .sub { color: var(--muted); font-size: .88rem; margin: 0; }
+    .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; display: inline-block; }
+    .dot.ok { background: var(--good); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+    .tag { font: 600 .74rem var(--mono); padding: 3px 8px; border-radius: 99px; background: var(--raised); color: var(--muted); white-space: nowrap; }
+    .tag.ok { color: var(--good); background: color-mix(in oklab, var(--good) 14%, transparent); }
+    .tag.warn { color: var(--warn); background: color-mix(in oklab, var(--warn) 14%, transparent); }
+    .tag.bad { color: var(--bad); background: color-mix(in oklab, var(--bad) 14%, transparent); }
+
+    .hero { display: grid; grid-template-columns: auto 1fr auto; gap: 14px 16px; align-items: center; }
+    .hero .big { width: 20px; height: 20px; }
+    .hero h1 { margin: 0; font-size: 1.3rem; }
+    .hero .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .btn { padding: 9px 14px; cursor: pointer; border-radius: calc(var(--radius) * .6); text-decoration: none; color: inherit; }
+    .problems { grid-column: 1 / -1; display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .problems li { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 10px 12px; border-radius: 12px; background: var(--raised); }
+    .problems li .dot { margin-top: 6px; }
+    .problems .fix { grid-column: 2; color: var(--muted); font-size: .88rem; }
+
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+    .stat { padding: 10px 12px; border-radius: 12px; background: var(--raised); display: grid; gap: 2px; }
+    .stat b { font: 700 1.35rem/1.1 var(--mono); letter-spacing: -.02em; }
+    .stat small { color: var(--muted); font-size: .78rem; }
+    .stat.warn b { color: var(--warn); } .stat.bad b { color: var(--bad); } .stat.ok b { color: var(--good); }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* a thermometer bar: 30-90 °C, green under 70, amber to 80, red past it */
+    .therm { position: relative; height: 10px; border-radius: 99px; overflow: hidden;
+      background: linear-gradient(90deg, var(--good) 0 66.6%, var(--warn) 66.6% 83.3%, var(--bad) 83.3%); opacity: .9; }
+    .therm i { position: absolute; top: -3px; bottom: -3px; width: 4px; margin-left: -2px; border-radius: 2px; background: var(--text); box-shadow: 0 0 0 2px var(--panel-solid); }
+
+    /* servos: one row each, with a 0-180° dial of its saved angles */
+    .servos { display: grid; gap: 10px; }
+    .servo { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 10px 12px; border-radius: 12px; background: var(--raised); }
+    .servo .name { font-weight: 650; }
+    .servo .when { color: var(--muted); font-size: .82rem; text-align: right; }
+    .servo .warns { grid-column: 1 / -1; color: var(--warn); font-size: .85rem; margin: 0; }
+    .track { grid-column: 1 / -1; position: relative; height: 40px; margin: 0 10px; }
+    .track .rail { position: absolute; left: 0; right: 0; top: 9px; height: 4px; border-radius: 2px;
+      background: linear-gradient(90deg, var(--bad) 0 5.55%, var(--line-strong) 5.55% 94.44%, var(--bad) 94.44%); }
+    .track .mark { position: absolute; top: 3px; transform: translateX(-50%); display: grid; justify-items: center; gap: 3px; }
+    .track .mark i { width: 3px; height: 16px; border-radius: 2px; background: var(--accent); }
+    .track .mark.out i { background: var(--warn); }
+    .track .mark.out span { color: var(--warn); }
+    .track .mark span { font: 600 .66rem var(--mono); color: var(--muted); white-space: nowrap; }
+    .track .now { position: absolute; top: 3px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; z-index: 1;
+      background: var(--text); box-shadow: 0 0 0 3px var(--panel-solid); }
+    .track .now.relaxed { background: var(--panel-solid); border: 2px dashed var(--muted); }
+
+    .feeds { display: flex; flex-wrap: wrap; gap: 4px; }
+    .feeds i { width: 16px; height: 16px; border-radius: 4px; background: var(--muted); }
+    .feeds i.landed { background: var(--good); } .feeds i.none { background: var(--warn); }
+    .feeds i.over { background: #f59e0b; } .feeds i.stuck, .feeds i.crowded { background: var(--bad); }
+    .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .78rem; color: var(--muted); }
+    .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+
+    .list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; font-size: .9rem; }
+    .list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); }
+    .list li:first-child { border-top: 0; }
+    .list .t { font: .78rem var(--mono); color: var(--muted); }
+    .list .dot { align-self: center; }
+    .list .r { color: var(--muted); font-size: .82rem; text-align: right; }
+    .empty { color: var(--muted); font-size: .88rem; margin: 0; padding: 6px 0; }
+
+    /* the four bins, front view like the Machine page */
+    .bins { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .bin { border-radius: 12px; padding: 10px 8px; text-align: center; background: var(--raised); border: 2px solid transparent; display: grid; gap: 4px; }
+    .bin b { font-size: 1rem; }
+    .bin small { font-size: .74rem; color: var(--muted); }
+    .bin.ok { border-color: color-mix(in oklab, var(--good) 55%, transparent); }
+    .bin.warn { border-color: var(--warn); }
+    .bin.off { opacity: .6; border-style: dashed; border-color: var(--line-strong); }
+    .switches { display: grid; gap: 6px; }
+    .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: .92rem; }
+    .facts dt { color: var(--muted); }
+    .facts dd { margin: 0; overflow-wrap: anywhere; }
+    .swatch-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; margin-right: 6px; border: 1px solid var(--line-strong); }
+    details summary { cursor: pointer; font-weight: 600; }
+    pre.json { margin: 0; max-height: 360px; overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px; font: .74rem/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; }
+    .wide { grid-column: 1 / -1; }
+    @media (max-width: 720px) { .hero { grid-template-columns: auto 1fr; } .hero .row { grid-column: 1 / -1; } .bins { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <rect x="3.6" y="4.2" width="9" height="13" rx="1.9" transform="rotate(-14 8.1 10.7)" fill="currentColor" opacity=".38" />
+      <rect x="6.2" y="4.6" width="9" height="13" rx="1.9" transform="rotate(-4 10.7 11.1)" fill="currentColor" opacity=".62" />
+      <rect x="9.2" y="5.4" width="9.4" height="13.6" rx="1.9" transform="rotate(8 13.9 12.2)" fill="currentColor" />
+      <path d="M13.9 8.6c.4 2 1.1 2.8 3.1 3.2-2 .4-2.7 1.2-3.1 3.2-.4-2-1.1-2.8-3.1-3.2 2-.4 2.7-1.2 3.1-3.2Z" transform="rotate(8 13.9 12.2)" fill="var(--logo-spark, var(--bg))" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><svg class="logo"><use href="#i-logo" /></svg><span>SortR</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+
+  <main class="hw">
+    <!-- How it's doing, in one line, and what to look at -->
+    <section class="panel hero">
+      <span class="dot big" id="heroDot"></span>
+      <div>
+        <h1 id="heroTitle">Checking the sorter…</h1>
+        <p class="sub" id="heroSub"></p>
+      </div>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="live" checked><span></span>Live</label>
+        <a class="btn ghost" id="download" href="/api/machine/health?download=1">Download report</a>
+      </div>
+      <ul class="problems" id="problems"></ul>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2><span class="dot" id="piDot"></span>Raspberry Pi <span class="tag" id="piTag"></span></h2>
+        <div class="stats">
+          <div class="stat" id="tempStat"><b id="temp">–</b><small>temperature</small></div>
+          <div class="stat" id="voltStat"><b id="volts">–</b><small>power in</small></div>
+          <div class="stat"><b id="uptime">–</b><small>on for</small></div>
+        </div>
+        <div class="therm" aria-hidden="true"><i id="thermMark" style="left: 0"></i></div>
+        <div class="chips" id="throttle"></div>
+        <dl class="facts" id="piFacts"></dl>
+      </section>
+
+      <section class="panel">
+        <h2><span class="dot" id="camDot"></span>Camera</h2>
+        <p id="camSummary">–</p>
+        <div class="stats">
+          <div class="stat"><b id="camFps">–</b><small>pictures a second</small></div>
+          <div class="stat" id="camAgeStat"><b id="camAge">–</b><small>newest picture</small></div>
+          <div class="stat"><b id="camSize">–</b><small>size</small></div>
+        </div>
+        <p class="sub" id="camFix"></p>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2><span class="dot" id="servoDot"></span>Servos <span class="tag" id="servoTag"></span></h2>
+      <p class="sub">The dot is where each servo is now (dashed: it has let go). The lines are its saved angles; red ends
+        of the bar are outside <span id="safeRange">10-170°</span>, where a servo strains against its own stop.</p>
+      <div class="servos" id="servos"></div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2><span class="dot" id="feedDot"></span>Feeder <span class="tag" id="feedTag"></span></h2>
+        <div class="stats">
+          <div class="stat" id="landStat"><b id="landed">–</b><small>cards landed</small></div>
+          <div class="stat"><b id="pulseCount">–</b><small>motor pulses</small></div>
+          <div class="stat" id="jamStat"><b id="jams">–</b><small>jams</small></div>
+        </div>
+        <div>
+          <p class="sub" style="margin-bottom: 6px">Last feeds, newest first</p>
+          <div class="feeds" id="feeds"></div>
+          <div class="legend" style="margin-top: 6px">
+            <span style="--c: var(--good)">landed</span><span style="--c: var(--warn)">nothing came out</span>
+            <span style="--c: #f59e0b">over the stop</span><span style="--c: var(--bad)">stuck / two cards</span>
+          </div>
+        </div>
+        <ul class="list" id="pulses"></ul>
+        <p class="sub" id="feedSettings"></p>
+      </section>
+
+      <section class="panel">
+        <h2><span class="dot" id="binDot"></span>Bin sensors</h2>
+        <div class="bins" id="bins"></div>
+        <div class="switches">
+          <label class="switch"><input type="checkbox" id="fitFull"><span></span>Bin-full sensors (TCRT5000) are wired</label>
+          <label class="switch"><input type="checkbox" id="fitSeated"><span></span>Bin-in sensors (hall) are wired</label>
+        </div>
+        <details>
+          <summary>How to wire them</summary>
+          <p class="sub" style="margin-top: 8px">Each TCRT5000 has 3 pins to use: <b>VCC</b> to the Pi's <b>3.3 V</b> (pin 1 or 17, never 5 V),
+            <b>GND</b> to the GND Wago, and <b>DO</b> to its bin's pin: bin 1 GPIO16 (pin 36), bin 2 GPIO20 (pin 38),
+            bin 3 GPIO21 (pin 40), bin 4 GPIO12 (pin 32). Leave A0 empty. Then tick the switch above. Turn the little screw on a
+            sensor until its second LED lights with cards stacked up to the slot and goes out with the bin empty.</p>
+        </details>
+      </section>
+    </div>
+
+    <div class="grid">
+      <section class="panel">
+        <h2><span class="dot" id="scanDot"></span>Scans <span class="tag" id="scanTag"></span></h2>
+        <div class="stats" id="runStats"></div>
+        <p class="sub" id="runLine"></p>
+        <h3 class="sub" style="font-weight: 650">Misreads and problem cards</h3>
+        <ul class="list" id="misreads"></ul>
+        <h3 class="sub" style="font-weight: 650">Last cards saved</h3>
+        <ul class="list" id="recent"></ul>
+      </section>
+
+      <section class="panel">
+        <h2><span class="dot" id="lightDot"></span>Lights and power</h2>
+        <dl class="facts" id="lightFacts"></dl>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Jams, errors and events <span class="tag" id="eventTag"></span></h2>
+      <ul class="list" id="events"></ul>
+      <details>
+        <summary>The whole report (JSON)</summary>
+        <p class="sub" style="margin: 8px 0">The same as <code>/api/machine/health</code>. Download report saves it as a file to send.</p>
+        <pre class="json" id="json"></pre>
+      </details>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
+  <script src="/static/common.js"></script>
+  <script src="/static/health.js"></script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 """The browser app's API, using fake cards and Flask's test client (no camera needed)."""
 
 import csv
+import json
+import time
 
 import cv2
 import numpy as np
@@ -93,6 +95,74 @@ def test_switch_camera(db, tmp_path, monkeypatch):  # noqa: F811
 
     res = client.post("/api/camera", json={"index": 9})
     assert res.status_code == 409 and "Could not open" in res.get_json()["error"]
+
+
+class FocusCamera(FakeCamera):
+    focus = None
+
+    def set_focus(self, cm):
+        self.focus = cm
+        return True
+
+    def info(self):
+        return {"index": self.index, "name": self.name, "focus": {"cm": self.focus, "choices": [12]}}
+
+
+def test_set_pi_camera_focus(db, tmp_path, monkeypatch):  # noqa: F811
+    import app
+    from mtgscanner import camera as cameras_mod
+    monkeypatch.setattr(app, "CameraSource", FakeCamera)
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(cameras_mod, "focus_cm", None)
+    cam = FocusCamera(-1, "Pi camera")
+    client = create_app(Scanner(db, None, source=cam)).test_client()
+
+    state = client.post("/api/camera/focus", json={"cm": 12}).get_json()
+    assert cam.focus == 12 and state["camera"]["focus"]["cm"] == 12
+    assert app.saved_focus() == 12 and cameras_mod.focus_cm == 12   # kept for next time
+    client.post("/api/camera/focus", json={"cm": None})
+    assert cam.focus is None and app.saved_focus() is None
+    assert client.post("/api/camera/focus", json={"cm": "close"}).status_code == 400
+    assert client.post("/api/camera/focus", json={"cm": 1}).status_code == 400
+
+    # A webcam can't: say so instead of pretending.
+    client = create_app(Scanner(db, None, source=FakeCamera(0))).test_client()
+    assert client.post("/api/camera/focus", json={"cm": 12}).status_code == 409
+
+
+def test_rotate_and_crop_the_picture(db, tmp_path, monkeypatch):  # noqa: F811
+    import app
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    client = create_app(scanner).test_client()
+    client.post("/api/settings", json={"slots": [[0.5, 0.5, 1, 1]]})
+
+    state = client.post("/api/settings", json={"crop": [0.5, 0.5, 1, 1]}).get_json()
+    assert state["view"] == {"rotate": 0, "crop": [0.5, 0.5, 1, 1], "straight": False, "auto_straight": True, "min_card": None, "bed_box": None, "empty_bed": False, "straight_samples": 0, "straight_refused": None}
+    assert state["slots"] == [[0, 0, 1, 1]]                      # same spot, now the whole picture
+    state = client.post("/api/settings", json={"crop": [0, 0, 0.5, 0.5]}).get_json()
+    assert state["view"]["crop"] == [0.5, 0.5, 0.75, 0.75]       # a crop of the crop
+    state = client.post("/api/settings", json={"rotate": 90}).get_json()
+    assert state["view"] == {"rotate": 90, "crop": [0.25, 0.5, 0.5, 0.75], "straight": False, "auto_straight": True, "min_card": None, "bed_box": None, "empty_bed": False, "straight_samples": 0, "straight_refused": None}
+    saved = json.loads((tmp_path / "settings.json").read_text())
+    assert saved["rotate"] == 90 and saved["crop"] == [0.25, 0.5, 0.5, 0.75]
+
+    fresh = Scanner(db, None, source=FakeCamera(0))              # kept for next time
+    fresh.restore(saved)
+    assert fresh.rotate == 90 and fresh.crop == [0.25, 0.5, 0.5, 0.75]
+
+    state = client.post("/api/settings", json={"crop": None}).get_json()
+    assert state["view"]["crop"] is None
+    assert client.post("/api/settings", json={"rotate": 45}).status_code == 400
+    assert client.post("/api/settings", json={"crop": [0, 0, 0.01, 0.01]}).status_code == 400
+
+    # The scanner sees the turned, cropped picture.
+    client.post("/api/settings", json={"rotate": 0, "crop": [0, 0, 0.5, 1]})
+    scanner.source = type("Cam", (), {"read": lambda self: np.zeros((100, 200, 3), np.uint8)})()
+    seen = []
+    monkeypatch.setattr(scanner, "process", lambda f: seen.append(f.shape))
+    scanner.turn()
+    assert seen == [(100, 100, 3)]
 
 
 def show(scanner, frame, times):
@@ -256,7 +326,7 @@ def test_the_slot_is_the_outline_when_the_card_has_no_findable_edges(db, tmp_pat
     scanner, client = table_app(db, tmp_path, monkeypatch, mode="slots", slots=[slot])
     table = EMPTY.copy()
     card_at(table, 2, 100, 100)
-    monkeypatch.setattr(recognize, "find_cards", lambda frame, *a: [])   # as with a card in a box or a shiny sleeve
+    monkeypatch.setattr(recognize, "find_cards", lambda frame, *a, **kw: [])   # as with a card in a box or a shiny sleeve
     show(scanner, table, config.STABLE_FRAMES + 2)
     (c,) = client.get("/api/state").get_json()["cards"]
     assert c["card"]["id"] == "id2"
@@ -378,6 +448,7 @@ def test_quiet_phone_pauses_then_goes_away(db):  # noqa: F811
 
     source = BrowserSource("phone-3")
     source.gone_after = 0.0
+    source.read = lambda timeout=0: None   # no pictures, without waiting out the 2 s timeout
     sc = Scanner(db, None, source=source)
     sc.started = True
     dropped = []
@@ -391,3 +462,470 @@ def test_quiet_phone_pauses_then_goes_away(db):  # noqa: F811
     assert sc.stopped
     sc.run()                       # the thread's loop ends at once, and the app is told
     assert dropped == [sc]
+
+
+def test_scan_page_offers_start_sorting_only_where_there_is_a_sorter(client, monkeypatch):
+    """The Scan page's Start sorting button shows when the app runs the machine (the Pi,
+    or a server pointed at the Pi); /api/state says so."""
+    assert client.get("/api/state").get_json()["sorter"] is False       # tests: no Pi, no MTG_MACHINE_URL
+    page = client.get("/scan").get_data(as_text=True)
+    assert 'id="sortBtn"' in page and "Start sorting" in page
+
+
+def test_the_pages_scripts_parse():
+    """A syntax error in a page script kills the whole page (the Scan page lost its live
+    view and buttons on 2026-11-06 to a helper declared twice), so every script is parsed."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node isn't installed here")
+    for script in sorted((Path(__file__).resolve().parent.parent / "webui").glob("*.js")):
+        check = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
+        assert check.returncode == 0, f"{script.name}: {check.stderr.strip()}"
+
+
+def test_whole_cards_only_measures_the_card_on_the_bed(db, tmp_path, monkeypatch):  # noqa: F811
+    """Nic: the scanner shouldn't look at small sections of the card. "Whole cards
+    only" sets the smallest card from the card on the bed, so its art box or text box
+    is no longer read as a card of its own."""
+    monkeypatch.setattr(config, "BED_STILL_SECONDS", 0.0)   # (a bed at rest: see the moving-bed test)
+    import app
+    from mtgscanner.tracking import Track
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    client = create_app(scanner).test_client()
+    # no picture or card yet: say so
+    assert client.post("/api/settings", json={"min_card": "bed"}).status_code == 400
+
+    scanner.frame_size = (100, 200)
+    card = np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32)    # 60 x 100 = 0.3 of the picture
+    art = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)       # 50 x 40 = 0.1
+    scanner.tracks = [Track(1, 1, card, status="locked"), Track(2, 2, art, status="unknown")]
+    state = client.post("/api/settings", json={"min_card": "bed"}).get_json()
+    assert state["view"]["min_card"] == round(0.3 * config.MIN_CARD_FROM_BED, 4)
+    assert scanner.tracks == []                                # looked at afresh
+    assert json.loads((tmp_path / "settings.json").read_text())["min_card"] == state["view"]["min_card"]
+
+    assert state["view"]["bed_box"] == [0.1, 0.05, 0.7, 0.55]   # where the card lay
+
+    # the art box alone isn't a card; the whole card is
+    frame = np.zeros((200, 100, 3), np.uint8)
+    # (the bed box only stands in once the bare bed is known, and this isn't it)
+    from mtgscanner.vision import fingerprint
+    scanner.empty_bed = fingerprint(np.random.default_rng(1).integers(0, 255, (200, 100, 3), dtype=np.uint8))
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[art]])
+    (outline,), _ = scanner._find(frame)
+    assert np.allclose(outline[0], card)                       # the bed box stands in for the lost edge
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[card, art]])
+    (outline,), _ = scanner._find(frame)
+    assert outline[0] is card
+    assert np.allclose(outline[1], card)                       # the bed box is tried too (2026-11-09)
+    assert outline[2] is art
+    # a piece outside the bed (the next card in the slot) isn't read
+    up_top = np.array([[10, 150], [40, 150], [40, 190], [10, 190]], np.float32)
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[up_top]])
+    assert scanner._find(frame) == ([], [])
+
+    fresh = Scanner(db, None, source=FakeCamera(0))            # kept for next time
+    fresh.restore(json.loads((tmp_path / "settings.json").read_text()))
+    assert fresh.min_card == state["view"]["min_card"] and fresh.bed_box == [0.1, 0.05, 0.7, 0.55]
+
+    assert client.post("/api/settings", json={"min_card": 0.3}).get_json()["view"]["min_card"] == 0.3
+    assert client.post("/api/settings", json={"min_card": 2}).status_code == 400
+    assert client.post("/api/settings", json={"bed_box": [0.2, 0.3, 0.8, 0.9]}).get_json()["view"]["bed_box"] == [0.2, 0.3, 0.8, 0.9]
+    assert client.post("/api/settings", json={"bed_box": "x"}).status_code == 400
+    off = client.post("/api/settings", json={"min_card": None}).get_json()["view"]
+    assert off["min_card"] is None and off["bed_box"] is None
+
+
+def test_forgetting_the_tracks_mid_recognition_does_not_break_the_scanner(db, monkeypatch):  # noqa: F811
+    """Tower's camera thread died with "list.remove(x): x not in list" (2026-11-08): a sort
+    run forgot the tracks while a picture was being recognized, then the picture's answers
+    tried to remove a track that was no longer there. The picture now leaves the new table
+    alone, and an error in one picture no longer ends the thread."""
+    import app
+    from mtgscanner.tracking import Track
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    old = Track(1, 1, np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32), status="locked")
+    old.missing = 99                                     # gone on this picture
+    scanner.tracks = [old]
+    monkeypatch.setattr(app, "find_cards", lambda frame, min_area=None, **kw: [])
+    monkeypatch.setattr(app, "pair_up", lambda tracks, cards: (scanner.forget_tracks() or ([], [], [old])))
+    scanner.process(np.zeros((200, 100, 3), np.uint8))   # no ValueError
+    assert scanner.tracks == []
+
+
+def test_an_empty_bed_does_not_keep_a_card_on_the_table(db, monkeypatch):  # noqa: F811
+    """Nic (2026-11-09): "it keeps thinking this card is on the table" with the bed empty.
+    The bed's texture gave a piece inside the bed box, the bed box stood in for the card's
+    outline, and the card's old track lived on. A bed box that doesn't match a card is the
+    bare bed: no card is kept for it, and an old card there goes."""
+    monkeypatch.setattr(config, "BED_STILL_SECONDS", 0.0)   # (a bed at rest: see the moving-bed test)
+    import app
+    from mtgscanner.tracking import Track
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
+    from mtgscanner.vision import fingerprint
+    scanner.empty_bed = fingerprint(np.random.default_rng(1).integers(0, 255, (200, 100, 3), dtype=np.uint8))
+    texture = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)   # a rib of the bed
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[texture]])
+    frame = np.zeros((200, 100, 3), np.uint8)
+    scanner.process(frame)
+    assert scanner.tracks == []                                  # nothing new on a bare bed
+    bed = np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32)
+    old = Track(1, 1, bed, status="locked", card=db.get_card("id0"))
+    old.checked_at, old.checked_time = bed.mean(axis=0), time.monotonic() - 1.0   # looked at 1 s ago
+    old.streak_key, old.streak = "id0", 1
+    scanner.tracks = [old]
+    scanner.process(frame)
+    assert scanner.tracks == []                                  # the card that left is gone
+
+
+def test_the_bare_bed_is_remembered_and_never_read_as_a_card(db, tmp_path, monkeypatch):  # noqa: F811
+    """Nic (2026-11-09): the empty bed was read as Precise Redaction, a good match, and
+    saved again and again. The scanner remembers the bare bed inside the bed box ("Bed is
+    empty", and every sort run that sees its card leave), and the bed box isn't a card
+    while it looks like that."""
+    monkeypatch.setattr(config, "BED_STILL_SECONDS", 0.0)   # (a bed at rest: see the moving-bed test)
+    import app
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    client = create_app(scanner).test_client()
+    rng = np.random.default_rng(5)
+    bare = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)          # the bed's ribs
+    scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
+    rib = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[rib]])
+    assert scanner._whole_cards(bare) == []                # bare bed not known yet: no stand-in at all
+    whole_rib = np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32)
+    scanner._seen = bare
+    view = client.post("/api/settings", json={"empty_bed": "now"}).get_json()["view"]
+    assert view["empty_bed"] is True
+    assert scanner._whole_cards(bare) == []                # the bare bed: nothing to read
+    noisy = np.clip(bare.astype(np.int16) + rng.integers(-6, 7, bare.shape), 0, 255).astype(np.uint8)
+    assert scanner._whole_cards(noisy) == []               # a little camera noise is still the bed
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[whole_rib]])
+    assert scanner._whole_cards(bare) == []                # ribs outlined as a whole "card": still the bed
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[rib]])
+    card = bare.copy()
+    card[10:110, 10:70] = rng.integers(0, 255, (100, 60, 3), dtype=np.uint8)   # a card on it
+    assert len(scanner._whole_cards(card)) == 1
+    fresh = Scanner(db, None, source=FakeCamera(0))        # kept for next time
+    fresh.restore(json.loads((tmp_path / "settings.json").read_text()))
+    assert fresh.empty_bed == scanner.empty_bed
+    assert client.post("/api/settings", json={"empty_bed": None}).get_json()["view"]["empty_bed"] is False
+    assert client.post("/api/settings", json={"empty_bed": "x"}).status_code == 400
+
+
+def test_the_bed_box_only_stands_in_for_a_card_at_rest(db, monkeypatch):  # noqa: F811
+    """Tower (2026-11-09): ~2 s after each real card, while it slid off the bed, half the
+    card and the ribs in the bed box read as Precise Redaction and were saved. The bed box
+    only stands in for a card once the bed has looked the same for BED_STILL_SECONDS."""
+    import app
+    from mtgscanner.vision import fingerprint
+    monkeypatch.setattr(config, "BED_STILL_SECONDS", 1.0)
+    clock = [100.0]
+    monkeypatch.setattr(app.time, "monotonic", lambda: clock[0])
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    rng = np.random.default_rng(7)
+    scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
+    scanner.empty_bed = fingerprint(rng.integers(0, 255, (200, 100, 3), dtype=np.uint8))
+    piece = np.array([[15, 20], [65, 20], [65, 60], [15, 60]], np.float32)
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [[piece]])
+    a = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)
+    b = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)
+    assert scanner._whole_cards(a) == []            # just seen: wait
+    clock[0] += 0.5
+    assert scanner._whole_cards(b) == []            # moving
+    clock[0] += 0.5
+    assert scanner._whole_cards(b) == []            # still for 0.5 s only
+    clock[0] += 0.6
+    (outline,) = scanner._whole_cards(b)             # at rest for over a second
+    assert isinstance(outline, app.BedBox)
+
+
+def test_a_card_the_bare_bed_reads_as_only_counts_when_sure(db):  # noqa: F811
+    """Nic (2026-11-09, evening): Precise Redaction still read from the bed. The cards the
+    bare bed itself comes closest to are its lookalikes; on the bed one of them only counts
+    as a sure match, so the ribs (a "good match" at best) are never saved as it."""
+    from mtgscanner.recognize import Match
+    from mtgscanner.vision import fingerprint
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    scanner.frame_size = (100, 200)
+    scanner.bed_box = [0.1, 0.05, 0.7, 0.55]
+    scanner.empty_bed = fingerprint(fake_card(0))          # this bed reads as "Card 0"
+    assert "Card 0" in scanner.bed_lookalikes()
+    on_bed = [np.array([[10, 10], [70, 10], [70, 110], [10, 110]], np.float32)]
+    off_bed = [np.array([[10, 130], [70, 130], [70, 190], [10, 190]], np.float32)]
+    card0 = db.get_card("id0")
+    likely = Match(on_bed[0], card0, 70, 8, "likely", [])
+    assert scanner._screen(on_bed, likely).card is None    # the bed's lookalike, not sure: no card
+    sure = Match(on_bed[0], card0, 30, 40, "sure", [])
+    assert scanner._screen(on_bed, sure).card is card0     # a real one reads sure
+    assert scanner._screen(off_bed, likely).card is card0  # off the bed: as before
+    other = Match(on_bed[0], db.get_card("id2"), 70, 8, "likely", [])
+    if "Card 2" not in scanner.bed_lookalikes():
+        assert scanner._screen(on_bed, other).card is not None
+
+
+def test_the_bare_bed_in_dimmer_light_is_still_the_bed(db, monkeypatch, tmp_path):  # noqa: F811
+    """Tower (2026-11-09, 12:43): the light bars dipped, the bare bed's fingerprint no longer
+    matched the remembered one, and the ribs outlined as a card read as Precise Redaction,
+    "sure". The pattern of the bed's middle tells the bare bed apart whatever the light."""
+    import app
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(config, "EMPTY_BED_DISTANCE", -1)      # the fingerprint never matches
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    scanner.min_card, scanner.bed_box = 0.3, [0.1, 0.05, 0.7, 0.55]
+    bare = np.full((200, 100, 3), 90, np.uint8)
+    for y in range(0, 200, 8):
+        bare[y:y + 3] = 150                                     # the bed's ribs
+    bare[:, 30:34] = 40                                         # and its centring channel
+    assert scanner.remember_empty_bed(bare)
+    dim = (bare.astype(np.float32) * 0.8).astype(np.uint8)
+    assert scanner.bed_is_empty(dim)
+    card = bare.copy()
+    card[10:110, 10:70] = cv2.resize(fake_card(4), (60, 100))
+    assert not scanner.bed_is_empty(card)
+    ghost = [np.array([[12, 4], [68, 8], [66, 100], [14, 102]], np.float32)]
+    monkeypatch.setattr(app, "find_cards", lambda f, min_area=None, **kw: [ghost])
+    assert scanner._whole_cards(dim) == []                     # the ribs' outline isn't a card
+    fresh = Scanner(db, None, source=FakeCamera(0))            # kept for next time
+    fresh.restore(json.loads((tmp_path / "settings.json").read_text()))
+    assert np.array_equal(fresh.empty_look, scanner.empty_look)
+
+
+def test_turning_or_cropping_keeps_whole_cards_only_right(db, tmp_path, monkeypatch):  # noqa: F811
+    """The bed box follows the bed when the picture turns; a new crop turns Whole cards only
+    off (its card size and box were measured on the old picture); the bare bed is measured
+    again after either. A crop that changes nothing keeps everything."""
+    import app
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    scanner = Scanner(db, None, source=FakeCamera(0))
+    client = create_app(scanner).test_client()
+    look = np.zeros((app.LOOK_SIZE[1], app.LOOK_SIZE[0]), np.uint8)
+
+    def measured():
+        scanner.min_card, scanner.bed_box = 0.24, [0.1, 0.05, 0.7, 0.55]
+        scanner.empty_bed, scanner.empty_look = bytes(64), look
+
+    measured()
+    view = client.post("/api/settings", json={"rotate": 90}).get_json()["view"]
+    assert view["bed_box"] == [0.45, 0.1, 0.95, 0.7] and view["min_card"] == 0.24
+    assert view["empty_bed"] is False
+    saved = json.loads((tmp_path / "settings.json").read_text())
+    assert saved["bed_box"] == [0.45, 0.1, 0.95, 0.7] and saved["empty_bed"] is None
+
+    measured()
+    view = client.post("/api/settings", json={"crop": None}).get_json()["view"]   # nothing to undo
+    assert view["min_card"] == 0.24 and view["bed_box"] == [0.1, 0.05, 0.7, 0.55] and view["empty_bed"]
+    view = client.post("/api/settings", json={"crop": [0, 0, 0.5, 1]}).get_json()["view"]
+    assert view["min_card"] is None and view["bed_box"] is None and view["empty_bed"] is False
+    saved = json.loads((tmp_path / "settings.json").read_text())
+    assert saved["min_card"] is None and saved["bed_box"] is None and saved["empty_bed"] is None
+
+    measured()   # turning Whole cards off, or a new bed box, forgets the bare bed too
+    assert client.post("/api/settings", json={"min_card": None}).get_json()["view"]["empty_bed"] is False
+    measured()
+    assert client.post("/api/settings", json={"bed_box": [0.2, 0.2, 0.8, 0.8]}).get_json()["view"]["empty_bed"] is False
+
+
+def test_saving_the_same_card_twice_saves_it_once(db, tmp_path, monkeypatch):  # noqa: F811
+    """A double click on a card's save button (or a click just after Auto saved it) saved
+    it twice. Saving it again after an Undo still works."""
+    scanner, client = table_app(db, tmp_path, monkeypatch)
+    show(scanner, photograph(fake_card(1)), config.STABLE_FRAMES + 2)
+    track = client.get("/api/state").get_json()["cards"][0]["track"]
+    client.post("/api/add", json={"id": "id1", "track": track})
+    state = client.post("/api/add", json={"id": "id1", "track": track}).get_json()
+    assert state["session_count"] == 1
+    assert len(list(csv.DictReader(config.COLLECTION_CSV.open()))) == 1
+    client.post("/api/undo", json={})
+    assert client.post("/api/add", json={"id": "id1", "track": track}).get_json()["session_count"] == 1
+    assert len(list(csv.DictReader(config.COLLECTION_CSV.open()))) == 1
+    # without a track (the Photos tab) every press adds one
+    client.post("/api/add", json={"id": "id1"})
+    assert len(list(csv.DictReader(config.COLLECTION_CSV.open()))) == 2
+
+
+def test_undo_moves_on_when_the_card_is_gone_already(db, tmp_path, monkeypatch):  # noqa: F811
+    """The last card saved was deleted on another page: Undo used to do nothing from then
+    on. It now says so and goes on to the card before. It also takes a card out of the
+    collection it went into, even when the scanner saves somewhere else now."""
+    from mtgscanner.collection import remove_entry
+    scanner, client = table_app(db, tmp_path, monkeypatch)
+    client.post("/api/add", json={"id": "id1"})
+    state = client.post("/api/add", json={"id": "id2"}).get_json()
+    assert remove_entry(config.COLLECTION_CSV, "id2", scanner.session[-1]["scanned_at"])   # deleted elsewhere
+    state = client.post("/api/undo", json={}).get_json()
+    assert state["undo"] == {"undone": False, "name": "Card 2"} and state["session_count"] == 1
+    assert "_csv" not in state["session"][0]                     # where it's kept stays on the server
+    first = config.COLLECTION_CSV
+    monkeypatch.setattr(scanner, "collection", lambda: tmp_path / "someone-else.csv")
+    state = client.post("/api/undo", json={}).get_json()
+    assert state["undo"] == {"undone": True, "name": "Card 1"} and state["session_count"] == 0
+    assert list(csv.DictReader(first.open())) == []
+    assert client.post("/api/undo", json={}).get_json()["undo"] is None   # nothing left
+
+
+def test_cards_saved_in_the_same_second_each_get_a_number(client):
+    """The page's valuable-card alert went by the time saved, to the second, and missed a
+    card saved in the same second as the one before."""
+    client.post("/api/add", json={"id": "id1"})
+    state = client.post("/api/add", json={"id": "id2"}).get_json()
+    newer, older = (r["seq"] for r in state["session"])
+    assert newer == older + 1
+
+
+def test_photo_results_say_which_upload_they_are_for(client):
+    import io
+    files = [(io.BytesIO(b"not a picture"), "image.jpg"), (io.BytesIO(jpeg(photograph(fake_card(2)))), "image.jpg")]
+    res = client.post("/api/photos", data={"photos": files}, content_type="multipart/form-data").get_json()
+    assert [(r["index"], "card" in r) for r in res] == [(0, False), (1, True)]
+
+
+def test_a_wrong_address_shows_a_page_with_a_way_home(client):
+    page = client.get("/colection")
+    assert page.status_code == 404 and 'href="/"' in page.get_data(as_text=True)
+    assert "doesn't exist" in page.get_data(as_text=True)
+    api = client.get("/api/nope")
+    assert api.status_code == 404 and api.get_json()["error"]
+    assert client.get("/api/add").status_code == 405           # a real address, the wrong way: as before
+
+
+def test_a_phone_cannot_forget_the_machines_bare_bed(db, tmp_path, monkeypatch):  # noqa: F811
+    import app
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(config, "CAPTURES_DIR", tmp_path / "captures")
+    monkeypatch.setattr(Scanner, "run", lambda self: None)
+    (tmp_path / "settings.json").write_text(json.dumps({"empty_bed": "ab" * 64}))
+    client = create_app(Scanner(db, None, source=FakeCamera(0))).test_client()
+    phone = {"X-Scanner": "phone-9"}
+    client.post("/api/camera", json={"index": "browser", "token": "phone-9"}, headers=phone)
+    assert client.post("/api/settings", json={"empty_bed": None}, headers=phone).status_code == 200
+    assert json.loads((tmp_path / "settings.json").read_text())["empty_bed"] == "ab" * 64
+
+
+def test_a_huge_picture_is_turned_away(db, tmp_path, monkeypatch):  # noqa: F811
+    """A phone's picture is a few hundred KB: one over FRAME_MAX_BYTES is refused unread. And
+    a small file that claims a huge picture is refused before OpenCV makes room for it."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    import app
+    monkeypatch.setattr(config, "CAPTURES_DIR", tmp_path / "captures")
+    monkeypatch.setattr(Scanner, "run", lambda self: None)
+    client = create_app(Scanner(db, None, source=None)).test_client()
+    phone = {"X-Scanner": "phone-8"}
+    client.post("/api/camera", json={"index": "browser", "token": "phone-8"}, headers=phone)
+    res = client.post("/api/frame", data=b"x" * (app.FRAME_MAX_BYTES + 1), headers=phone)
+    assert res.status_code == 413 and res.get_json()["error"]
+
+    huge = tmp_path / "huge.png"     # 8000 x 8000, 64 MP: over the 60 MP limit
+    cv2.imwrite(str(huge), np.zeros((8000, 8000), np.uint8))
+    root = Path(__file__).resolve().parent.parent
+    check = ("import sys, app\n"
+             "print(app.decode_picture(open(sys.argv[1], 'rb').read()) is None)\n")
+    env = {k: v for k, v in __import__("os").environ.items() if k != "OPENCV_IO_MAX_IMAGE_PIXELS"}
+    env["OPENCV_LOG_LEVEL"] = "OFF"
+    out = subprocess.run([sys.executable, "-c", check, str(huge)], cwd=root, env=env,
+                         capture_output=True, text=True, timeout=120)
+    assert out.stdout.strip().splitlines()[-1] == "True", out.stderr
+
+
+def test_a_stream_with_no_picture_ends(client, monkeypatch):
+    """Nothing is written while there's no picture, so a stream nobody watches any more
+    was never noticed and kept its thread busy for good. It ends after a while now."""
+    import app
+    monkeypatch.setattr(app, "STREAM_GIVE_UP_SECONDS", 0.2)
+    started = time.monotonic()
+    res = client.get("/stream.mjpg")
+    assert res.get_data() == b"" and time.monotonic() - started < 5
+
+
+def test_a_still_picture_is_sent_again(db, monkeypatch):  # noqa: F811
+    """A picture that doesn't change is sent again now and then, so a page that has gone
+    is noticed (the write fails) and its stream ends."""
+    import app
+    monkeypatch.setattr(app, "STREAM_RESEND_SECONDS", 0.05)
+    scanner = Scanner(db, None, source=None)
+    scanner.jpeg = b"picture"
+    res = create_app(scanner).test_client().get("/stream.mjpg?full=0", buffered=False)
+    chunks = iter(res.response)
+    assert b"picture" in next(chunks) and b"picture" in next(chunks)
+    res.close()
+
+
+def test_the_preview_is_only_made_when_someone_looks(db, monkeypatch):  # noqa: F811
+    scanner = Scanner(db, None, source=None)
+    made = []
+    real = scanner._encode
+    monkeypatch.setattr(scanner, "_encode", lambda frame, full=False: made.append(full) or real(frame, full))
+    for _ in range(5):
+        scanner._publish(np.full((200, 100, 3), 120, np.uint8))
+    assert made == [] and scanner.started
+    first = scanner.jpeg
+    assert first is not None and scanner.jpeg is first and made == [False]   # once per new picture
+
+
+def test_a_still_picture_is_not_straightened_again_and_again(db, monkeypatch):  # noqa: F811
+    """Straightening warps the whole picture: it happens only for pictures looked at."""
+    import app
+    scanner = Scanner(db, None, source=None)
+    scanner.straight = {"fake": True}
+    warped = []
+    monkeypatch.setattr(app.view, "straighten", lambda frame, setting: warped.append(1) or frame)
+    scanner.source = type("Cam", (), {"read": lambda self: np.full((200, 100, 3), 120, np.uint8)})()
+    looked = []
+    monkeypatch.setattr(scanner, "process", lambda f: looked.append(f))
+    for _ in range(5):
+        scanner.turn()
+    assert len(looked) == 1 and len(warped) == 1
+
+
+def test_training_lets_the_scanner_carry_on(db, tmp_path, monkeypatch):  # noqa: F811
+    """Train now reads every scan and reloads the database, which takes seconds on the Pi:
+    the camera picture and the pages don't wait for it."""
+    import app
+    monkeypatch.setattr(config, "CAPTURES_DIR", tmp_path / "captures")
+    scanner = Scanner(db, None, source=None)
+    held = []
+
+    def train(matcher, captures, include_auto):
+        held.append(scanner.lock.locked())
+        return {"added": 0, "removed": 0, "learned": 0}
+
+    monkeypatch.setattr(app, "train", train)
+    assert create_app(scanner).test_client().post("/api/train", json={}).get_json()["added"] == 0
+    assert held == [False]
+
+
+def test_settings_saved_at_the_same_time_all_stay(tmp_path, monkeypatch):
+    """The scanner thread, a sort run and the pages save settings at the same time; one
+    used to read the other's half-written file and keep only its own change."""
+    import threading
+
+    import app
+    monkeypatch.setattr(app, "SETTINGS_FILE", tmp_path / "settings.json")
+    app.save_settings(crop=[0, 0, 0.5, 1], slots=[[0, 0, 1, 1]], bed_box=[0.1, 0.1, 0.9, 0.9], camera={"index": 0}, rotate=90)
+
+    def keep_saving(key):
+        for n in range(150):
+            app.save_settings(**{key: n})
+
+    threads = [threading.Thread(target=keep_saving, args=(k,)) for k in ("empty_bed", "straight")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    saved = json.loads((tmp_path / "settings.json").read_text())
+    assert {"crop", "slots", "bed_box", "camera", "rotate", "empty_bed", "straight"} <= set(saved)
+    assert saved["empty_bed"] == saved["straight"] == 149
+
+    (tmp_path / "settings.json").write_text("{half a fi")      # damaged: a copy is kept
+    app.save_settings(rotate=0)
+    assert (tmp_path / "settings.bad").read_text() == "{half a fi"
+    assert json.loads((tmp_path / "settings.json").read_text()) == {"rotate": 0}

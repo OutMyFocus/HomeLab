@@ -15,7 +15,7 @@ def test_pages_link_versioned_scripts(db, tmp_path, monkeypatch):  # noqa: F811
     for page in ("/settings", "/", "/collection", "/static/login.html"):
         r = client.get(page)
         html = r.get_data(as_text=True)
-        links = re.findall(r'/static/[\w./-]+\.(?:js|css)[^"\']*', html)
+        links = re.findall(r'/static/[\w./-]+\.(?:js|css)(?=[?"\'])[^"\']*', html)  # not manifest.json
         assert links and all(re.search(r"\?v=[0-9a-f]{10}$", link) for link in links), (page, links)
         assert "ETag" not in r.headers and r.headers["Cache-Control"] == "no-cache"
     # The version follows the file.

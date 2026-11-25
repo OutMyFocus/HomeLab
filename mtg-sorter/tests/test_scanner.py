@@ -140,3 +140,549 @@ def test_empty_database_still_runs(tmp_path):
     hit = matcher.rank(fingerprint(fake_card(1)))
     assert hit.id == "" and hit.distance == 256
     assert matcher.search("Card") == []
+
+
+def test_scanner_takes_it_easy_while_the_picture_stands_still(db, monkeypatch):
+    """The same picture again and again is looked at only SCAN_IDLE_FPS times a second;
+    a change brings the scanner back to every frame."""
+    from app import Scanner
+    monkeypatch.setattr(config, "SCAN_IDLE_FPS", 2)
+    scanner = Scanner(db, None, source=None)
+    frames = {"frame": np.full((200, 100, 3), 120, np.uint8)}
+
+    class Source:
+        def read(self):
+            return frames["frame"]
+
+    scanner.source = Source()
+    looked = []
+    monkeypatch.setattr(scanner, "process", lambda frame: looked.append(frame))
+    for _ in range(5):
+        scanner.turn()
+    assert len(looked) == 1          # the first look, then nothing changed
+    frames["frame"] = np.full((200, 100, 3), 200, np.uint8)
+    scanner.turn()
+    assert len(looked) == 2          # a change: looked at straight away
+    big = np.full((1920, 1080, 3), 60, np.uint8)
+    scanner._publish(big)
+    assert scanner.jpeg is not None and scanner.jpeg_full is None       # a preview only...
+    assert cv2.imdecode(np.frombuffer(scanner.jpeg, np.uint8), cv2.IMREAD_COLOR).shape[0] == config.STREAM_PREVIEW_PX
+    scanner.full_viewers = 1
+    scanner._publish(big)                                                # ...until someone streams ?full=1
+    assert cv2.imdecode(np.frombuffer(scanner.jpeg_full, np.uint8), cv2.IMREAD_COLOR).shape[0] == 1920
+
+
+def test_glare_is_painted_over_before_giving_up(db):
+    """A foil's bright patches pull the fingerprint off its card; when nothing matches,
+    the patches are painted over and the card looked up again (vision.tame_glare)."""
+    from mtgscanner.recognize import identify
+    from mtgscanner.vision import tame_glare
+    rng = np.random.default_rng(3)
+    found = {"tamed": 0}
+    for seed in range(4):
+        card = fake_card(seed)
+        shiny = card.copy()
+        for _ in range(3):
+            centre = (int(rng.integers(60, CARD_W - 60)), int(rng.integers(60, CARD_H - 60)))
+            axes = (int(rng.integers(60, 110)), int(rng.integers(30, 60)))
+            cv2.ellipse(shiny, centre, axes, int(rng.integers(0, 180)), 0, 360, (255, 255, 255), -1)
+        shiny = cv2.GaussianBlur(shiny, (9, 9), 0)
+        assert tame_glare(shiny) is not None
+        card_found, distance = identify(db, shiny)
+        found["tamed"] += card_found is not None and card_found.id == f"id{seed}"
+    assert found["tamed"] >= 3, found
+
+
+def test_straighten_turns_a_tilted_card_into_an_upright_rectangle(db):
+    """Straighten (Scan page) measures the card on the bed and warps the whole picture so
+    that card shows square: the camera's small tilt and keystone undone (2026-11-07)."""
+    from mtgscanner import view
+    from mtgscanner.recognize import find_cards
+    from mtgscanner.vision import _order_corners
+    card = fake_card(1)
+    src = np.float32([[0, 0], [CARD_W, 0], [CARD_W, CARD_H], [0, CARD_H]])
+    # like the Pi camera: about 1° of tilt, the bottom edge 3 % wider than the top
+    dst = np.float32([[300, 160], [640, 166], [650, 640], [282, 632]])
+    table = np.full((800, 960, 3), 170, np.uint8)
+    photo = cv2.warpPerspective(card, cv2.getPerspectiveTransform(src, dst), (960, 800),
+                                dst=table, borderMode=cv2.BORDER_TRANSPARENT)
+    setting = view.straighten_from(photo)
+    assert setting is not None and setting["size"] == [960, 800]
+    assert view.clean_straighten(setting) == setting
+    straight = view.straighten(photo, setting)
+    assert straight.shape == photo.shape
+    quad = _order_corners(np.asarray(find_cards(straight)[0][0], np.float32).reshape(4, 2))
+    xs, ys = quad[:, 0], quad[:, 1]
+    assert abs(xs[0] - xs[3]) < 4 and abs(xs[1] - xs[2]) < 4      # upright sides
+    assert abs(ys[0] - ys[1]) < 4 and abs(ys[2] - ys[3]) < 4      # level top and bottom
+    w, h = xs[1] - xs[0], ys[3] - ys[0]
+    assert abs(w / h - view.CARD_ASPECT) < 0.02
+    # a picture of another size (a new crop) still gets a sensible warp, not an error
+    assert view.straighten(cv2.resize(photo, (480, 400)), setting).shape == (400, 480, 3)
+    assert view.straighten_from(np.full((400, 400, 3), 170, np.uint8)) is None    # no card
+    # the same from corners given by hand (shares of the picture), for a card the
+    # detector can't outline against a dark bed
+    by_hand = view.straighten_from(photo, [[x / 960, y / 800] for x, y in dst])
+    moved = [cv2.perspectiveTransform(dst.reshape(1, 4, 2), np.float32(x["m"]).reshape(3, 3)) for x in (by_hand, setting)]
+    assert np.abs(moved[0] - moved[1]).max() < 2      # the corners land within 2 px of each other
+    assert view.straighten_from(photo, [[0.1, 0.1], [0.2]]) is None
+
+
+def test_straighten_setting_from_the_scan_page(db, monkeypatch, tmp_path):
+    import app as app_module
+    from app import Scanner, create_app
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    scanner = Scanner(db, None, source=None)
+    client = create_app(scanner).test_client()
+    r = client.post("/api/settings", json={"straighten": True})
+    assert r.status_code == 400 and "picture" in r.get_json()["error"]
+    scanner._last_view = np.full((400, 400, 3), 170, np.uint8)
+    r = client.post("/api/settings", json={"straighten": True})
+    assert r.status_code == 400 and "No card" in r.get_json()["error"]
+    # a card turned 5° on the table: far more than the camera can be off, so refused
+    scanner._last_view = photograph(fake_card(2))
+    r = client.post("/api/settings", json={"straighten": True})
+    assert r.status_code == 400 and "doesn't look right" in r.get_json()["error"]
+    # a card as the Pi camera shows it: about 1° tilt and a little keystone
+    src = np.float32([[0, 0], [CARD_W, 0], [CARD_W, CARD_H], [0, CARD_H]])
+    dst = np.float32([[300, 160], [640, 166], [650, 640], [282, 632]])
+    scanner._last_view = cv2.warpPerspective(fake_card(2), cv2.getPerspectiveTransform(src, dst), (960, 720),
+                                             dst=np.full((720, 960, 3), 170, np.uint8), borderMode=cv2.BORDER_TRANSPARENT)
+    s = client.post("/api/settings", json={"straighten": True}).get_json()
+    assert s["view"]["straight"] is True and scanner.straight
+    assert app_module.load_settings()["straight"]["size"] == [960, 720]
+    fresh = Scanner(db, None, source=None)
+    fresh.restore(app_module.load_settings())
+    assert fresh.straight == scanner.straight          # kept for next time
+    s = client.post("/api/settings", json={"straighten": [[0.2, 0.1], [0.8, 0.1], [0.82, 0.9], [0.18, 0.9]]}).get_json()
+    assert s["view"]["straight"] is True
+    s = client.post("/api/settings", json={"rotate": 90}).get_json()
+    assert s["view"]["straight"] is False              # a new rotation needs a new straighten
+    assert client.post("/api/settings", json={"straighten": False}).get_json()["view"]["straight"] is False
+
+
+def _camera_quad(centre, turn_deg, size=400.0):
+    """A card as the Pi camera shows it: 3 % squashed, bottom 1.5 % wider than the top,
+    1° tilted, plus the card's own turn on the bed."""
+    w, h = size * 63 / 88, size * 0.97
+    q = np.float32([[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2 * 1.015, h / 2], [-w / 2 * 1.015, h / 2]])
+    a = np.radians(1.0 + turn_deg)
+    rot = np.float32([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+    return q @ rot.T + np.float32(centre)
+
+
+def test_auto_straighten_learns_the_camera_from_many_cards(monkeypatch):
+    """Each sure card is a sample; the median of their shapes, with each card's own turn
+    averaged out and a bad outline left out, straightens the picture (Nic: make the
+    camera 100 % automatic, and perfect)."""
+    from mtgscanner import auto_straighten, view
+    rng = np.random.default_rng(5)
+    auto = auto_straighten.AutoStraighten()
+    size = (1080, 1600)
+    turns = rng.normal(0, 1.2, 9)
+    for i, turn in enumerate(turns):
+        assert auto.add(_camera_quad((540 + rng.normal(0, 8), 900), turn), None, size)
+        if i < 7:
+            assert auto.proposal(None) is None          # not enough cards yet
+    # an outline that caught a light bar: far off square, left out
+    bad = _camera_quad((540, 900), 0)
+    bad[1] += (60, -40)
+    assert not auto.add(bad, None, size)
+    assert not auto.add(_camera_quad((20, 900), 0), None, size)     # at the picture's edge
+    setting = auto.proposal(None)
+    assert setting is not None
+    m = np.float32(setting["m"]).reshape(3, 3)
+    straight = cv2.perspectiveTransform(_camera_quad((540, 900), 0).reshape(1, 4, 2), m).reshape(4, 2)
+    left, right = straight[3] - straight[0], straight[2] - straight[1]
+    top = straight[1] - straight[0]
+    tilt = max(abs(np.degrees(np.arctan2(v[0], v[1]))) for v in (left, right))
+    assert tilt < 0.6, tilt                                    # sides upright within 0.6°
+    assert abs(np.degrees(np.arctan2(top[1], top[0]))) < 0.6
+    width = (np.linalg.norm(top) + np.linalg.norm(straight[2] - straight[3])) / 2
+    height = (np.linalg.norm(left) + np.linalg.norm(right)) / 2
+    assert abs(width / height - view.CARD_ASPECT) < 0.01
+
+    # the next samples come from the straightened picture: mapped back, they agree, so
+    # nothing changes (the picture stays steady)
+    for turn in rng.normal(0, 1.2, 5):
+        q = cv2.perspectiveTransform(_camera_quad((540, 900), turn).reshape(1, 4, 2), m).reshape(4, 2)
+        assert auto.add(q, setting, size)
+    assert auto.proposal(setting) is None
+
+
+def test_auto_straighten_refuses_a_correction_the_camera_cannot_need(monkeypatch):
+    from mtgscanner import auto_straighten
+    auto = auto_straighten.AutoStraighten()
+    for _ in range(8):
+        auto.add(_camera_quad((540, 900), 6.0), None, (1080, 1600))   # every card 7° off
+    assert auto.proposal(None) is None and auto.last_refused["turn"] > 3
+
+
+def test_auto_straighten_waits_for_the_bed_to_be_clear(db, monkeypatch, tmp_path):
+    import app as app_module
+    from app import Scanner
+    from mtgscanner.tracking import Track
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    scanner = Scanner(db, None, source=None)
+
+    class Source:
+        def read(self):
+            return np.full((300, 200, 3), 120, np.uint8)
+    scanner.source = Source()
+    monkeypatch.setattr(scanner, "process", lambda frame: None)
+    new = {"m": [1.0, 0.01, 0, 0, 1.0, 0, 0, 0, 1.0], "size": [200, 300]}
+    scanner._pending_straight = new
+    scanner.tracks = [Track(id=1, number=1, corners=np.float32([[0, 0], [10, 0], [10, 10], [0, 10]]))]
+    scanner.turn()
+    assert scanner.straight is None                         # a card is being read: wait
+    scanner.tracks = []
+    scanner.turn()
+    assert scanner.straight == new and app_module.load_settings()["straight"] == new
+
+
+def test_auto_straighten_takes_one_sample_per_card(db, monkeypatch, tmp_path):
+    """A card sitting on the bed is recognized over and over; it must count once, or one
+    card (with its own skew) sets the whole picture (seen on the Pi, 2026-11-08)."""
+    import app as app_module
+    from types import SimpleNamespace
+    from app import Scanner
+    from mtgscanner.tracking import Track
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    scanner = Scanner(db, None, source=None)
+    scanner.auto_straight = True
+    monkeypatch.setattr(scanner, "_keep_scan", lambda *a, **k: None)
+    frame = np.zeros((1600, 1080, 3), np.uint8)
+    corners = _camera_quad((540, 900), 0)
+    card = SimpleNamespace(id="x")
+    result = SimpleNamespace(card=card, corners=corners, distance=5, margin=20,
+                             confidence="sure", candidates=[], lookalikes=(), printing_lead=0.0)
+    t = Track(id=1, number=1, corners=corners)
+    for _ in range(6):
+        try:
+            scanner._update(t, [corners], result, frame)
+        except Exception:
+            pass                       # only the sampling matters here
+    assert len(scanner._auto_straight.samples) == 1
+
+
+def test_a_dim_card_is_looked_up_again_with_more_contrast(db):
+    """Nic: make the recognition better (2026-11-09). A foil on the dark bed comes out
+    flat and dim; when the first look isn't sure, the card is looked up again with its
+    contrast evened out (vision.boost_contrast), and the closer answer wins."""
+    from mtgscanner.recognize import _rank, _rank_both_ways
+    from mtgscanner.vision import boost_contrast
+    found = 0
+    for seed in range(4):
+        dim = (fake_card(seed).astype(np.float32) * 0.35 + 20).astype(np.uint8)
+        assert boost_contrast(dim).shape == dim.shape
+        plain = _rank_both_ways(db, dim)
+        hit = _rank(db, dim)
+        assert hit.distance <= plain.distance                 # never worse than without it
+        found += db.get_card(hit.id).id == f"id{seed}"
+    assert found >= 3
+
+
+def test_scan_py_webcam_mode_starts(monkeypatch, capsys):
+    """`python scan.py` with a webcam reads the camera's format before the first frame.
+    scan.py's own describe(card, foil) used to hide the camera's describe(cap), so it
+    crashed with a TypeError before showing anything."""
+    import cv2
+    import scan
+
+    class FakeCap:
+        def get(self, prop):
+            return {cv2.CAP_PROP_FOURCC: int.from_bytes(b"MJPG", "little"),
+                    cv2.CAP_PROP_FRAME_WIDTH: 1280, cv2.CAP_PROP_FRAME_HEIGHT: 720}.get(prop, 0)
+
+        def read(self):
+            return False, None   # no picture: the loop ends at once
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr(scan, "open_camera", lambda index: FakeCap())
+    monkeypatch.setattr(scan.cv2, "destroyAllWindows", lambda: None)
+    scan.scan_webcam(matcher=None, camera=0)
+    assert "Camera 0: 1280x720 MJPG" in capsys.readouterr().out
+
+
+# --- The whole card, not a piece of it (Nic, 2026-11-16) ----------------------------
+
+PHOTO_CORNERS = np.float32([[220, 90], [560, 120], [530, 590], [190, 560]])   # where photograph() puts the card
+
+
+def _overlap(a, b, shape=(720, 960)) -> float:
+    """How much two outlines cover the same part of the picture (1.0 = the same)."""
+    ma, mb = np.zeros(shape, np.uint8), np.zeros(shape, np.uint8)
+    cv2.fillPoly(ma, [np.int32(a)], 1)
+    cv2.fillPoly(mb, [np.int32(b)], 1)
+    return float((ma & mb).sum() / max(1, (ma | mb).sum()))
+
+
+def _thumb(photo: np.ndarray, start, end, width=46) -> np.ndarray:
+    """A thumb from the edge of the picture onto the card."""
+    photo = photo.copy()
+    cv2.line(photo, start, end, (150, 170, 215), width, cv2.LINE_AA)
+    return cv2.GaussianBlur(photo, (3, 3), 0)
+
+
+@pytest.mark.parametrize("start,end", [((345, 719), (360, 520)),     # over the bottom edge
+                                       ((959, 330), (500, 340)),     # over the right edge
+                                       ((400, 0), (395, 150)),       # over the top edge
+                                       ((0, 250), (250, 260))])      # over the left edge
+def test_a_thumb_over_one_edge_still_gives_the_whole_card(db, start, end):
+    """Nic: "it keeps looking at small sections of certain cards" (2026-11-16). A thumb
+    over an edge breaks the card's outline; the scanner used to settle for a piece of the
+    card, or a shape stretched over the thumb. The card is put back together from the
+    sides that still show."""
+    from mtgscanner.recognize import find_cards, identify_frame
+    photo = _thumb(photograph(fake_card(2)), start, end)
+    cards = find_cards(photo)
+    assert cards and _overlap(cards[0][0], PHOTO_CORNERS) > 0.93      # the card's main outline is the whole card
+    corners, card, distance = identify_frame(db, photo)
+    assert card is not None and card.id == "id2"
+    assert _overlap(corners, PHOTO_CORNERS) > 0.9
+
+
+def test_a_card_sticking_out_of_the_picture_is_still_outlined():
+    """Held close to the phone, a card's end leaves the picture. Its three sides inside
+    still say where it ends."""
+    from mtgscanner.recognize import find_cards
+    photo = photograph(fake_card(1))[:575]            # the bottom edge is cut off
+    cards = find_cards(photo)
+    assert cards and _overlap(cards[0][0], PHOTO_CORNERS) > 0.9
+
+
+def test_a_clean_card_keeps_its_own_outline():
+    """A card lying free on the table: one card, and its main outline is the clean one
+    the camera found, exactly on it (nothing changes for the machine's camera)."""
+    from mtgscanner.recognize import find_cards
+    from mtgscanner.vision import SIDES_GOOD_FIT, find_scored_candidates
+    photo = photograph(fake_card(0))
+    cards = find_cards(photo)
+    assert len(cards) == 1 and _overlap(cards[0][0], PHOTO_CORNERS) > 0.97
+    best = max(find_scored_candidates(photo), key=lambda s: cv2.contourArea(s[1]))
+    assert best[0] >= SIDES_GOOD_FIT and np.allclose(best[1], cards[0][0])
+
+
+def _piece(x0, y0, x1, y1) -> np.ndarray:
+    """A part of the card in photograph(): shares of its width and height."""
+    m = cv2.getPerspectiveTransform(np.float32([[0, 0], [1, 0], [1, 1], [0, 1]]), PHOTO_CORNERS)
+    return cv2.perspectiveTransform(np.float32([[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]), m)[0]
+
+
+def test_a_read_card_keeps_its_outline_when_only_a_piece_shows():
+    from types import SimpleNamespace
+    from mtgscanner.tracking import PIECE_RECHECK, Track, is_piece
+    art, text = _piece(0.08, 0.11, 0.92, 0.56), _piece(0.08, 0.63, 0.92, 0.9)
+    assert is_piece(art, PHOTO_CORNERS) and is_piece(text, PHOTO_CORNERS)
+    assert not is_piece(PHOTO_CORNERS * 0.97 + 8, PHOTO_CORNERS)        # the card itself, a little off
+    assert not is_piece(art + 400, PHOTO_CORNERS)                       # another, smaller card beside it
+
+    t = Track(id=1, number=1, corners=PHOTO_CORNERS.copy(), card=SimpleNamespace(id="x"), status="locked")
+    t.seen, t.checked_at, t.checked_time, t.streak_key = PHOTO_CORNERS.copy(), t.center, 100.0, "x"
+    t.follow(art)
+    assert t.piece and np.allclose(t.corners, PHOTO_CORNERS)            # the box stays on the whole card
+    assert not t.needs_check(100.0 + PIECE_RECHECK / 2)
+    assert t.needs_check(100.0 + PIECE_RECHECK + 0.01)                  # but it's looked at again soon
+    t.follow(text)                                                      # another piece: still the card
+    assert np.allclose(t.corners, PHOTO_CORNERS)
+    t.follow(PHOTO_CORNERS + 30)                                        # the whole outline is back, moved
+    assert not t.piece and np.allclose(t.corners, PHOTO_CORNERS + 30)
+
+    unread = Track(id=2, number=2, corners=PHOTO_CORNERS.copy())        # a card never read has no claim:
+    unread.follow(art)                                                  # it goes where its outline goes
+    assert np.allclose(unread.corners, art)
+
+
+def test_the_best_outline_follows_the_card_between_looks():
+    """The outline that matched best (a little bigger than the one found, say) moves with
+    the card on the pictures in between, instead of snapping back to the found one."""
+    from mtgscanner.tracking import Track
+    from mtgscanner.vision import grow
+    t = Track(id=1, number=1, corners=grow(PHOTO_CORNERS, 1.04))
+    t.seen = PHOTO_CORNERS.copy()
+    t.follow(PHOTO_CORNERS + (12, -7))
+    assert np.allclose(t.corners, grow(PHOTO_CORNERS, 1.04) + (12, -7), atol=0.5)
+
+
+def test_pieces_of_a_known_card_are_no_new_cards():
+    from types import SimpleNamespace
+    from mtgscanner.tracking import Track, pair_up
+    art, text = _piece(0.08, 0.11, 0.92, 0.56), _piece(0.08, 0.63, 0.92, 0.9)
+    known = Track(id=1, number=1, corners=PHOTO_CORNERS.copy(), card=SimpleNamespace(id="x"))
+    matched, new, gone = pair_up([known], [[art], [text], [art + 400]])
+    assert [t.id for t, _ in matched] == [1] and not gone
+    assert len(new) == 1 and np.allclose(new[0][0], art + 400)          # only the card beside it is new
+    unread = Track(id=2, number=2, corners=PHOTO_CORNERS.copy())        # nothing known there: every outline counts
+    assert len(pair_up([unread], [[art], [text]])[1]) == 1
+
+
+def test_scanner_holds_a_read_card_through_pictures_with_only_a_piece(db, monkeypatch, tmp_path):
+    """The whole chain: a card is read, then the camera only finds its art box for a
+    while. One card stays on the table, with its name and its whole outline."""
+    import app as app_module
+    from app import Scanner
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    scanner = Scanner(db, None, source=None)
+    photo = photograph(fake_card(3))
+    scanner.process(photo)
+    assert len(scanner.tracks) == 1 and scanner.tracks[0].card.id == "id3"
+    art, text = _piece(0.08, 0.11, 0.92, 0.56), _piece(0.08, 0.63, 0.92, 0.9)
+    monkeypatch.setattr(scanner, "_find", lambda frame: ([[art], [text]], [None, None]))
+    for _ in range(6):
+        scanner.tracks[0].checked_time -= 10      # time passes: each picture is a new look
+        scanner.process(photo)
+    assert len(scanner.tracks) == 1
+    t = scanner.tracks[0]
+    assert t.card.id == "id3" and t.status == "locked"
+    assert _overlap(t.corners, PHOTO_CORNERS) > 0.9
+    # The card is taken away and another's piece shows in its place: the name goes.
+    blank = np.full_like(photo, 170)
+    for _ in range(6):
+        scanner.tracks[0].checked_time -= 10
+        scanner.process(blank)
+    assert scanner.tracks[0].card is None
+
+
+# --- Cards lying close together -------------------------------------------------------
+
+def _table_of(cards: list[np.ndarray], gap: int, bg: int = 170) -> np.ndarray:
+    """Cards in a row on a plain table, gap pixels apart (a card is 300 px wide, 63 mm)."""
+    table = np.full((800, 1100, 3), bg, np.uint8)
+    w, h = 300, 419
+    for k, card in enumerate(cards):
+        x = 200 + k * (w + gap)
+        table[150:150 + h, x:x + w] = cv2.resize(card, (w, h))
+    noise = np.random.default_rng(gap).normal(0, 4, table.shape)
+    return np.clip(cv2.GaussianBlur(table, (3, 3), 0) + noise, 0, 255).astype(np.uint8)
+
+
+@pytest.mark.parametrize("gap", [10, 14])
+def test_two_cards_a_few_mm_apart_are_two_cards(db, gap):
+    """Two cards 2-3 mm apart came out as one outline around both (two cards side by side
+    are nearly card-shaped), and neither was read."""
+    from mtgscanner.recognize import find_cards, identify_card
+    photo = _table_of([fake_card(2), fake_card(3)], gap)
+    found = [m for outlines in find_cards(photo) for _, m in identify_card(db, photo, outlines)]
+    assert sorted(m.card.id for m in found if m.card) == ["id2", "id3"]
+
+
+def test_a_photo_of_two_cards_a_few_mm_apart_lists_both(db, monkeypatch, tmp_path):
+    """Photos (Scan page, Upload photos) read each card of an outline around two."""
+    import io
+    import app as app_module
+    monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
+    client = app_module.create_app(app_module.Scanner(db, None, source=None)).test_client()
+    photo = cv2.imencode(".jpg", _table_of([fake_card(2), fake_card(3)], 10), [cv2.IMWRITE_JPEG_QUALITY, 95])[1]
+    res = client.post("/api/photos", data={"photos": [(io.BytesIO(photo.tobytes()), "image.jpg")]},
+                      content_type="multipart/form-data").get_json()
+    assert sorted(r["card"]["id"] for r in res if "card" in r) == ["id2", "id3"]
+
+
+def _split_card() -> np.ndarray:
+    """A split card: two halves, each with its own frame, on one card."""
+    img = np.zeros((CARD_H, CARD_W, 3), np.uint8)
+    for (y0, y1), colour in (((24, 333), (40, 60, 190)), ((347, 656), (190, 120, 40))):
+        cv2.rectangle(img, (24, y0), (464, y1), colour, -1)
+        cv2.rectangle(img, (24, y0), (464, y1), (20, 20, 20), 3)
+        cv2.rectangle(img, (49, y0 + 30), (293, y0 + 180), (120, 210, 200), -1)
+    rng = np.random.default_rng(9)
+    for _ in range(14):
+        p = (int(rng.integers(80, CARD_W - 80)), int(rng.integers(60, CARD_H - 60)))
+        cv2.circle(img, p, int(rng.integers(8, 30)), tuple(int(v) for v in rng.integers(0, 255, 3)), -1)
+    return img
+
+
+@pytest.mark.parametrize("landscape", [False, True])
+def test_a_split_card_on_a_dark_table_stays_one_card(db, landscape):
+    """On a dark table a split card's two halves look like two cards side by side. It is
+    read as the one card it is."""
+    from mtgscanner.recognize import find_cards, identify_card
+    split = _split_card()
+    db.conn.execute("INSERT INTO cards VALUES ('split', 'Fire // Ice', 'tst', 'Test Set', '9', 'rare', '', 1.0, NULL, ?)",
+                    (fingerprint(split),))
+    db.conn.commit()
+    db.reload()
+    card = cv2.rotate(split, cv2.ROTATE_90_CLOCKWISE) if landscape else split
+    table = np.full((800, 1100, 3), 8, np.uint8)
+    h, w = card.shape[:2]
+    card = cv2.resize(card, (w * 420 // max(h, w), h * 420 // max(h, w)))
+    table[150:150 + card.shape[0], 250:250 + card.shape[1]] = card
+    photo = np.clip(cv2.GaussianBlur(table, (3, 3), 0) + np.random.default_rng(1).normal(0, 4, table.shape),
+                    0, 255).astype(np.uint8)
+    found = [m for outlines in find_cards(photo) for _, m in identify_card(db, photo, outlines)]
+    assert [m.card.id for m in found if m.card] == ["split"]
+    assert [m.card for m in found if not m.card] == []
+
+
+def test_corners_are_put_in_order_at_any_angle(db):
+    """A card at 45° gave one corner twice (top left and top right tie there), and the
+    straightened card was nonsense."""
+    from mtgscanner.recognize import identify_frame
+    from mtgscanner.vision import _order_corners
+    diamond = _order_corners(np.float32([[50, 100], [0, 50], [100, 50], [50, 0]]))
+    assert len({tuple(p) for p in diamond.tolist()}) == 4
+    assert diamond.tolist() == [[50, 0], [100, 50], [50, 100], [0, 50]]     # clockwise from the top
+    upright = np.float32([[10, 10], [90, 12], [88, 120], [12, 118]])
+    assert np.array_equal(_order_corners(upright[[2, 0, 3, 1]]), upright)
+    for angle in (45, 135):
+        m = cv2.getRotationMatrix2D((CARD_W / 2, CARD_H / 2), angle, 0.7)
+        m[:, 2] += (480 - CARD_W / 2, 400 - CARD_H / 2)
+        photo = cv2.warpAffine(fake_card(1), m, (960, 800), borderValue=(170, 170, 170))
+        corners = np.float32([[0, 0], [CARD_W, 0], [CARD_W, CARD_H], [0, CARD_H]])
+        turned = cv2.transform(corners.reshape(1, 4, 2), m).reshape(4, 2)
+        assert len({tuple(p) for p in np.round(_order_corners(turned)).tolist()}) == 4
+        _, card, _ = identify_frame(db, photo)
+        assert card is not None and card.id == "id1", angle
+
+
+def test_an_unknown_card_gets_its_glare_painted_over_once_or_twice(db, monkeypatch):
+    """A card the scanner doesn't know cost about 1.3 s a look: the slow second looks
+    (contrast, glare) ran on every outline tried. Now only on the closest one."""
+    from mtgscanner import recognize
+    from mtgscanner.recognize import find_cards, identify_outlines
+    calls = []
+    real = recognize.tame_glare
+    monkeypatch.setattr(recognize, "tame_glare", lambda img: calls.append(1) or real(img))
+    photo = photograph(fake_card(99))
+    outlines = find_cards(photo)[0]
+    m = identify_outlines(db, photo, outlines)
+    assert m.card is None and len(calls) <= 2
+
+
+def test_fingerprint_distances_count_every_bit(monkeypatch):
+    """The fast bit count gives the same as counting bits one by one, for whole-card
+    only (older) and two-part fingerprints, with or without np.bitwise_count."""
+    from mtgscanner import database
+    rng = np.random.default_rng(4)
+    fps = [rng.bytes(64 if i % 3 else 32) for i in range(40)]
+    scan = rng.bytes(64)
+
+    def by_hand(fp):
+        bits = lambda a, b: sum(bin(x ^ y).count("1") for x, y in zip(a, b))
+        whole = bits(fp[:32], scan[:32])
+        return (whole + bits(fp[32:], scan[32:])) // 2 if len(fp) == 64 else whole
+
+    want = [by_hand(fp) for fp in fps]
+    assert database._distances(database._split(fps), scan).tolist() == want
+    monkeypatch.delattr(np, "bitwise_count", raising=False)      # NumPy older than 2.0
+    assert database._distances(database._split(fps), scan).tolist() == want
+
+
+def test_build_db_keeps_each_card_as_its_row(tmp_path, monkeypatch):
+    """A full build used to keep every card's whole Scryfall entry until the end (about
+    1.6 GB). Only its row is kept now, and the row is the same as before."""
+    import build_db
+    card = {"id": "x1", "name": "Card X", "set": "tst", "set_name": "Test Set", "collector_number": "7",
+            "rarity": "mythic", "color_identity": ["U", "R"], "prices": {"usd": "2.50", "usd_foil": "9.00"},
+            "legalities": {"modern": "legal"}, "oracle_text": "Draw a card.",
+            "image_uris": {"small": "https://cards.scryfall.io/small/x1.jpg"}}
+    monkeypatch.setattr(build_db, "fetch_fingerprint", lambda url: b"\1" * 64)
+    path = tmp_path / "cards.db"
+    build_db.build(iter([card]), path, progress=lambda s: None)
+    conn = connect(path)
+    row = conn.execute("SELECT * FROM cards").fetchone()
+    assert row == ("x1", "Card X", "tst", "Test Set", "7", "mythic", "U,R", 2.5, 9.0, b"\1" * 64)
+    todo = build_db._todo(card, "u", False)
+    assert todo.row(b"f") == row[:9] + (b"f",)

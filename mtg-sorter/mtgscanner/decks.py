@@ -7,7 +7,10 @@ like "Sideboard" or "Commander". Decks you save are kept in data/decks.json.
 """
 
 import json
+import os
 import re
+import tempfile
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -29,6 +32,8 @@ _TAIL = [re.compile(p) for p in (
     r"\s+\*[A-Za-z]+\*", r"\s+#\S.*$", r"\s+\^[^^]*\^", r"\s+\[[^\]]*\]", r"\s+\([A-Za-z0-9]{2,6}\)(\s+\S+)?\s*$",
     r"\s+<[^>]*>")]
 MAX_LINES = 500
+# Sections that aren't part of the deck you play: shown, but not counted, priced or bought.
+EXTRA_SECTIONS = {"Maybeboard", "Tokens"}
 
 
 def name_key(name: str) -> str:
@@ -86,14 +91,17 @@ def check(text: str, rows: list[dict], matcher, vault=None, live=None) -> dict:
     # Cards needed in several sections (main and sideboard) share the copies you own.
     left = {k: sum(i["qty"] for i in v) for k, v in owned.items()}
     lookups = {}
-    short = [w["name"] for w in wanted if left.get(name_key(w["name"]), 0) < w["qty"]]
+    short = [w["name"] for w in wanted if left.get(name_key(w["name"]), 0) < w["qty"]
+             and w["section"] not in EXTRA_SECTIONS]
     if live and short:
         lookups = live.by_names(short)
     lines = []
     for w in wanted:
+        extra = w["section"] in EXTRA_SECTIONS
         key = name_key(w["name"])
         have = min(w["qty"], left.get(key, 0))
-        left[key] = left.get(key, 0) - have
+        if not extra:   # Maybeboard and Tokens rows don't use up copies the deck needs
+            left[key] = left.get(key, 0) - have
         mine = owned.get(key, [])
         card, price = None, None
         if mine:
@@ -101,7 +109,7 @@ def check(text: str, rows: list[dict], matcher, vault=None, live=None) -> dict:
             image, display, found = first["image"], first["name"], True
         else:
             image, display, found = "", w["name"], False
-        if have < w["qty"]:
+        if have < w["qty"] and not extra:
             js = lookups.get(w["name"].lower()) or lookups.get(key)
             if js:
                 card = card_from_scryfall(js)
@@ -113,25 +121,26 @@ def check(text: str, rows: list[dict], matcher, vault=None, live=None) -> dict:
             if card:
                 found, display = True, card.name
                 image = image or f"https://api.scryfall.com/cards/{card.id}?format=image&version=normal"
-        missing = w["qty"] - have
+        missing = 0 if extra else w["qty"] - have
         lines.append({
             "name": display, "asked": w["name"], "section": w["section"], "need": w["qty"], "have": have,
-            "missing": missing, "found": found, "image": image,
+            "missing": missing, "found": found, "image": image, "extra": extra,
             "price": price if missing else None,
             "cost": round(price * missing, 2) if missing and price is not None else None,
             "where": [{"set": i["set"], "number": i["number"], "foil": i["foil"], "qty": i["qty"],
                        "bin": i["bin"], "sorted_into": i["sorted_into"]} for i in mine],
         })
-    need = sum(x["need"] for x in lines)
-    have = sum(x["have"] for x in lines)
+    counted = [x for x in lines if not x["extra"]]
+    need = sum(x["need"] for x in counted)
+    have = sum(x["have"] for x in counted)
     return {
         "lines": lines,
         "need": need,
         "have": have,
         "missing": need - have,
-        "cost": round(sum(x["cost"] or 0 for x in lines), 2),
-        "unpriced": sum(x["missing"] for x in lines if x["missing"] and x["cost"] is None),
-        "unknown": [x["asked"] for x in lines if not x["found"]],
+        "cost": round(sum(x["cost"] or 0 for x in counted), 2),
+        "unpriced": sum(x["missing"] for x in counted if x["missing"] and x["cost"] is None),
+        "unknown": [x["asked"] for x in counted if not x["found"]],
         "percent": round(100 * have / need) if need else 0,
     }
 
@@ -150,11 +159,32 @@ def load_decks() -> list[dict]:
         return []
 
 
+# One save at a time: two saves landing together could otherwise lose a deck.
+_lock = threading.RLock()
+
+
+def write_json(path: Path, data):
+    """Save a JSON file in one go, through a temporary file of its own, so a half-written
+    file is never left in its place (the wishlist, games and binder use this too)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.stem + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            os.fchmod(f.fileno(), 0o644)
+            f.write(json.dumps(data, indent=1))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _write(decks):
-    decks_file().parent.mkdir(parents=True, exist_ok=True)
-    tmp = decks_file().with_suffix(".tmp")
-    tmp.write_text(json.dumps({"decks": decks}, indent=1))
-    tmp.replace(decks_file())
+    write_json(decks_file(), {"decks": decks})
 
 
 # Extra things a deck can keep, besides its name and list (from the deck builder).
@@ -166,26 +196,28 @@ def save_deck(name: str, text: str, deck_id: str | None = None, create: bool = F
     """Save a deck (a new one without deck_id, or with create=True and an id of your own)."""
     name = (str(name or "").strip() or "Untitled deck")[:80]
     text = str(text or "")[:40000]
-    decks = load_decks()
-    deck = next((d for d in decks if d["id"] == deck_id), None) if deck_id else None
-    if deck is None:
-        deck = {"id": str(deck_id)[:40] if create and deck_id else uuid.uuid4().hex[:12]}
-        decks.append(deck)
-    deck.update(name=name, text=text, updated=time.strftime("%Y-%m-%d %H:%M"))
-    for k, kind in DECK_FLAGS.items():
-        if extra and k in extra:
-            deck[k] = kind(extra[k])[:200] if kind is str else kind(extra[k])
-    _write(decks)
-    return deck
+    with _lock:
+        decks = load_decks()
+        deck = next((d for d in decks if d["id"] == deck_id), None) if deck_id else None
+        if deck is None:
+            deck = {"id": str(deck_id)[:40] if create and deck_id else uuid.uuid4().hex[:12]}
+            decks.append(deck)
+        deck.update(name=name, text=text, updated=time.strftime("%Y-%m-%d %H:%M"))
+        for k, kind in DECK_FLAGS.items():
+            if extra and k in extra:
+                deck[k] = kind(extra[k])[:200] if kind is str else kind(extra[k])
+        _write(decks)
+        return deck
 
 
 def delete_deck(deck_id: str) -> bool:
-    decks = load_decks()
-    keep = [d for d in decks if d["id"] != deck_id]
-    if len(keep) == len(decks):
-        return False
-    _write(keep)
-    return True
+    with _lock:
+        decks = load_decks()
+        keep = [d for d in decks if d["id"] != deck_id]
+        if len(keep) == len(decks):
+            return False
+        _write(keep)
+        return True
 
 
 # --- Web routes ------------------------------------------------------------------------------

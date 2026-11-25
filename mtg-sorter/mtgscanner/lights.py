@@ -226,6 +226,9 @@ class Lights:
         self.error = None
         self.settings = load_settings()
         self._flash = None        # (rgb, started) while a flash is showing
+        self._held = 0            # > 0 while a feed watches the camera: the picture must not change
+        self._held_at = 0.0
+        self._dim = None          # percent: every LED at most this bright for now (see dim)
         self._wake = threading.Event()
         self._thread = None
         self.started = time.monotonic()
@@ -269,14 +272,20 @@ class Lights:
                 self._thread.start()
 
     def _run(self):
-        last = None
+        last, sent_at = None, 0.0
         while True:
             with self.lock:
-                frame, moving = self.render(time.monotonic())
-                if last is None or frame.shape != last.shape or not np.array_equal(frame, last):
+                now = time.monotonic()
+                frame, moving = self.render(now)
+                # Unchanged colors are sent again every LIGHTS_REFRESH_SECONDS too: a strip that
+                # got its 5 V after the last send (the brick switched on later, a loose wire, a
+                # glitch on the data line) stayed dark until the colors changed, so the Lights
+                # page's switch needed flipping a couple of times (Mk2, 2026-11-24).
+                stale = now - sent_at >= float(getattr(config, "LIGHTS_REFRESH_SECONDS", 1.0))
+                if last is None or frame.shape != last.shape or not np.array_equal(frame, last) or stale:
                     self._send(frame)
-                    last = frame
-                elif self._out is None:
+                    last, sent_at = frame, now
+                if self._out is None:
                     self._device()   # keep retrying, so turning SPI on is picked up
             self._wake.wait(1 / 40 if moving else 1.0)
             self._wake.clear()
@@ -290,14 +299,42 @@ class Lights:
         card = self.settings["card"]
         px = np.zeros((card["count"], 3))
         if card["on"]:
-            px[:] = to_rgb(card["color"]) * card["brightness"] / 100
+            level = card["brightness"] if self._dim is None else min(card["brightness"], self._dim)
+            px[:] = to_rgb(card["color"]) * level / 100
         px = limit_power(np.vstack([status, px]), config.LIGHTS_MAX_AMPS)
         return np.clip(np.rint(px), 0, 255).astype(np.uint8), moving
+
+    def hold(self):
+        """Freeze the lights as they are: no effect movement, no flashes. A feed that
+        watches the camera (feed_watch.py) tells a card from the bed by what changed in the
+        picture, and a colour cycling under it looks like a change (2026-11-06). Every
+        hold() needs a release()."""
+        with self.lock:
+            if self._held == 0:
+                self._held_at = time.monotonic()
+                self._flash = None
+            self._held += 1
+        self._wake.set()
+
+    def release(self):
+        with self.lock:
+            self._held = max(0, self._held - 1)
+        self._wake.set()
+
+    def dim(self, level=None):
+        """Turn every LED, the card light too, down to at most `level` percent for a while
+        (the sort run's second look at a foil, which glares); dim(None) puts them back.
+        Only for now: nothing is saved, so a restart comes back at the saved brightness."""
+        with self.lock:
+            self._dim = None if level is None else _number(level, 0, 100, "Brightness")
+        self._wake.set()
 
     def _render_status(self, now: float) -> tuple[np.ndarray, bool]:
         s = self.settings
         n = s["count"]
-        level = s["brightness"] / 100
+        level = (s["brightness"] if self._dim is None else min(s["brightness"], self._dim)) / 100
+        if self._held:
+            now = self._held_at      # the effect stands still
         if not s["on"]:
             return np.zeros((n, 3)), False
         t = now - self.started
@@ -316,9 +353,9 @@ class Lights:
             px = np.outer(0.12 + 0.88 * glow, color)
         else:
             px = np.tile(color, (n, 1))
-        moving = effect != "solid"
+        moving = effect != "solid" and not self._held
         px = px * level
-        if self._flash is not None:
+        if self._flash is not None and not self._held:
             rgb, since = self._flash
             age = now - since
             if age >= FLASH_SECONDS:
@@ -338,6 +375,8 @@ class Lights:
                 raise ValueError(f"Unknown flash: {event}")
             if not force and not (s["on"] and s["flashes"] and ev["on"]):
                 return
+            if self._held:
+                return               # a feed is watching the camera: keep the picture still
             self._flash = (to_rgb(ev["color"]), time.monotonic())
         self._wake.set()
 
@@ -378,6 +417,7 @@ class Lights:
                 "ok": self._out is not None,
                 "error": self.error,
                 "settings": self.settings,
+                "dimmed": self._dim,                              # percent, while a sort run dims them
                 "effects": list(EFFECTS.items()),                 # lists keep the order
                 "events": [[k, label] for k, (label, _) in EVENTS.items()],
                 "max_count": MAX_LEDS,

@@ -17,6 +17,7 @@ from your laptop or phone.
 """
 
 import argparse
+import gzip
 import itertools
 import json
 import os
@@ -25,35 +26,48 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+# OpenCV refuses pictures bigger than this before it decodes them: a small file can claim
+# to be a huge picture (a 0.7 MB PNG of 16000 x 16000 took 768 MB). 60 MP still lets a
+# 48 or 50 MP phone photo through. Set before cv2 loads; the Dockerfile sets it too.
+os.environ.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", "60000000")
+
 import cv2
 import numpy as np
 from flask import Flask, Response, abort, jsonify, make_response, request, send_file, send_from_directory
-from mtgscanner import config
+from mtgscanner import camera as cameras_mod, config, view
+from mtgscanner.printings import FETCH_SECONDS, StockPictures
 from mtgscanner.camera import BrowserSource, CameraSource, list_cameras  # noqa: F401  (tests patch these here)
 from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
-from mtgscanner.database import Card, Matcher, connect
+from mtgscanner.database import Card, Matcher, connect, fingerprint_distance
+from mtgscanner.vision import fingerprint, warp_card
 from mtgscanner.exchange import load_rate
-from mtgscanner import accounts, assets, logins, security, sort_rules, wishlist
+from mtgscanner import accounts, assets, logins, pi_sync, security, sort_rules, wishlist
 from mtgscanner.decks import name_key
 from mtgscanner.history import add_history_routes
 from mtgscanner.home import add_home_routes
 from mtgscanner.sets import add_sets_routes
+from mtgscanner.news import add_news_routes
 from mtgscanner.bins import add_bins_routes
 from mtgscanner.decks import add_deck_routes
 from mtgscanner.upgrades import add_upgrade_routes
 from mtgscanner.library import add_collection_routes, lookup
 from mtgscanner.lights import Lights, add_lights_routes
+from mtgscanner.auto_straighten import AutoStraighten
 from mtgscanner.wishlist import add_wishlist_routes
 from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
+from mtgscanner.feed_watch import add_feed_watch_routes
+from mtgscanner.health import add_health_routes
+from mtgscanner.tuning import add_tuning_routes
 from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
-from mtgscanner.remote_machine import RemoteLights, RemoteMachine, remote_url
-from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_outlines
+from mtgscanner.remote_machine import RemoteCameraSource, RemoteLights, RemoteMachine, remote_url
+from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_card, identify_outlines
+from mtgscanner.sort_run import add_sort_run_routes
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.system import ON_PI, add_system_routes
-from mtgscanner.tracking import Track, free_number, pair_up
+from mtgscanner.tracking import Track, free_number, is_piece, pair_up
 from mtgscanner.training import forget_all, ready_to_learn, train
 from mtgscanner.vault_prices import VaultPrices
 
@@ -127,6 +141,39 @@ class WaitingForCamera:
 # --- The scanner, running in the background ----------------------------------------
 
 SESSION_SHOWN = 100  # cards of this session listed on the scanner page
+FRAME_MAX_BYTES = 10 * 1024 * 1024   # the biggest picture a phone may send to /api/frame
+STREAM_RESEND_SECONDS = 2.0    # a still picture is sent again this often (see stream())
+STREAM_GIVE_UP_SECONDS = 10.0  # a stream with no picture at all ends after this long
+# Each saved card's number ("seq"), for every scanner: it starts from the time the app
+# started, in ms, so it keeps going up after a restart and the page's alerts never wait.
+_SAVE_NUMBERS = itertools.count(time.time_ns() // 1_000_000)
+
+
+LOOK_SIZE = (24, 34)   # width, height of _bed_look
+
+
+def _bed_look(crop):
+    """The middle of the bed box (where a card covers the ribs), small, grey and blurred."""
+    h, w = crop.shape[:2]
+    middle = crop[int(h * 0.15):int(h * 0.85), int(w * 0.15):int(w * 0.85)]
+    grey = cv2.cvtColor(middle, cv2.COLOR_BGR2GRAY) if middle.ndim == 3 else middle
+    return cv2.resize(cv2.GaussianBlur(grey, (5, 5), 0), LOOK_SIZE, interpolation=cv2.INTER_AREA)
+
+
+def look_likeness(a, b) -> float:
+    """How alike two _bed_look pictures are, -1 to 1, whatever their brightness and contrast."""
+    a = a.astype(np.float32).ravel()
+    b = b.astype(np.float32).ravel()
+    a -= a.mean()
+    b -= b.mean()
+    n = float(np.linalg.norm(a) * np.linalg.norm(b))
+    return float(a @ b) / n if n > 1e-6 else 0.0
+
+
+class BedBox(list):
+    """The outlines of a card that only the bed box stands for (no edge of its own was
+    found, see Scanner._whole_cards). The bed's own texture can give such a piece with
+    no card there at all, so a bed box that doesn't match a card isn't kept as one."""
 
 
 def _smooth(old: float | None, new: float, weight: float = 0.2) -> float:
@@ -141,17 +188,44 @@ class Scanner:
         self.matcher, self.vault, self.source, self.live = matcher, vault, source, live
         self.lights = None  # the RGB light bars (lights.py), which flash for saved, unsure and unknown cards
         self.lock = threading.Lock()
-        self.jpeg = None  # latest camera picture for the page
+        # The latest camera picture for the page, made into a JPEG only when a page asks
+        # for it (see the jpeg property): encoding every picture cost ~20 ms each on the
+        # Pi even with no page open.
+        self._preview_lock = threading.Lock()
+        self._preview_frame = None   # the newest picture, not encoded yet
+        self._preview = None         # the last one encoded
+        self.tap = None  # feed_watch.FrameTap: "Feed one card" watches the pictures through it
         self.frame_size = None  # (width, height) of the camera picture
         self.started = False  # True once the first picture arrived
         self.tracks: list[Track] = []  # the cards in view (see tracking.py)
         self._ids = itertools.count(1)
+        self._table = 0   # goes up each time the tracks are forgotten (see process)
         self.foil = False
         self.auto = False
         self.mode = "auto"  # "auto": cards anywhere in the picture; "slots": only in the boxes you drew
         self.slots: list[
             list[float]
         ] = []  # each [x0, y0, x1, y1], as shares of the picture's width and height
+        self.rotate = 0  # the camera picture turned clockwise this many degrees (view.py)
+        self.crop: list[float] | None = None  # then cropped to this part of it; None = all of it
+        self.straight = None  # then the camera's tilt and keystone undone (view.straighten_from)
+        self._last_view = None  # the last picture after rotate and crop, before straightening
+        self.auto_straight = config.AUTO_STRAIGHTEN  # straighten by itself from sure cards
+        # Smallest outline that counts as a card, as a share of the picture (None:
+        # config.MIN_CARD_AREA). Set from the card on the scan bed, it stops the scanner
+        # reading an art or text box as a card of its own (Nic, 2026-11-08).
+        self.min_card = None
+        # Where a card lies on the bed, [x0, y0, x1, y1] as shares of the picture. With
+        # min_card set, a card whose edge can't be found (a foil's black border lost in
+        # glare) but whose art or text box shows there is read from this box instead.
+        self.bed_box = None
+        self.empty_bed = None   # fingerprint of the bare bed in the bed box (remember_empty_bed)
+        self.empty_look = None  # the bare bed's middle, small and grey (_bed_look)
+        self._seen = None       # the last picture as the scanner sees it (rotated, cropped, straightened)
+        self._bed_small = None  # the bed box, small and grey, on the last picture (_bed_still)
+        self._bed_moved_at = 0.0
+        self._auto_straight = AutoStraighten()
+        self._pending_straight = None  # a new straightening, put in between cards
         self.outline = (
             46,
             119,
@@ -183,10 +257,28 @@ class Scanner:
             "frame_age_ms": None,
         }
         self._last_frame_time = None
+        self._last_small = None       # a small grey copy of the last picture looked at
+        self._last_look = 0.0         # when it was looked at (time.monotonic)
+        self.jpeg_full = None         # the full-size picture, made only while someone streams ?full=1
+        self.full_viewers = 0
+        self.viewers_lock = threading.Lock()   # for full_viewers, counted by each open stream
         workers = config.IDENTIFY_THREADS or min(8, os.cpu_count() or 2)
         self._pool = ThreadPoolExecutor(
             max_workers=workers, thread_name_prefix="identify"
         )
+
+    @property
+    def jpeg(self) -> bytes | None:
+        """The latest camera picture as a JPEG preview (None before the first one)."""
+        with self._preview_lock:
+            if self._preview_frame is not None:
+                self._preview, self._preview_frame = self._encode(self._preview_frame), None
+            return self._preview
+
+    @jpeg.setter
+    def jpeg(self, value):
+        with self._preview_lock:
+            self._preview, self._preview_frame = value, None
 
     def use_source(self, source):
         """Switch cameras. The background thread makes the swap between frames."""
@@ -206,11 +298,236 @@ class Scanner:
         )
         self.mode = saved["mode"] if saved.get("mode") in ("auto", "slots") else "auto"
         self.slots = clean_slots(saved.get("slots") or []) or []
+        self.rotate = view.clean_rotation(saved.get("rotate", 0)) or 0
+        self.crop = view.clean_box(saved["crop"]) if saved.get("crop") else None
+        self.straight = view.clean_straighten(saved.get("straight")) if saved.get("straight") else None
+        self.auto_straight = bool(saved.get("auto_straight", config.AUTO_STRAIGHTEN))
+        self.min_card = clean_min_card(saved.get("min_card"))
+        self.bed_box = view.clean_box(saved["bed_box"]) if saved.get("bed_box") else None
+        try:
+            empty = bytes.fromhex(saved["empty_bed"]) if saved.get("empty_bed") else None
+        except (TypeError, ValueError):
+            empty = None
+        self.empty_bed = empty if empty and len(empty) == 64 else None
+        try:
+            look = np.frombuffer(bytes.fromhex(saved["empty_look"]), np.uint8) if saved.get("empty_look") else None
+        except (TypeError, ValueError):
+            look = None
+        self.empty_look = look.reshape(LOOK_SIZE[1], LOOK_SIZE[0]) if look is not None and look.size == LOOK_SIZE[0] * LOOK_SIZE[1] else None
+
+    def set_min_card_from_bed(self) -> float:
+        """Look only for whole cards: the smallest card becomes MIN_CARD_FROM_BED of the
+        biggest card seen now (the one on the bed). Raises ValueError with no card in
+        view. Call with the lock held."""
+        w, h = self.frame_size or (0, 0)
+        tracks = [t for t in self.tracks if t.missing == 0] or list(self.tracks)
+        if not tracks or not w or not h:
+            raise ValueError("No card in view: lay one card on the bed, against the stop pins, and try again")
+        locked = [t for t in tracks if t.status == "locked"] or tracks
+        card = max(locked, key=lambda t: float(cv2.contourArea(np.asarray(t.corners, np.float32))))
+        corners = np.asarray(card.corners, np.float32)
+        share = float(cv2.contourArea(corners)) / float(w * h)
+        value = clean_min_card(round(share * config.MIN_CARD_FROM_BED, 4))
+        if value is None:
+            raise ValueError("That card's outline doesn't look right: lay it flat on the bed and try again")
+        self.min_card = value
+        (x0, y0), (x1, y1) = corners.min(axis=0), corners.max(axis=0)
+        self.bed_box = view.clean_box([x0 / w, y0 / h, x1 / w, y1 / h])
+        self.empty_bed = self.empty_look = None   # measured in the old bed box: press Bed is empty again
+        self.forget_tracks()
+        return value
+
+    def bed_settings(self) -> dict:
+        """Whole cards only and the bare bed, as save_settings keeps them."""
+        return {"min_card": self.min_card, "bed_box": self.bed_box,
+                "empty_bed": self.empty_bed.hex() if self.empty_bed is not None else None,
+                "empty_look": self.empty_look.tobytes().hex() if self.empty_look is not None else None}
+
+    def _bed_rect(self, frame):
+        h, w = frame.shape[:2]
+        x0, y0, x1, y1 = self.bed_box[0] * w, self.bed_box[1] * h, self.bed_box[2] * w, self.bed_box[3] * h
+        return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.float32)
+
+    def remember_empty_bed(self, frame=None, save: bool = True) -> bool:
+        """Remember what the bare bed looks like inside the bed box, so the bed's own
+        texture is never read as a card (Nic, 2026-11-09: the empty bed was read as
+        Precise Redaction and saved again and again). `frame`: a picture as the scanner
+        sees it, with nothing on the bed (default: the last one). False with no bed box
+        or no picture."""
+        frame = self._seen if frame is None else frame
+        if not self.bed_box or frame is None:
+            return False
+        crop = warp_card(frame, self._bed_rect(frame))
+        self.empty_bed = fingerprint(crop)
+        self.empty_look = _bed_look(crop)
+        if save:
+            save_settings(empty_bed=self.empty_bed.hex(), empty_look=self.empty_look.tobytes().hex())
+        return True
+
+    def bed_lookalikes(self) -> set[str]:
+        """The cards the bare bed itself reads closest to (its ribs read as Precise
+        Redaction on Nic's bed, 2026-11-09). On the bed, a card with one of these names
+        only counts when it's a sure match. Empty until the bare bed is known."""
+        if self.empty_bed is None or self.matcher is None:
+            return set()
+        if getattr(self, "_lookalikes", (None,))[0] != self.empty_bed:
+            names = set()
+            hit = self.matcher.rank(self.empty_bed, candidates=config.BED_LOOKALIKES)
+            for cid, d in [(hit.id, hit.distance), *hit.candidates]:
+                card = self.matcher.get_card(cid) if cid else None
+                if card is not None and d <= config.CANDIDATE_DISTANCE:
+                    names.add(card.name)
+            self._lookalikes = (self.empty_bed, names)
+        return self._lookalikes[1]
+
+    def _screen(self, outlines, result):
+        """A match the bare bed could have given (a bed lookalike, not sure, on the bed)
+        is no card at all."""
+        if (result is None or result.card is None or result.confidence == "sure"
+                or not self.bed_box or self.frame_size is None):
+            return result
+        w, h = self.frame_size
+        cx, cy = np.asarray(outlines[0], np.float32).mean(axis=0)
+        x0, y0, x1, y1 = self.bed_box
+        if not (x0 * w <= cx <= x1 * w and y0 * h <= cy <= y1 * h):
+            return result
+        if result.card.name not in self.bed_lookalikes():
+            return result
+        return Match(result.corners, None, result.distance, result.margin, None, result.candidates)
+
+    def _bed_still(self, frame, bed) -> bool:
+        """Whether the bed box has looked the same for config.BED_STILL_SECONDS."""
+        small = cv2.resize(cv2.cvtColor(warp_card(frame, bed), cv2.COLOR_BGR2GRAY), (32, 45),
+                           interpolation=cv2.INTER_AREA)
+        now = time.monotonic()
+        last, self._bed_small = self._bed_small, small
+        if last is None or float(np.mean(cv2.absdiff(small, last))) >= config.BED_STILL_LEVEL:
+            self._bed_moved_at = now
+        return now - self._bed_moved_at >= config.BED_STILL_SECONDS
+
+    def bed_is_empty(self, frame) -> bool:
+        """Whether the bed box shows the bare bed remembered by remember_empty_bed."""
+        if not self.bed_box or self.empty_bed is None:
+            return False
+        crop = warp_card(frame, self._bed_rect(frame))
+        if fingerprint_distance(self.empty_bed, fingerprint(crop)) <= config.EMPTY_BED_DISTANCE:
+            return True
+        # The fingerprint misses the bare bed when the light bars dip (tower, 2026-11-09:
+        # the bed read as Precise Redaction, "sure", in a dimmer picture). Its pattern of
+        # ribs stays the same whatever the brightness; a card covers it.
+        return (self.empty_look is not None
+                and look_likeness(self.empty_look, _bed_look(crop)) >= config.EMPTY_BED_LIKENESS)
+
+    def set_straight(self, on, corners=None):
+        """Straighten the picture from the card on the bed now (True) or stop (False).
+        `corners`: the card's 4 corners by hand, [[x, y], ...] as shares of the picture.
+        Raises ValueError when there is no picture or no card in it. Call with the lock held."""
+        self._pending_straight = None
+        if not on:
+            self.straight = None
+            self._auto_straight.reset()
+        else:
+            frame = self._last_view
+            if frame is None:
+                raise ValueError("No camera picture yet")
+            setting = view.straighten_from(frame, corners)
+            if setting is None:
+                raise ValueError("No card found: lay one card square on the bed, against the stop pins, and try again")
+            from mtgscanner.auto_straighten import correction
+            turn, stretch = correction(setting, setting["size"])
+            if corners is None and (turn > config.AUTO_STRAIGHT_MAX_TURN or stretch > config.AUTO_STRAIGHT_MAX_STRETCH):
+                # far more than the camera is off: the outline caught something else
+                raise ValueError(f"That card's outline doesn't look right (it would turn the picture {turn:.1f}°): "
+                                 "lay it square against the pins, or use a white-bordered card, and try again")
+            self.straight = setting
+        self._last_small = None   # the picture changes: look at the next one straight away
+        self.forget_tracks()
+
+    def set_view(self, rotate: int | None = None, crop=False):
+        """Turn the picture to `rotate` degrees and/or crop it. `crop` is a box drawn on
+        the picture as it shows now (so it zooms in further), None for the whole picture,
+        False to leave it. Slots stay on the same spots of the table, and so does the bed
+        box when the picture turns. A new crop turns Whole cards only off (its card size and
+        bed box were measured on the old picture). Call with the lock held."""
+        if rotate is not None and rotate != self.rotate:
+            turns = (rotate - self.rotate) // 90
+            if self.crop:
+                self.crop = view.turn_box(self.crop, turns)
+            self.slots = [view.turn_box(sl, turns) for sl in self.slots]
+            if self.bed_box:
+                # the card keeps its share of the picture, so min_card stays as it is
+                self.bed_box = view.turn_box(self.bed_box, turns)
+            self.empty_bed = self.empty_look = None   # the bare bed looks turned now: measure it again
+            self.rotate = rotate
+        if crop is not False:
+            old = self.crop
+            new = None if crop is None else view.inside(crop, old)
+            if new is not None and view.is_whole(new):
+                new = None
+            full = [view.inside(sl, old) for sl in self.slots]
+            new = [round(v, 4) for v in new] if new else None
+            if new != old:
+                # the card on the bed is a different share of the new picture, somewhere else
+                self.min_card = self.bed_box = None
+                self.empty_bed = self.empty_look = None
+            self.crop = new
+            self.slots = clean_slots([view.relative(sl, self.crop) for sl in full]) or []
+            self.straight = None  # measured on the old picture: straighten again
+        if rotate is not None:
+            self.straight = None
+        if rotate is not None or crop is not False:
+            self._auto_straight.reset()
+            self._pending_straight = None
+            self._last_small = None
+        self.forget_tracks()  # outlines and numbers belong to the old picture
+
+    def _whole_cards(self, frame):
+        """find_cards for "Whole cards only": outlines smaller than min_card (a card's art
+        or text box) aren't cards. When only such a piece shows inside the bed box, the
+        card's edge was lost (glare on a foil's black border), so the bed box is its outline.
+        A whole card on the bed also gets the bed box as a second outline to try. Both only
+        once the bare bed is known (remember_empty_bed), and never while the bed is bare."""
+        h, w = frame.shape[:2]
+        # Nothing covers a card on the bed, and its outlines were tuned as they are found:
+        # no putting cards back together from their sides here (that's for a hand-held card).
+        found = find_cards(frame, rebuild=False)
+        least = self.min_card * w * h
+        cards = [g for g in found if cv2.contourArea(np.asarray(g[0], np.float32)) >= least]
+        if not self.bed_box:
+            return cards
+        x0, y0, x1, y1 = self.bed_box[0] * w, self.bed_box[1] * h, self.bed_box[2] * w, self.bed_box[3] * h
+        bed = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.float32)
+
+        def on_bed(group):
+            cx, cy = np.asarray(group[0], np.float32).mean(axis=0)
+            return x0 <= cx <= x1 and y0 <= cy <= y1
+
+        if self.empty_bed is None:
+            # Without knowing what the bare bed looks like, the bed box can't be told apart
+            # from the bed's own ribs, which read as a card (Nic, 2026-11-09: Precise
+            # Redaction saved again and again). Only real outlines count until it's known.
+            return cards
+        if self.bed_is_empty(frame):
+            # The bed box is the bare bed: anything outlined there is its ribs, not a card.
+            return [g for g in cards if not on_bed(g)]
+        if not self._bed_still(frame, bed):
+            # Something is moving on the bed (a card sliding off, the tray tilting): half a
+            # card and the ribs read as Precise Redaction there, ~2 s after each real card
+            # (tower, 2026-11-09). The bed box only stands in for a card at rest.
+            return cards
+        if cards:
+            # A whole outline on a foil is often a little off (a corner pulled in by glare),
+            # and the bed box is exactly where a card lies: try it as well, best match wins.
+            # On the Pi's unread cards (2026-11-09) the bed box read 3 of 6 the outline missed.
+            return [[g[0], bed, *g[1:]] if on_bed(g) else g for g in cards]
+        if not any(on_bed(g) for g in found):
+            return []
+        return [BedBox([bed])]
 
     def _find(self, frame):
         """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
         if self.mode != "slots" or not self.slots:
-            cards = find_cards(frame)
+            cards = find_cards(frame) if self.min_card is None else self._whole_cards(frame)
             return cards, [None] * len(cards)
         found = [
             (find_card_in_slot(frame, slot), n) for n, slot in enumerate(self.slots, 1)
@@ -225,7 +542,13 @@ class Scanner:
 
     def run(self):
         while not self.stopped:
-            self.turn()
+            try:
+                self.turn()
+            except Exception as e:
+                # One bad picture must not end the camera thread: the page's picture froze
+                # for good when it did (tower, 2026-11-08, "list.remove(x): x not in list").
+                print(f"Scanner: skipped a picture after an error: {e!r}")
+                time.sleep(0.2)
         if self.on_stop:
             self.on_stop(self)
 
@@ -254,7 +577,59 @@ class Scanner:
                     self.stopped = True
             time.sleep(0.2)
             return
+        if self.rotate or self.crop:
+            frame = view.apply(frame, self.rotate, self.crop)
+        self._last_view = frame
+        if self._pending_straight is not None:
+            with self.lock:
+                if not self.tracks:     # between cards: the new warp can't upset a reading
+                    self.straight, self._pending_straight = self._pending_straight, None
+                    self._last_small = None
+                    save_settings(straight=self.straight)
+        if self.tap is not None and self.tap.watching:
+            # A feed is watching for its card to land (feed_watch.py): hand it every
+            # picture straight away and skip finding and recognizing cards until it's done,
+            # which can take a few hundred ms a picture and made it see the card late.
+            if self.straight:
+                frame = view.straighten(frame, self.straight)
+            self._seen = frame
+            self.tap.put(frame)
+            self._publish(frame)
+            return
+        # Checked before straightening, which warps the whole picture (~16 ms on the Pi):
+        # most pictures are the same as the last one and are skipped.
+        if self._still(frame) and time.monotonic() - self._last_look < 1 / max(0.5, config.SCAN_IDLE_FPS):
+            return      # nothing has changed: no need to look again so soon
+        self._last_look = time.monotonic()
+        if self.straight:
+            frame = view.straighten(frame, self.straight)
+        self._seen = frame
         self.process(frame)
+
+    def _still(self, frame) -> bool:
+        """True when the picture is the same as the last one looked at and no card on the
+        table is waiting for an answer, so the scanner can take it easy (SCAN_IDLE_FPS)."""
+        # every 4th pixel is plenty for a 64 x 48 thumbnail, and 4x quicker
+        small = cv2.cvtColor(cv2.resize(frame[::4, ::4], (64, 48), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+        last, self._last_small = self._last_small, small
+        if last is None:
+            return False
+        if float(np.mean(cv2.absdiff(small, last))) >= config.SCAN_STILL_LEVEL:
+            return False
+        now = time.monotonic()
+        with self.lock:
+            return not any(t.needs_check(now) for t in self.tracks)
+
+    def _publish(self, frame):
+        """Keep the picture for the pages (and for a full-size stream when one is open).
+        The preview is only encoded when a page asks for it (see jpeg)."""
+        full = self._encode(frame, full=True) if self.full_viewers > 0 else None
+        with self._preview_lock:
+            self._preview_frame = frame
+        with self.lock:
+            self.started = True
+            self.frame_size = (frame.shape[1], frame.shape[0])
+            self.jpeg_full = full
 
     def process(self, frame):
         """Find every card in one camera picture and update what's known about each."""
@@ -263,15 +638,31 @@ class Scanner:
         t1 = time.perf_counter()
         now = time.monotonic()
         with self.lock:
+            table = self._table
             matched, new, gone = pair_up(self.tracks, cards)
-            todo = [(t, outlines, t.needs_check(now)) for t, outlines in matched]
+            # A card held only by the bed box is looked at again soon: with no edge of its
+            # own, the camera can't tell by its outline that it's been taken away.
+            bed_recheck = float(getattr(config, "BED_BOX_RECHECK_SECONDS", 0.5))
+            todo = [(t, outlines, t.needs_check(now) or (
+                        isinstance(outlines, BedBox) and now - t.checked_time >= bed_recheck))
+                    for t, outlines in matched]
         # Recognizing is the slow part, so it happens without holding the lock, and
         # every card that needs a look is recognized at the same time on its own thread.
         jobs = [outlines for _, outlines, check in todo if check] + list(new)
+        # Only a piece of a card that was read shows (its art box, the half beside a
+        # thumb): where the whole card was is tried first, and it stays that card if it
+        # still reads there.
+        whole = {id(outlines): [t.corners, *outlines] for t, outlines, check in todo
+                 if check and t.card is not None and not isinstance(outlines, BedBox)
+                 and is_piece(outlines[0], t.corners)}
+        # The machine's scan bed ("Whole cards only") reads its cards the way it always
+        # has: nudged outlines and the look-alike printing check are for the phone and
+        # webcam, where they were measured.
+        careful = self.min_card is None
         found = (
             list(
                 self._pool.map(
-                    lambda o: identify_outlines(self.matcher, frame, o), jobs
+                    lambda o: identify_outlines(self.matcher, frame, whole.get(id(o), o), refine=careful), jobs
                 )
             )
             if jobs
@@ -282,9 +673,25 @@ class Scanner:
         with self.lock:
             self.started = True
             self.frame_size = (frame.shape[1], frame.shape[0])
+            if table != self._table:
+                # The tracks were forgotten while this picture was being recognized (a sort
+                # run starting a card, a settings change): these answers are for a table
+                # that's gone, so leave the new one alone.
+                todo, new, gone = [], [], []
             for t, outlines, check in todo:
-                self._update(t, outlines, next(results) if check else None, frame)
+                result = self._screen(outlines, next(results)) if check else None
+                if isinstance(outlines, BedBox) and result is not None and result.card is None:
+                    # Only the bed box, and it isn't a card: the card has left and the
+                    # bed's texture is all that's there (Nic, 2026-11-09: a card that had
+                    # gone stayed "on the table").
+                    self.finish_capture(t)
+                    self.tracks.remove(t)
+                    continue
+                self._update(t, outlines, result, frame)
             for outlines in new:
+                result = self._screen(outlines, next(results))
+                if isinstance(outlines, BedBox) and result.card is None:
+                    continue        # the bare bed, not a card
                 number = next(
                     (n for c, n in zip(cards, numbers) if c is outlines), None
                 )
@@ -292,16 +699,16 @@ class Scanner:
                     next(self._ids), number or free_number(self.tracks), outlines[0]
                 )
                 self.tracks.append(t)
-                self._update(t, outlines, next(results), frame)
+                self._update(t, outlines, result, frame)
             for t in gone:
                 if not t.missing:
                     t.missing_since = now
                 t.missing += 1
-                if t.gone(now):  # card taken away
+                if t.gone(now) and t in self.tracks:  # card taken away
                     self.finish_capture(t)
                     self.tracks.remove(t)
-            self.jpeg = self._encode(frame)
             self._note_speed(t0, t1, t2)
+        self._publish(frame)
 
     # Called with the lock held.
     def _note_speed(self, t0, t1, t2):
@@ -323,10 +730,34 @@ class Scanner:
     def _update(self, t: Track, outlines, result: Match | None, frame):
         t.missing = 0
         if result is None:  # not checked this frame: just follow it
-            t.corners = outlines[0]
+            t.follow(outlines[0])
             return
         card = result.card
+        if (card is not None and t.card is not None and card.id != t.card.id
+                and t.card.id in result.lookalikes
+                and (t.saved or result.printing_lead <= t.printing_lead)):
+            # The same card, read as another of its look-alike printings this time. Once
+            # saved it stays what was saved; before that, the look that told the printings
+            # apart most clearly keeps its answer (a card used to flip between printings
+            # from one look to the next, and Auto could save it twice).
+            card = t.card
+        elif card is not None:
+            t.printing_lead = result.printing_lead
         t.corners, t.distance, t.margin = result.corners, result.distance, result.margin
+        t.seen = np.asarray(outlines[0], np.float32)
+        t.piece = card is not None and is_piece(t.seen, t.corners)
+        if (self.auto_straight and card is not None and result.confidence == "sure"
+                and result.corners is not None and not t.straight_sampled
+                and not isinstance(self.source, BrowserSource)):
+            # a sure match: its outline lined up with the stock picture, a good sample.
+            # One per card: a card sitting on the bed is seen many times over, and
+            # counting every look let one card (and its own skew) set the picture.
+            size = (frame.shape[1], frame.shape[0])
+            t.straight_sampled = True
+            if self._auto_straight.add(result.corners, self.straight, size):
+                new = self._auto_straight.proposal(self.straight)
+                if new is not None:
+                    self._pending_straight = new
         t.candidates, t.checked_at, t.checked_time = (
             result.candidates,
             result.corners.mean(axis=0),
@@ -373,9 +804,10 @@ class Scanner:
     def _save(
         self, card: Card, foil: bool, track: Track | None = None, auto: bool = False
     ):
-        bin_no, bin_label = choose_bin(card, foil, self.vault, self.live)
+        path = self.collection()
+        bin_no, bin_label = choose_bin(card, foil, self.vault, self.live, path)
         price = card_price(card, foil, self.vault, self.live)
-        scanned_at = add_card(self.collection(), card, foil, bin_label, price, self.owner)
+        scanned_at = add_card(path, card, foil, bin_label, price, self.owner)
         with accounts.acting_as(self.account):   # their own alerts and wishlist
             special = self._special(card, price[0])
         self._light("valuable" if special else "saved")
@@ -385,6 +817,12 @@ class Scanner:
                 "time": time.strftime("%H:%M:%S"),
                 "scanned_at": scanned_at,
                 "track": track.id if track else None,
+                # goes up with every card saved: the page's alerts never miss one saved
+                # in the same second as the one before
+                "seq": next(_SAVE_NUMBERS),
+                # the collection it went into, for Undo (the machine's scanner saves into
+                # whoever pressed last); never sent to the page
+                "_csv": path,
             }
         )
         if track:
@@ -449,18 +887,25 @@ class Scanner:
         for t in self.tracks:
             self.finish_capture(t)
         self.tracks = []
+        self._table += 1
 
     def track(self, track_id) -> Track | None:
         return next((t for t in self.tracks if t.id == track_id), None)
 
-    def _encode(self, frame) -> bytes:
-        """The camera picture for the page (the page draws the outlines itself)."""
+    def _encode(self, frame, full: bool = False) -> bytes:
+        """The camera picture for the page (the page draws the outlines itself): a preview
+        of STREAM_PREVIEW_PX on its long side, about a tenth of the full picture's bytes,
+        which a phone or a Tailscale link can keep up with. `full` keeps the full size
+        (at most 1280 wide) for the server's recognizing."""
         h, w = frame.shape[:2]
-        if w > 1280:
-            frame = cv2.resize(
-                frame, (1280, int(h * 1280 / w)), interpolation=cv2.INTER_AREA
-            )
-        return cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+        if full:
+            limit, side, quality = 1280, w, 80
+        else:
+            limit, side, quality = config.STREAM_PREVIEW_PX, max(h, w), config.STREAM_PREVIEW_QUALITY
+        if side > limit:
+            scale = limit / side
+            frame = cv2.resize(frame, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+        return cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])[1].tobytes()
 
     def state(self):
         with self.lock:
@@ -529,6 +974,12 @@ class Scanner:
                 "auto": self.auto,
                 "mode": self.mode,
                 "slots": self.slots,
+                "view": {"rotate": self.rotate, "crop": self.crop, "straight": bool(self.straight),
+                         "auto_straight": self.auto_straight,
+                         "min_card": self.min_card, "bed_box": self.bed_box,
+                         "empty_bed": self.empty_bed is not None,
+                         "straight_samples": len(self._auto_straight.samples),
+                         "straight_refused": self._auto_straight.last_refused},
                 "camera": camera_info(self._next_source or self.source),
                 "owner": self.owner,
                 "account": self.account,
@@ -538,7 +989,8 @@ class Scanner:
                 | {"open": sum(1 for t in self.tracks if t.capture)},
                 # The newest cards only: the page asks several times a second, and a
                 # long session would make every answer big. History has the rest.
-                "session": self.session[: -SESSION_SHOWN - 1 : -1],
+                "session": [{k: v for k, v in e.items() if not k.startswith("_")}
+                            for e in self.session[: -SESSION_SHOWN - 1 : -1]],
                 "session_count": len(self.session),
                 "totals": totals,
                 "perf": {
@@ -564,7 +1016,7 @@ def clean_slots(raw) -> list[list[float]] | None:
 
 
 def camera_info(source) -> dict | None:
-    if not isinstance(source, (CameraSource, BrowserSource)):
+    if not isinstance(source, (CameraSource, BrowserSource, RemoteCameraSource)):
         return None
     if hasattr(source, "info"):
         return source.info()
@@ -612,13 +1064,35 @@ def make_lights():
 
 def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
+
+    # Big JSON answers (the whole collection is megabytes) are sent gzipped, about 15 times
+    # smaller over the internet. Registered first, so it runs after every other hook.
+    @app.after_request
+    def gzip_big_json(response):
+        if (response.status_code != 200 or response.direct_passthrough or response.is_streamed
+                or response.mimetype != "application/json" or "Content-Encoding" in response.headers
+                or "gzip" not in request.headers.get("Accept-Encoding", "").lower()):
+            return response
+        data = response.get_data()
+        if len(data) < 64 * 1024:
+            return response
+        response.set_data(gzip.compress(data, compresslevel=6))   # also sets Content-Length
+        response.headers["Content-Encoding"] = "gzip"
+        response.vary.add("Accept-Encoding")
+        return response
+
     # On the server, MTG_MACHINE_URL points at the sorter's Pi, which does the moving.
     machine = machine or (RemoteMachine(remote_url()) if remote_url() else Machine())
     scanner.lights = lights or scanner.lights or make_lights()
+    pi_sync.install(app)  # the Pi follows the server: its cards copied there, its pages sent there
     assets.install(app, WEB)  # versioned script and style links, so caches never mix old and new
     logins.install(app, WEB)  # user accounts, once they're on: logging in, and who may do what
     security.install(app, WEB)  # the optional PIN lock, checked before every page (without accounts)
     add_machine_routes(app, machine, WEB)  # the /machine test page
+    watcher = add_feed_watch_routes(app, scanner, machine)  # Feed one card, watching the camera
+    add_tuning_routes(app, watcher, machine)               # the tuning run round the bins
+    run = add_sort_run_routes(app, watcher, scanner, machine)   # Start sorting: the machine on its own
+    add_health_routes(app, scanner, machine, WEB, run)      # the /machine/health page: everything it reports
     add_lights_routes(app, scanner.lights, WEB)  # the /lights page
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
     add_collection_routes(app, scanner, WEB)  # the /collection page
@@ -631,6 +1105,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     add_vault_routes(app, scanner, WEB)  # Commander Vault: /cards, Canadian prices, imports
     add_home_routes(app, scanner, machine, WEB)  # the Home page's summary
     add_sets_routes(app, scanner, WEB)  # the /sets page
+    add_news_routes(app, scanner, WEB)  # the /news page: Magic news, new sets, previews, bans
 
     @app.get("/settings")
     def settings_page():
@@ -702,18 +1177,38 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
 
     @app.get("/stream.mjpg")
     def stream():
+        """The live picture: a preview unless ?full=1 (the server's RemoteCameraSource)."""
         sc = current()
+        full = request.args.get("full") in ("1", "true", "yes")
 
         def frames():
-            last = None
-            while not sc.stopped:
-                jpeg = sc.jpeg
-                if jpeg is not None and jpeg is not last:
-                    last = jpeg
-                    yield (
-                        b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
-                    )
-                time.sleep(0.04)
+            # Only a write notices that the page has gone, so a still picture is sent again
+            # every STREAM_RESEND_SECONDS, and with no picture at all the stream ends after
+            # STREAM_GIVE_UP_SECONDS (the page and the server ask again). Before, each
+            # stream left behind kept a thread busy until the app restarted.
+            last, began = None, time.monotonic()
+            sent_at = began
+            if full:
+                with sc.viewers_lock:
+                    sc.full_viewers += 1
+            try:
+                while not sc.stopped:
+                    jpeg = sc.jpeg_full if full else sc.jpeg
+                    picture = jpeg if jpeg is not None else last
+                    now = time.monotonic()
+                    if picture is None:
+                        if now - began >= STREAM_GIVE_UP_SECONDS:
+                            return
+                    elif picture is not last or now - sent_at >= STREAM_RESEND_SECONDS:
+                        last, sent_at = picture, now
+                        yield (
+                            b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + picture + b"\r\n"
+                        )
+                    time.sleep(0.04)
+            finally:
+                if full:
+                    with sc.viewers_lock:
+                        sc.full_viewers = max(0, sc.full_viewers - 1)
 
         return Response(frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
@@ -721,8 +1216,8 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     def state():
         return state_for(current())
 
-    def state_for(sc: Scanner):
-        s = sc.state()
+    def state_for(sc: Scanner, extra: dict | None = None):
+        s = sc.state() | (extra or {})
         s["db_count"] = scanner.matcher.card_count
         s["learned"] = scanner.matcher.learned_count
         rate = f"US$1 = CA${config.USD_TO_CAD:.4f}"
@@ -745,6 +1240,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             s["saving_to"] = {"username": whose["username"], "name": whose["name"]}
             s["me"] = accounts.current()
         s["on_pi"] = ON_PI
+        s["sorter"] = ON_PI or bool(remote_url())   # a machine to run: the Scan page shows Start sorting
         s["scanners"] = [   # who else is scanning right now
             {"name": other.source.name, "owner": other.owner or (accounts.public(other.account)["name"] if other.account else ""),
              "cards": len(other.session)}
@@ -781,6 +1277,75 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 sc.forget_tracks()  # the cards on the table get their numbers afresh
                 if remember:
                     save_settings(mode=sc.mode, slots=sc.slots)
+            if "rotate" in body or "crop" in body:
+                rotate = view.clean_rotation(body["rotate"]) if "rotate" in body else None
+                crop = body.get("crop", False)
+                if crop not in (None, False):
+                    crop = view.clean_box(crop)
+                    if crop is None:
+                        return jsonify({"error": "Crop must be [x0, y0, x1, y1] as shares of the picture"}), 400
+                if "rotate" in body and rotate is None:
+                    return jsonify({"error": "Rotate must be 0, 90, 180 or 270"}), 400
+                sc.set_view(rotate, crop)
+                if remember:
+                    save_settings(rotate=sc.rotate, crop=sc.crop, slots=sc.slots, straight=sc.straight,
+                                  **sc.bed_settings())
+            if "auto_straight" in body:
+                sc.auto_straight = bool(body["auto_straight"])
+                if remember:
+                    save_settings(auto_straight=sc.auto_straight)
+            if "min_card" in body:
+                raw = body["min_card"]
+                if raw == "bed":
+                    try:
+                        sc.set_min_card_from_bed()
+                    except ValueError as e:
+                        return jsonify({"error": str(e)}), 400
+                elif raw is None:
+                    sc.min_card = None
+                    sc.forget_tracks()
+                else:
+                    value = clean_min_card(raw)
+                    if value is None:
+                        return jsonify({"error": "min_card must be a share of the picture from 0.005 to 0.9, \"bed\" or null"}), 400
+                    sc.min_card = value
+                    sc.forget_tracks()
+                if raw is None:
+                    sc.bed_box = None
+                    sc.empty_bed = sc.empty_look = None
+                if remember:
+                    save_settings(**sc.bed_settings())
+            if "empty_bed" in body:
+                # "now": the bed is bare, remember it; null: forget it
+                if body["empty_bed"] is None:
+                    sc.empty_bed = sc.empty_look = None
+                    if remember:   # a phone or desk scanner only forgets its own
+                        save_settings(empty_bed=None, empty_look=None)
+                elif body["empty_bed"] == "now":
+                    if not sc.remember_empty_bed(save=remember):
+                        return jsonify({"error": "Turn on Whole cards only first (it marks where the bed is)"}), 400
+                    sc.forget_tracks()
+                else:
+                    return jsonify({"error": "empty_bed must be \"now\" or null"}), 400
+            if "bed_box" in body:
+                box = view.clean_box(body["bed_box"]) if body["bed_box"] is not None else None
+                if body["bed_box"] is not None and box is None:
+                    return jsonify({"error": "bed_box must be [x0, y0, x1, y1] as shares of the picture, or null"}), 400
+                if box != sc.bed_box:   # the bare bed was measured in the old box
+                    sc.empty_bed = sc.empty_look = None
+                sc.bed_box = box
+                sc.forget_tracks()
+                if remember:
+                    save_settings(**sc.bed_settings())
+            if "straighten" in body:
+                try:
+                    raw = body["straighten"]
+                    # true: find the card; a list of 4 [x, y] shares: the card's corners by hand
+                    sc.set_straight(bool(raw), raw if isinstance(raw, list) else None)
+                except ValueError as e:
+                    return jsonify({"error": str(e)}), 400
+                if remember:
+                    save_settings(straight=sc.straight)
             outline = str(body.get("outline", ""))
             if len(outline) == 7 and outline[0] == "#":
                 try:
@@ -792,7 +1357,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
 
     @app.get("/api/cameras")
     def cameras():
-        return jsonify(list_cameras())
+        cams = list_cameras()
+        if remote_url():   # the server: the sorter Pi's camera, over the network
+            cams.append({"index": RemoteCameraSource.index, "name": "Sorter's Pi camera", "remote": remote_url()})
+        return jsonify(cams)
 
     @app.post("/api/camera")
     def camera():
@@ -801,8 +1369,17 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             return browser_camera(body)
         if not accounts.can("machine"):
             refuse("Only people with the machine permission can switch the machine's camera")
-        index, name = int(body["index"]), body.get("name")
         current = camera_info(scanner._next_source or scanner.source)
+        if body.get("index") == RemoteCameraSource.index:
+            if not remote_url():
+                return jsonify({"error": "No sorter Pi is set up here (MTG_MACHINE_URL)."}), 400
+            if current and current["index"] == RemoteCameraSource.index:
+                return state()
+            source = RemoteCameraSource(remote_url())
+            scanner.use_source(source)
+            save_settings(camera={"index": source.index, "name": source.name})
+            return state()
+        index, name = int(body["index"]), body.get("name")
         if current and current["index"] == index:
             return state()
         try:
@@ -854,11 +1431,38 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             sc = None
         if sc is None:
             return jsonify({"error": "This device isn't scanning anymore: pick its camera again"}), 409
-        img = cv2.imdecode(np.frombuffer(request.get_data(), np.uint8), cv2.IMREAD_COLOR)
+        too_big = jsonify({"error": "That picture is too big"}), 413
+        if (request.content_length or 0) > FRAME_MAX_BYTES:
+            return too_big
+        data = request.stream.read(FRAME_MAX_BYTES + 1)
+        if len(data) > FRAME_MAX_BYTES:
+            return too_big
+        img = decode_picture(data)
         if img is None:
             return jsonify({"error": "Couldn't read the picture"}), 400
         sc.source.push(img)
         return "", 204
+
+    @app.post("/api/camera/focus")
+    def camera_focus():
+        """Focus for the Pi camera: {"cm": null} keeps refocusing by itself, {"cm": 12}
+        locks the lens 12 cm away (the scan bed). Kept for next time."""
+        if not accounts.can("machine"):
+            refuse("Only people with the machine permission can change the machine's camera")
+        cm = (request.get_json(force=True, silent=True) or {}).get("cm")
+        if cm is not None:
+            try:
+                cm = float(cm)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Focus distance must be a number of cm"}), 400
+            if not 3 <= cm <= 1000:
+                return jsonify({"error": "Focus distance must be between 3 and 1000 cm"}), 400
+        source = scanner._next_source or scanner.source
+        if not (hasattr(source, "set_focus") and source.set_focus(cm)):   # webcams, demo photos, phones
+            return jsonify({"error": "This camera can't change its focus"}), 409
+        cameras_mod.focus_cm = cm
+        save_settings(focus_cm=cm)
+        return state()
 
     @app.post("/api/camera/release")
     def release_camera():
@@ -928,7 +1532,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                     else None
                 )
                 if wrong and remove_entry(
-                    sc.collection(), wrong["id"], wrong["scanned_at"]
+                    wrong.get("_csv") or sc.collection(), wrong["id"], wrong["scanned_at"]
                 ):
                     sc.session.remove(wrong)
                 t.status, t.card, t.confidence, t.candidates = "locked", card, None, []
@@ -990,7 +1594,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         with scanner.lock:
             for t in scanner.tracks:  # include the cards on the table right now
                 scanner.finish_capture(t)
-            result = train(scanner.matcher, scanner.captures, include_auto)
+        # Training reads every scan and reloads the database: seconds on the Pi. Holding the
+        # scanner's lock all that time froze the picture, every page and a sort run. It
+        # doesn't need it: the database has a lock of its own, and the log is only read.
+        result = train(scanner.matcher, scanner.captures, include_auto)
         return jsonify(result)
 
     @app.post("/api/forget")
@@ -1009,7 +1616,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             return unknown_card()
         sc = acting()
         with sc.lock:
-            sc._save(card, bool(body.get("foil")), sc.track(body.get("track")))
+            t = sc.track(body.get("track"))
+            # saved already (a double click, or Auto just did): once is enough
+            if not (t is not None and t.saved and t.card is not None and t.card.id == card.id):
+                sc._save(card, bool(body.get("foil")), t)
         return state_for(sc)
 
     @app.post("/api/save_all")
@@ -1026,42 +1636,53 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     @app.post("/api/undo")
     def undo():
         sc = acting()
+        result = None
         with sc.lock:
             last = sc.session[-1] if sc.session else None
-            # The exact card saved last (an import may have added rows after it since).
-            path = sc.collection()
-            if last and (remove_entry(path, last["id"], last.get("scanned_at", ""))
-                         or (not last.get("scanned_at") and remove_last(path))):
-                undone = sc.session.pop()
-                t = sc.track(undone["track"])
-                if t and t.card and t.card.id == undone["id"]:
+            if last:
+                # The exact card saved last (an import may have added rows after it since),
+                # in the collection it went into (the machine saves into whoever pressed).
+                path = last.get("_csv") or sc.collection()
+                removed = bool(remove_entry(path, last["id"], last.get("scanned_at", ""))
+                               or (not last.get("scanned_at") and remove_last(path)))
+                # Gone from the collection already (deleted or changed on another page):
+                # it leaves the session all the same, or Undo would be stuck on it for good.
+                sc.session.pop()
+                result = {"undone": removed, "name": last["name"]}
+                t = sc.track(last["track"])
+                if removed and t and t.card and t.card.id == last["id"]:
                     t.saved = False
                     if t.capture and t.capture["verdict"] in ("saved", "auto-saved"):
                         t.capture["verdict"] = ""
-        return state_for(sc)
+        return state_for(sc, {"undo": result})
 
     @app.post("/api/photos")
     def photos():
         results = []
-        for f in request.files.getlist("photos"):
-            frame = cv2.imdecode(np.frombuffer(f.read(), np.uint8), cv2.IMREAD_COLOR)
+        # "index": which of the uploaded files a result is for (phones name every photo
+        # image.jpg, so the page can't go by the name)
+        for index, f in enumerate(request.files.getlist("photos")):
+            frame = decode_picture(f.read())
             if frame is None:
-                results.append({"file": f.filename, "error": "Couldn't open this file"})
+                results.append({"file": f.filename, "index": index, "error": "Couldn't open this file"})
                 continue
-            # A photo can show a whole table of cards: report each one.
+            # A photo can show a whole table of cards: report each one (and each of the
+            # cards lying close enough together to come out as one outline).
             found = [
-                identify_outlines(scanner.matcher, frame, outlines)
+                m
                 for outlines in find_cards(frame)
+                for _, m in identify_card(scanner.matcher, frame, outlines, wait=FETCH_SECONDS)
             ]
             cards = [m for m in found if m.card]
             if not found:
                 results.append(
-                    {"file": f.filename, "error": "No card found in the photo"}
+                    {"file": f.filename, "index": index, "error": "No card found in the photo"}
                 )
             elif not cards:
                 results.append(
                     {
                         "file": f.filename,
+                        "index": index,
                         "error": "Card not recognized"
                         if len(found) == 1
                         else f"None of the {len(found)} cards recognized",
@@ -1071,6 +1692,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 results.append(
                     {
                         "file": f.filename,
+                        "index": index,
                         "card": card_info(m.card, False, scanner.vault, m.distance, live)
                         | {"confidence": m.confidence},
                     }
@@ -1086,22 +1708,98 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
             path, as_attachment=True, download_name="collection.csv"
         )
 
+    @app.errorhandler(404)
+    def not_found(_e):
+        """A mistyped or old address: SortR's own page with a way back, not a bare error.
+        (The login and the PIN are checked before this, as for every page.)"""
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "That isn't something SortR knows how to do"}), 404
+        page = assets.stamp(NOT_FOUND_PAGE.encode(), WEB)
+        return Response(page, status=404, mimetype="text/html")
+
     return app
+
+
+NOT_FOUND_PAGE = """<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="icon" href="/static/app-icon.svg" type="image/svg+xml">
+  <meta name="color-scheme" content="dark light">
+  <title>SortR · Page not found</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/look.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span>SortR</span></div>
+  </header>
+  <script src="/static/shell.js"></script>
+  <main class="coll">
+    <h1>That page doesn't exist.</h1>
+    <p class="sub">The link may be old, or mistyped.</p>
+    <p><a class="btn" href="/">Go to Home</a></p>
+  </main>
+</body>
+</html>
+"""
+
+
+def decode_picture(data: bytes):
+    """A picture sent to the app, or None if it can't be read (or is over the size limit at
+    the top of this file, which some OpenCV versions raise as an error)."""
+    try:
+        return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    except cv2.error:
+        return None
+
+
+def clean_min_card(value) -> float | None:
+    """A smallest-card share of the picture (0.005 to 0.9), or None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return round(value, 4) if 0.005 <= value <= 0.9 else None
 
 
 def load_settings() -> dict:
     try:
-        return json.loads(SETTINGS_FILE.read_text())
+        saved = json.loads(SETTINGS_FILE.read_text())
     except (OSError, ValueError):
         return {}
+    return saved if isinstance(saved, dict) else {}
+
+
+# The scanner thread, a sort run (once per card) and the pages all save settings: one at a
+# time, or two at once read each other's half-written file and kept only their own change
+# (the crop, slots, bed box and camera all lost).
+_SETTINGS_LOCK = threading.Lock()
 
 
 def save_settings(**changes):
-    try:
-        config.DATA_DIR.mkdir(exist_ok=True)
-        SETTINGS_FILE.write_text(json.dumps(load_settings() | changes))
-    except OSError:
-        pass
+    with _SETTINGS_LOCK:
+        try:
+            config.DATA_DIR.mkdir(exist_ok=True)
+            try:
+                text = SETTINGS_FILE.read_text()
+            except FileNotFoundError:
+                text = "{}"
+            try:
+                saved = json.loads(text)
+            except ValueError:
+                saved = None
+            if not isinstance(saved, dict):
+                # damaged: keep a copy to look at, then start again from what's changed
+                SETTINGS_FILE.with_suffix(".bad").write_text(text)
+                saved = {}
+            # written next to it and then swapped in, so a restart mid-write can't leave
+            # half a file
+            tmp = SETTINGS_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(saved | changes))
+            tmp.replace(SETTINGS_FILE)
+        except OSError:
+            pass
 
 
 def startup_camera(index: int | None) -> CameraSource:
@@ -1116,10 +1814,17 @@ def startup_camera(index: int | None) -> CameraSource:
             index = next(c["index"] for c in cams if c["name"] == last["name"])
         except (KeyError, TypeError, StopIteration):
             pass
+    cameras_mod.focus_cm = saved_focus()  # the Pi camera opens with the focus picked last time
     try:
         return CameraSource(index, names.get(index))
     except RuntimeError as e:
         raise RuntimeError(f"{e} Try --camera 1, or --demo <folder> to test without one.")
+
+
+def saved_focus() -> float | None:
+    """The Pi camera focus picked on the page: None for auto, else a distance in cm."""
+    cm = load_settings().get("focus_cm")
+    return float(cm) if isinstance(cm, (int, float)) and 3 <= cm <= 1000 else None
 
 
 def main():
@@ -1156,8 +1861,12 @@ def main():
         try:
             source = startup_camera(args.camera)
         except RuntimeError as e:
-            print(f"{e} Starting anyway; trying again every few seconds.")
-            source = WaitingForCamera(args.camera)
+            if remote_url():   # the server: no camera of its own, so watch the sorter Pi's
+                source = RemoteCameraSource(remote_url())
+                print(f"Camera: the sorter's Pi camera, over the network from {remote_url()}")
+            else:
+                print(f"{e} Starting anyway; trying again every few seconds.")
+                source = WaitingForCamera(args.camera)
     if isinstance(source, CameraSource):
         print(
             f"Camera: {source.name}, {source.size[0]}x{source.size[1]} {source.format}"
@@ -1167,13 +1876,13 @@ def main():
                 else " (not MJPG: expect a low frame rate)"
             )
         )
+    if not args.offline:
+        # Stock pictures to tell look-alike printings apart, fetched as cards are seen.
+        matcher.pictures = StockPictures(config.STOCK_DIR)
     scanner = Scanner(matcher, vault, source, None if args.offline else Live())
     if isinstance(source, WaitingForCamera):
         source.on_found = scanner.use_source
     scanner.restore(load_settings())
-    scanner.lights = make_lights()
-    scanner.lights.start()  # shows the saved color (nothing happens without light bars)
-    threading.Thread(target=scanner.run, daemon=True).start()
 
     print(
         f"Loaded {matcher.card_count} cards ({matcher.learned_count} learned scans). Open http://localhost:{args.port} in your browser."
@@ -1184,7 +1893,15 @@ def main():
             "Maintenance page, or press Download every card there (see README.md)."
         )
     machine = RemoteMachine(remote_url()) if remote_url() else Machine()
+    if isinstance(machine, Machine) and ON_PI and machine.power_on():
+        # Mk2: the relay gives the servos, feeder and lights their 5 V (MK2.md, Power)
+        print("Machine: the power relay is on.")
+        time.sleep(0.3)   # let the 5 V settle before the light bars are sent their colour
+    scanner.lights = make_lights()
+    scanner.lights.start()  # shows the saved color (nothing happens without light bars)
+    threading.Thread(target=scanner.run, daemon=True).start()
     app = create_app(scanner, machine)
+    pi_sync.start()  # the server: copy the cards the sorter's Pi saves into the collection here
     if isinstance(machine, Machine) and ON_PI:
         # The servos to their saved home positions (Machine page: Home), in the background
         # so the page is up straight away.

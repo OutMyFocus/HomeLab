@@ -42,8 +42,9 @@
 //   post_sleeve, head_cover   camera arm covers
 //   "assembly" shows everything (preview only); "shell" just the enclosure parts
 //
-// Drawers: "Card Catalog v1.2" from MakerWorld, printed from Nic's 3MF (not in this repo).
-// Their size is set here, once, in dr_*; card_catalog_drawer.scad only draws one.
+// Drawers: the dock was sized from the "Card Catalog v1.2" drawer (MakerWorld). Since 2026-11-06
+// the bins are our own (bins.scad, with an organizer to keep them in), built to the same dr_*
+// outside size, so the dock fits either. The preview draws the bins.scad bin.
 
 include <bed_chute.scad>
 part = "none";            // keep bed_chute.scad quiet
@@ -534,6 +535,7 @@ module splice() {
 tower_w = 2 * well_x - 2;  tower_l = well_y1 - well_y0 - 1 + 4;
 tower_yc = (well_y0 + well_y1) / 2 + 1;
 tower_h = feeder_floor_z + hopper_h + 6 - deck_z;
+tower_open_y = feeder_front_y + 1.5;   // the tower is open in front of this (the hopper's front wall and the shoe)
 
 module tower() {
     difference() {
@@ -541,6 +543,10 @@ module tower() {
         translate([0, tower_yc, deck_z - 1]) linear_extrude(tower_h + 2) rrect(tower_w, tower_l, 6);
         // card-level window on the right side
         translate([tower_w / 2, well_y0 + 30, deck_z + 12]) cube([10, tower_l - 50, tower_h - 20]);
+        // open at the front (2026-11-08): the front wall stood right where the hopper's front is, so the
+        // tower sat on the old gate (or the v4 shoe) and pressed it onto the wheels, stalling the motor.
+        // Everything in front of tower_open_y is cut away, corners included; the lid still sits on top.
+        translate([-tower_w / 2 - 5, tower_yc - tower_l / 2 - 5, deck_z - 1]) cube([tower_w + 10, tower_open_y - (tower_yc - tower_l / 2 - 5), tower_h + 5]);
         // lid rebate
         translate([0, tower_yc, deck_z + tower_h - 2]) linear_extrude(3) rrect(tower_w + 2, tower_l + 2, 6.5);
     }
@@ -582,7 +588,7 @@ module head_cover() {
 }
 
 // ============================ ASSEMBLY ==========================================
-use <card_catalog_drawer.scad>
+use <bins.scad>
 
 module place_post(i) {   // 0 fl, 1 fr, 2 bl, 3 br
     x = (i % 2 == 0) ? -hw : hw;  y = (i < 2) ? front_y : back_y;
@@ -610,7 +616,7 @@ module shell(open = false) {   // open: no deck, tower or right side, to see ins
 
 module drawers() {
     for (i = [0 : 2]) color(c_drawer[i]) translate([div_x[i], dock_y0 - (i == 1 ? show_drawer_out : 0), floor_t])
-        card_catalog_drawer(dr_w, dr_body_h, dr_l, dr_face_w, dr_face_h, dr_face_t);
+        sorter_bin();   // bins.scad: our own bin, same outside size as the Card Catalog drawer
 }
 
 module mechanism() {

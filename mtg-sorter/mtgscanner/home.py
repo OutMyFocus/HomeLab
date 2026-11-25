@@ -91,8 +91,14 @@ def add_home_routes(app, scanner, machine, web_dir):
                 "recent": recent_cards(rows, items),
                 "movers": movers(items),
                 "history": note_value(summary)[-60:],
+                # For Home's charts: cards and value by color and rarity, and the biggest sets.
+                # (jsonify sorts the keys, so the page puts them back in W U B R G order.)
+                "colors": summary["by_color"],
+                "rarity": summary["by_rarity"],
+                "top_sets": summary["sets"][:5],
                 "bins": [{"bin": int(b), "name": names.get(str(b), f"Bin {b}"),
-                          "cards": (summary["by_bin"].get(str(b)) or {}).get("cards", 0)}
+                          "cards": (summary["by_bin"].get(str(b)) or {}).get("cards", 0),
+                          "value": (summary["by_bin"].get(str(b)) or {}).get("value", 0)}
                          for b in sorted((int(x) for x in names), reverse=True)],
             },
             "sessions": {

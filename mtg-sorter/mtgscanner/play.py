@@ -5,7 +5,9 @@ from Commander Vault.
 Kept in data/games.json and data/trades.json.
 """
 
+import functools
 import json
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -14,10 +16,12 @@ from flask import jsonify, request, send_from_directory
 
 from . import accounts, config
 from .database import Card
+from .decks import write_json
 from .sorting import card_price
 
 MAX_GAMES = 2000
 MAX_BINDER = 1000
+_lock = threading.RLock()   # one change at a time, so two at once can't lose a game or card
 
 
 def games_file() -> Path:
@@ -37,10 +41,15 @@ def _read(path: Path, key: str) -> list[dict]:
 
 
 def _write(path: Path, key: str, items: list[dict]):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({key: items}, indent=1), encoding="utf-8")
-    tmp.replace(path)
+    write_json(path, {key: items})
+
+
+def _locked(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _lock:
+            return fn(*args, **kwargs)
+    return wrapper
 
 
 # --- Games -------------------------------------------------------------------------------------
@@ -75,6 +84,7 @@ def _clean_game(js: dict) -> dict:
             "notes": str(js.get("notes") or "").strip()[:200], "winner": winner, "players": players}
 
 
+@_locked
 def add_game(js: dict) -> dict:
     game = _clean_game(js) | {"id": uuid.uuid4().hex[:12], "created": time.strftime("%Y-%m-%dT%H:%M:%S")}
     games = _read(games_file(), "games")
@@ -84,6 +94,7 @@ def add_game(js: dict) -> dict:
     return game
 
 
+@_locked
 def delete_game(game_id: str) -> bool:
     games = _read(games_file(), "games")
     keep = [g for g in games if g["id"] != game_id]
@@ -93,6 +104,7 @@ def delete_game(game_id: str) -> bool:
     return True
 
 
+@_locked
 def import_games(games: list[dict]) -> int:
     """Games from Commander Vault (players there were people or guests). Returns how many were new."""
     have = _read(games_file(), "games")
@@ -144,6 +156,7 @@ def _binder_key(c: dict) -> str:
     return f"{c.get('name', '')}|{str(c.get('set', '')).upper()}|{c.get('number', '')}|{1 if c.get('foil') else 0}"
 
 
+@_locked
 def add_to_binder(cards: list[dict]) -> int:
     """Add cards to the trade binder (ones already in it are skipped). Returns how many were added."""
     binder = load_binder()
@@ -166,6 +179,7 @@ def add_to_binder(cards: list[dict]) -> int:
     return added
 
 
+@_locked
 def remove_from_binder(item_id: str) -> bool:
     binder = load_binder()
     keep = [c for c in binder if c["id"] != item_id and _binder_key(c) != item_id]

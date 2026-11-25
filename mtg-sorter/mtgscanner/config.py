@@ -12,6 +12,9 @@ COLLECTION_CSV = DATA_DIR / "collection.csv"
 VAULT_PRICES = DATA_DIR / "vault_prices.json"
 # Scans kept to improve recognition (turn on "Collect scans" in the app).
 CAPTURES_DIR = DATA_DIR / "captures"
+# Stock pictures of printings that look alike, fetched to tell them apart (printings.py).
+# Only a cache: safe to delete, and left out of backups.
+STOCK_DIR = DATA_DIR / "stock"
 
 # Scryfall asks every app to identify itself. See https://scryfall.com/docs/api
 USER_AGENT = "HomeLabMTGSorter/0.1"
@@ -65,15 +68,47 @@ OUTLINE_FACTORS = (1.0, 1.04, 1.08)
 STABLE_FRAMES = 3
 # A recognized card that hasn't moved is looked at again this often (seconds).
 RECHECK_SECONDS = 2.0
+# The bed box this close to the remembered bare bed (Scanner.remember_empty_bed) is the
+# bed, not a card. Same scale as a match's distance (0-256): the bare bed against itself
+# is well under this, a card on it far over.
+EMPTY_BED_DISTANCE = 45
+# ...or its middle this alike to the bare bed's (-1 to 1, brightness doesn't count): the
+# bare bed in dimmer light is well over this, a card lying on it far under.
+EMPTY_BED_LIKENESS = 0.75
+BED_BOX_RECHECK_SECONDS = 0.5
+# The bed box only stands in for a card (or is tried as its second outline) once the bed
+# has looked the same this long: grey levels (0-255) of average change, and seconds.
+BED_LOOKALIKES = 3   # the bare bed's closest cards: on the bed they only count as sure matches
+BED_STILL_LEVEL = 6.0
+BED_STILL_SECONDS = 1.0   # a card only the bed box outlines is looked at this often
 # A card out of sight for this long (a hand over it is shorter) counts as taken away.
 GONE_SECONDS = 0.8
 # Cards are recognized in parallel; 0 means one thread per CPU core (at most 8).
 IDENTIFY_THREADS = 0
+# While the picture stands still (nothing moving, no card waiting to be recognized) the
+# scanner only looks this many times a second, which keeps the Pi cool and the stream
+# quick; any change in the picture brings it back to every frame. A picture counts as
+# still when its small grey copy differs from the last one by under SCAN_STILL_LEVEL grey
+# levels on average.
+SCAN_IDLE_FPS = 4
+SCAN_STILL_LEVEL = 2.0
+# The live picture the pages show (/stream.mjpg): its long side in pixels and JPEG
+# quality. The full-size picture (about 400 KB a frame at 1080p) is only sent with
+# ?full=1, which the server's RemoteCameraSource uses to recognize cards from it.
+# 960 at quality 70 showed card text and foils soft and blocky on the Scanner page (Nic,
+# 2026-11-08): the server re-encodes the Pi's full picture, so this is the viewer's size.
+STREAM_PREVIEW_PX = 1440
+STREAM_PREVIEW_QUALITY = 85
 
 # The smallest card the camera looks for, as a share of the whole picture. 0.05 (5%)
 # suits a camera close to the card, like the scan station. A camera high above a
 # table sees each card at about 1-2% of the picture, so it needs a lower number.
 MIN_CARD_AREA = 0.01
+# "Whole cards only" (the scan bed's camera, app.py): the smallest card becomes this
+# share of the card on the bed. Measured on the Pi (2026-11-08): a whole card at the bar
+# is 0.36-0.39 of the picture, its art box or half of it 0.18-0.26, the text box 0.04-0.12.
+# 0.8 of the card (about 0.30) skips every piece and keeps every whole card.
+MIN_CARD_FROM_BED = 0.8
 
 # --- Slots mode (app.py) ---------------------------------------------------
 # Instead of looking for cards anywhere, the app can look only in boxes you draw on
@@ -128,6 +163,45 @@ SERVOS = {
 SERVO_HOME = {"door_r": "closed", "door_l": "closed", "chute": "centre", "pins": "up"}
 HOME_AT_STARTUP = True
 SERVO_HOME_SPEED = 60          # degrees a second when homing: a slow sweep, not a jump
+
+# --- Sorter Mk2 (hardware/mk2/MK2.md): five servos, picked with "Which machine" on the Machine page.
+# Mk1's angles above don't carry over: these are only starting points near the middle, for the
+# servos as fitted (horns and door couplers pressed on at 90). Set each one on the Machine page.
+SERVOS_MK2 = {
+    "stop":   (0, {"up": 90, "down": 108}),                   # stop bar: up stops the card, turns 18 degrees
+    "push1":  (1, {"centre": 90, "left": 50, "right": 130}),  # level 1 pusher: bins 1 (left) and 2 (right)
+    "door_f": (2, {"closed": 45, "open": 135}),               # front trapdoor (to level 2)
+    "door_b": (3, {"closed": 135, "open": 45}),               # back trapdoor
+    "push2":  (4, {"centre": 90, "left": 50, "right": 130}),  # level 2 pusher: bins 3 (left) and 4 (right)
+}
+# The machine the app drives when nothing else was saved. Nic only has the Sorter Mk2 now, so the
+# Machine page no longer offers a switch; the first machine's code stays for its tests.
+MACHINE_MODEL = "mk2"
+# Home on Mk2: doors shut, pushers to the middle, then the stop bar up (MK2.md).
+# Stop bar up FIRST: down, it rests on the pushers (machine.py lifts it before any pusher move anyway).
+SERVO_HOME_MK2 = {"stop": "up", "door_f": "closed", "door_b": "closed", "push1": "centre", "push2": "centre"}
+MK2_PUSHERS = ("push1", "push2")
+SERVO_KEEP_HOLDING_MK2 = ("stop", "door_f", "door_b")
+# Mk2 doesn't go home at startup until that's switched on for it: its angles start as guesses,
+# and a guessed "closed" could push a door into the frame.
+HOME_AT_STARTUP_MK2 = False
+# Mk2 bins: number -> (pusher, side). 1 and 2 are off level 1, 3 and 4 off level 2 (the card
+# drops through the trapdoors first).
+SORT_BINS_MK2 = {1: ("push1", "left"), 2: ("push1", "right"), 3: ("push2", "left"), 4: ("push2", "right")}
+MK2_STOP_SECONDS = 1.2        # stop bar down this long at most (the card lands on level 1 in about 0.3 s)
+MK2_STOP_MIN_SECONDS = 0.8    # and at least this long: rising sooner caught card tails and left them crooked (Nic, 2026-11-24)
+MK2_STOP_CLEAR_SECONDS = 0.3  # after the camera sees the bed empty, wait this much more before raising it
+MK2_DOORS_SECONDS = 0.8       # trapdoors open this long (the card drops in about 0.4 s)
+# Pushers move slowly so a card is eased off the floor, not shoved into a jam (Nic, 2026-11-24):
+# 45 degrees a second is about 40 mm/s at the paddle (it was 130). Every pusher move goes at
+# this speed in MK2_PUSH_STEP degree steps: a sort, the page's buttons, and Home (no faster).
+MK2_PUSH_SPEED = 45           # pusher servo degrees a second
+MK2_PUSH_STEP = 2             # degrees per step
+MK2_PUSH_HOLD = 0.3           # the pusher waits at the side this long before coming back
+# Mk2's power relay (MK2.md, Power): servos, feeder motor and lights get their 5 V through it.
+# The app closes it (pin high, the module's trigger jumper on HIGH) when it starts on Mk2; when
+# the app stops the pin lets go, the module's pull-down opens the relay and everything goes dark.
+RELAY_PIN = 22
 # Servo pulse widths in microseconds for 0 and 180 degrees. The first is ServoKit's
 # default, which turns an MG90S only about 130-140 real degrees. "Wider servo travel" on
 # the Machine page switches to the second for about the full 180 (some cheap servos buzz
@@ -135,11 +209,110 @@ SERVO_HOME_SPEED = 60          # degrees a second when homing: a slow sweep, not
 SERVO_PULSE = (750, 2250)
 SERVO_PULSE_WIDE = (500, 2500)
 SERVO_WIDE_TRAVEL = True       # until the Machine page's switch is saved (the angles above need it)
+# Mk2's bin sensors (hardware/mk2/MK2.md, Pin map), read by the Machine health page. Each bin
+# has a TCRT5000 "bin full" module looking through the slot in its back wall, and can have an
+# A3144 hall sensor under it that sees the bin's magnet ("bin in"). Until they're wired, the
+# page shows them as not connected (tick "Sensors are fitted" there once they are). Power the
+# TCRT5000 modules from the Pi's 3.3 V (pin 1 or 17), never 5 V: their DO pin then gives the
+# Pi 3.3 V too.
+BIN_FULL_PINS = {1: 16, 2: 20, 3: 21, 4: 12}
+BIN_SEATED_PINS = {1: 5, 2: 6, 3: 13, 4: 26}
+BIN_FULL_ACTIVE_LOW = True     # a TCRT5000's DO goes low (its second LED lights) when it sees cards close by
+BIN_SEATED_ACTIVE_LOW = True   # an A3144 pulls low with a magnet over it
+# Saved servo angles outside this range warn on the Machine and Machine health pages: a servo
+# pushed to its own stop at 0 or 180 strains and wears out (a level 1 pusher did, 2026-11-24).
+SERVO_SAFE_RANGE = (10, 170)
 # The feeder's N20 motor, through the DRV8833 driver: Pi GPIO17 to IN1, GPIO27 to IN2.
 FEEDER_PINS = (17, 27)
 # How fast the feeder turns (0-1) and how long one push lasts (seconds).
 FEEDER_SPEED = 1.0
 FEEDER_SECONDS = 1.2
+# "Feed one card" on the Machine page runs the motor while watching the camera, and stops
+# it the moment a card lands in this box: [x0, y0, x1, y1] as shares of the camera picture
+# (after Rotate and Crop), a band across the bed just above the stop teeth. Set it on the
+# Machine page; this is only the starting guess. See mtgscanner/feed_watch.py.
+FEED_ZONE = (0.2, 0.62, 0.8, 0.70)
+FEED_LAND_SHARE = 0.25       # this much of the box looking different = a card is there
+FEED_DIFF_LEVEL = 30         # grey levels (0-255) a pixel must change by to count
+FEED_MAX_SECONDS = 3.0       # give up (motor off) if no card has landed by then
+FEED_PINS_UP_SECONDS = 1.0   # a feed waits until the stop pins were sent up at least this long ago
+# (0.6 until 2026-11-09: Nic saw cards fed before the pins were fully up; the servos share
+# the 5 V supply with the feeder motor and move slower when it sags)
+FEED_SETTLE_SECONDS = 0.8    # then wait this long to see where it came to rest
+# After a card lands, the wheels turn backwards this long: the next card, which they drove
+# part way out of the slot behind the first (they touch it as soon as the first card's tail
+# passes them), goes back into the hopper instead of hanging over the landed card and
+# pinning it on the bed. Seen in the 2026-11-05 camera tests. 0 turns it off.
+FEED_BACKOFF_SECONDS = 0.25
+# A feed that brings nothing to the bed (or leaves a card held in the slot) gets one more
+# push at this speed before the sort run counts it as empty. None turns it off.
+FEED_RETRY_SPEED = 1.0
+# Before that back-off, the wheels keep pushing forwards this long after the camera saw
+# the card land, so the card's tail clears the gate and the card is free on the bed: a
+# card stopped with its tail still under the gate stays short of the stop pins, and a
+# back-off then drags it back up (2026-11-07). Both are saved from the Machine page
+# ("feeder": {"push", "backoff"} in machine_settings.json); these are the starting values.
+FEED_PUSH_SECONDS = 0.1
+FEED_BACKOFF_MAX = 2.0
+# A card held in the slot (the gate set too tight) shows on the bed above the landing
+# zone and stops moving while the motor runs on. When the part of the picture from
+# FEED_STUCK_TOP (share of the height) down to the zone has something in it that hasn't
+# moved for FEED_STUCK_SECONDS, the motor stops and the feed says "stuck" (2026-11-07:
+# the motor ground on for the full 3 s with the card 25 mm short of the pins).
+FEED_STUCK_TOP = 0.3
+FEED_STUCK_SECONDS = 0.6
+FEED_STILL_SHARE = 0.02      # frame-to-frame change below this = the card isn't moving
+# Dropping a landed card into a bin (Machine.drop, the Machine page's "Sort to bin" buttons,
+# and POST /api/machine/sort_one, which feeds a card first). Bins 1 and 3 are the tilted
+# tray's sides; bin 2 is under the trapdoors. The stop pins drop first and the card slides
+# onto the level tray (1-2 s, up to 4 s for a foil, 2026-11-06 camera tests), so the pins
+# stay down SORT_PINS_SECONDS; then the doors open, or the chute tilts to the side for
+# SORT_TILT_SECONDS. The chute is sent its angle again every second so it doesn't sag.
+SORT_BINS = {1: "left", 2: "centre", 3: "right"}   # bin number: chute position
+# The Bins page also has bin 0 ("Unknown price", the rules' usual fallback), which the
+# machine has no tray for: the sort run (sort_run.py) drops those cards, and the cards the
+# scanner couldn't read, into this real bin instead.
+SORT_FALLBACK_BIN = 1
+# The sort run gives the scanner this long to recognize a card on the teeth. A card not
+# read after SORT_FOIL_AFTER seconds gets a second look with the light bars dimmed to
+# SORT_FOIL_BRIGHTNESS percent (foils glare under the bars and hide their art; 2 of 2
+# misses on 2026-11-06 were foils); the lights go back up before the drop.
+SORT_RECOGNIZE_SECONDS = 8.0
+SORT_FOIL_AFTER = 3.0
+SORT_FOIL_BRIGHTNESS = 8
+SORT_LIGHTS_SETTLE = 1.0   # seconds after the bars come back up, before the drop
+# A card still not read after that waits on the bed with the pins up for you to choose
+# (Nic, 2026-11-07: "I only want the pins to fall when the card is recognized"). True
+# drops it into the fallback bin at once instead, as before.
+SORT_DROP_UNREAD = False
+# The run warns when this many cards have gone to one bin since it started (the centre
+# bin held about 20 before cards piled up on the doors, 2026-11-06).
+SORT_DOUBLE_MIN_SIZE = 0.8   # a double feed needs two outlines at least this close in size
+SORT_BIN_WARN = 15
+SORT_DOOR_BIN = 2             # the bin under the trapdoors
+SORT_PINS_SECONDS = 3.0       # pins down at most this long before the doors open / the tilt goes on
+SORT_PINS_MIN_SECONDS = 0.5   # and at least this long; sort_one goes on as soon as the camera sees the card leave
+SORT_OVER_SECONDS = 0.3       # a card gone from the landing band sooner than this after pins down never rested
+                              # on the teeth: it went over them (the feed was too fast)
+SORT_DOORS_SECONDS = 2.5      # trapdoors open this long
+SORT_TILT_SECONDS = 2.0       # bins 1 and 3: tilted this long for the card to slide off
+# Then the tray rocks back half way and tilts again this many times, so a card that stuck
+# on the tray (a foil, a curled card) really falls (Nic, 2026-11-07). 0 turns it off.
+SORT_PINS_UP_BEFORE_TILT = True   # bins 1 and 3: pins back up before the tray tilts
+SORT_PINS_UP_SETTLE = 0.3        # and this long for them to rise
+SORT_TILT_SHAKES = 2
+SORT_SHAKE_SECONDS = 0.4
+SORT_SHAKE_EXTRA = 6.0       # each shake tilts this many degrees further than the saved tilt      # each half-way-back and each tilt again lasts this long
+SORT_RETRIES = 1              # drop again this many times if the camera still sees the card
+# After a drop, the card counts as gone when less than this share of the picture
+# (SORT_CHECK_ZONE, shares like FEED_ZONE: the view below the slot, bed to tray) still looks
+# different from the empty bed before the feed. A card is about a tenth of the view, so a
+# card the pins pushed up or turned stays well above this, which the landing band missed.
+# It starts below the feeder slot: a card left half out of the slot by an empty feed
+# (about a fifth of its length over the bed) changed the top of the view and stopped 3
+# runs with "still on the bed" on an empty bed (2026-11-08). A card at the bar fills y 0.20-0.79.
+SORT_CHECK_ZONE = (0.05, 0.22, 0.95, 0.95)
+SORT_GONE_SHARE = 0.08     # 0.05 called an empty bed "still there" (0.055-0.058) under the rail light, 2026-11-06
 
 # --- The light bars (lights.py) --------------------------------------------
 # 5 V addressable RGB bars (WS2812, "3-pin ARGB"). Their data wire goes to GPIO10 (pin 19),
@@ -156,3 +329,22 @@ LIGHTS_CARD_BRIGHTNESS = 60    # percent
 # The bars share the 5 V supply with the Pi, servos and feeder, so the app dims them if
 # they'd draw more than this (full white is about 60 mA per LED).
 LIGHTS_MAX_AMPS = 1.0
+LIGHTS_REFRESH_SECONDS = 1.0   # the same colors go out again this often, so a strip powered late still lights
+
+# The machine camera straightens its own picture (auto_straighten.py) from the cards it
+# recognizes for sure: it needs AUTO_STRAIGHT_SAMPLES of them (keeping the latest
+# AUTO_STRAIGHT_KEEP), leaves out outlines with a corner more than AUTO_STRAIGHT_MAX_CORNER
+# degrees off square, proportions more than AUTO_STRAIGHT_MAX_SHAPE off a card's, or
+# within AUTO_STRAIGHT_EDGE of the picture's sides (the light bars), and refuses a
+# correction that turns an edge more than AUTO_STRAIGHT_MAX_TURN degrees or stretches it
+# more than AUTO_STRAIGHT_MAX_STRETCH (measured 2026-11-07: the camera is about 1° and
+# 3 % off). On by default; the Scan page can turn it off.
+AUTO_STRAIGHTEN = True
+AUTO_STRAIGHT_SAMPLES = 8
+AUTO_STRAIGHT_KEEP = 25
+AUTO_STRAIGHT_MAX_CORNER = 8.0
+AUTO_STRAIGHT_MAX_SHAPE = 0.12
+AUTO_STRAIGHT_EDGE = 0.04
+AUTO_STRAIGHT_MAX_TURN = 3.0
+AUTO_STRAIGHT_MAX_STRETCH = 0.08
+AUTO_STRAIGHT_MIN_MOVE = 0.002

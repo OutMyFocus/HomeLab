@@ -6,12 +6,22 @@
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# Is this saved Wi-Fi profile connected now (or connecting)? nmcli prints no state for one
+# that isn't, so those can still be changed.
+in_use() {
+    nmcli -g GENERAL.STATE connection show id "$1" 2>/dev/null | grep -qE '^(activated|activating)'
+}
+
 job=${1:-}
 case "$job" in
     restart)  systemctl restart --no-block mtg-sorter ;;
     reboot)   systemctl reboot ;;
     poweroff) systemctl poweroff ;;
-    update)   systemctl start --no-block mtg-sorter-update.service ;;
+    update)
+        # Asked for by a person (Update now, mtg update), so try again even a version that
+        # failed before. Timer runs never set this, so they keep skipping it.
+        touch /run/mtg-sorter-retry-update
+        systemctl start --no-block mtg-sorter-update.service ;;
     update-force)
         # update.sh sees this and sets aside edits made on the Pi (git stash) before updating.
         touch /run/mtg-sorter-force-update
@@ -51,6 +61,11 @@ case "$job" in
         IFS= read -r ssid; IFS= read -r pass || true
         [ -n "$ssid" ] || { echo "No network name" >&2; exit 2; }
         if nmcli -t -f NAME connection show | grep -qxF -- "$ssid"; then
+            # Replacing the profile in use would drop the Pi off the network.
+            if in_use "$ssid"; then
+                echo "That's the network the Pi is using right now. Saving it again would drop the connection. To change its password, connect the Pi by cable or to another saved network first." >&2
+                exit 2
+            fi
             nmcli connection delete id "$ssid" >/dev/null
         fi
         if [ -n "$pass" ]; then
@@ -65,6 +80,10 @@ case "$job" in
         IFS= read -r name
         type=$(nmcli -g connection.type connection show id "$name" 2>/dev/null || true)
         [ "$type" = "802-11-wireless" ] || { echo "No saved Wi-Fi network called $name" >&2; exit 2; }
+        if in_use "$name"; then
+            echo "That's the network the Pi is using right now, so forgetting it would cut you off." >&2
+            exit 2
+        fi
         nmcli connection delete id "$name" >/dev/null
         echo "Forgot $name" ;;
     *)
