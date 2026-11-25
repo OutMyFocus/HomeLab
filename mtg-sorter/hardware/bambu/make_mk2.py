@@ -209,7 +209,7 @@ if __name__ == "__main__":
         mp.PLATES = [("1 All upgrades - gates 1-2-3, stack weight, stop bar, hold-downs, plugs x6",
                       P("fd_gate1", "fd_gate2", "fd_gate3", "stop_bar", "fd_weight", "holddown_l", "holddown_r", "gate_plug*6")),
                      # the camera turned 90 degrees, and the heavier pushers (same lever, pin and servo)
-                     ("2 Camera arch, camera turned 90 degrees, 2 pushers with ballast slots (tree supports)",
+                     ("2 Camera arch, camera turned 90 degrees, 2 pushers with ballast slots - tree supports",
                       P("cam_arch", "carriage1", "carriage2"))]
         mp.main(mp.PLATES, mp.OUT)
         sys.exit(0)
