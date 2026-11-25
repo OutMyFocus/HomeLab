@@ -645,8 +645,8 @@ def forget_wifi(name: str):
 # scanner learned from them is already in cards.db.
 BACKUP_FILES = ["collection.csv", "cards.db", "app_settings.json", "machine_settings.json",
                 "vault_prices.json", "usd_cad.json", "decks.json", "wishlist.json", "alerts.json",
-                "sort_rules.json", "games.json", "trades.json", "price_history.json", "users.json",
-                "lights.json", "news_settings.json", "machine_key"]
+                "sort_rules.json", "games.json", "trades.json", "price_history.json", "card_prices.json",
+                "users.json", "lights.json", "news_settings.json", "machine_key"]
 # Folders a backup holds too: everyone else's cards (accounts.py) and deck guides.
 BACKUP_FOLDERS = ["users", "guides"]
 # What belongs to one machine rather than to the cards: its camera and scan bed, its servos,

@@ -437,6 +437,69 @@ def test_delete_refuses_copies_the_page_hasnt_shown(client, db):  # noqa: F811
     assert js["cards"] == []
 
 
+# --- Each card's price over time ------------------------------------------------------------
+
+def _items(**prices):
+    return [{"key": k, "price": p} for k, p in prices.items()]
+
+
+def test_card_prices_are_noted_once_a_day_and_trend_against_a_week_ago(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    for day, a in (("2026-11-01", 10.0), ("2026-11-05", 12.0), ("2026-11-09", 11.0), ("2026-11-12", 15.0)):
+        data = library.note_card_prices(_items(a=a, b=1.0), day)
+    library.note_card_prices(_items(a=16.0, b=1.0), "2026-11-12")          # later the same day: replaced
+    data = library.load_card_prices()
+    assert data["days"] == ["2026-11-01", "2026-11-05", "2026-11-09", "2026-11-12"]
+    assert data["prices"]["a"] == [10.0, 12.0, 11.0, 16.0]
+    # a week before Nov 12 is Nov 5: the newest day on or before it
+    assert library.price_trend(data, "a") == {"change": 4.0, "pct": 33.3, "since": "2026-11-05"}
+    assert library.price_trend(data, "b")["change"] == 0
+    assert library.price_trend(data, "zzz") is None
+    # a card first seen today has nothing to compare with; one noted less than a week uses its oldest day
+    library.note_card_prices(_items(a=16.0, c=2.0), "2026-11-13")
+    data = library.load_card_prices()
+    assert data["prices"]["c"] == [None, None, None, None, 2.0] and library.price_trend(data, "c") is None
+    assert data["prices"]["b"][-1] is None                                   # not in the collection that day
+    library.note_card_prices(_items(c=3.0), "2026-11-14")
+    assert library.price_trend(library.load_card_prices(), "c") == {"change": 1.0, "pct": 50.0, "since": "2026-11-13"}
+
+
+def test_card_prices_keep_about_a_year(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(library, "CARD_PRICE_DAYS", 3)
+    library.note_card_prices(_items(old=1.0), "2026-01-01")
+    for d in range(2, 6):
+        library.note_card_prices(_items(new=2.0), f"2026-01-{d:02d}")
+    data = library.load_card_prices()
+    assert data["days"] == ["2026-01-03", "2026-01-04", "2026-01-05"] and list(data["prices"]) == ["new"]
+
+
+def test_damaged_card_prices_are_kept_aside(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    library.card_prices_file().write_text('{"days": ["2026-1')
+    library.note_card_prices(_items(a=1.0), "2026-11-02")
+    assert (tmp_path / "card_prices.json.bad").read_text() == '{"days": ["2026-1'
+    assert library.load_card_prices()["days"] == ["2026-11-02"]
+
+
+def test_collection_and_home_carry_each_cards_trend(client, tmp_path):
+    client.post("/api/add", json={"id": "id1"})
+    js = client.get("/api/collection").get_json()
+    key, price = js["cards"][0]["key"], js["cards"][0]["price"]
+    assert js["cards"][0]["trend"] is None                                   # only today noted so far
+    data = library.load_card_prices()
+    data["days"].insert(0, "2000-01-01")
+    data["prices"][key].insert(0, round(price - 2, 2))
+    library.card_prices_file().write_text(json.dumps(data))
+    js = client.get("/api/collection").get_json()
+    assert js["cards"][0]["trend"]["change"] == 2.0
+    hist = client.get("/api/collection/price-history", query_string={"key": key}).get_json()
+    assert [p["day"] for p in hist["points"]][0] == "2000-01-01" and hist["trend"]["change"] == 2.0
+    assert client.get("/api/collection/price-history?key=nope").get_json() == {"key": "nope", "points": [], "trend": None}
+    home = client.get("/api/home").get_json()["collection"]["week_movers"]
+    assert home["up"][0]["key"] == key and home["down"] == [] and home["since"] == "2000-01-01"
+
+
 # --- Value over time -------------------------------------------------------------------------
 
 def test_a_damaged_value_history_is_kept_aside(tmp_path, monkeypatch):

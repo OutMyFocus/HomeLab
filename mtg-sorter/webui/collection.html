@@ -120,6 +120,8 @@
           <option value="qty">Most copies first</option>
           <option value="up">Price went up most</option>
           <option value="down">Price went down most</option>
+          <option value="rise">Price went up most this week</option>
+          <option value="fall">Price went down most this week</option>
           <option value="gain">Gained most on what I paid</option>
           <option value="loss">Lost most on what I paid</option>
         </select>
@@ -176,6 +178,7 @@
           <div class="sub" id="dSet"></div>
           <div class="price" id="dPrice"></div>
           <div class="sub" id="dSource"></div>
+          <div class="spark" id="dSpark" hidden><svg id="dSparkSvg" viewBox="0 0 240 56" preserveAspectRatio="none" role="img" aria-label="Price over time"></svg><span class="spark-note" id="dTrend"></span><span class="spark-range" id="dSparkRange"></span></div>
           <div class="mtl" id="dMontreal" hidden></div>
           <dl class="facts" id="dFacts"></dl>
           <div class="stepper" aria-label="How many you have">

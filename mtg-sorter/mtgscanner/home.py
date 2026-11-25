@@ -8,13 +8,14 @@ from flask import jsonify, send_from_directory
 
 from . import accounts, config, decks, sort_rules, wishlist
 from .history import per_day, sessions
-from .library import holdings, make_key, note_value, read_rows, row_foil, row_id, summarize
+from .library import (add_trends, holdings, make_key, note_card_prices, note_value, read_rows, row_foil, row_id,
+                      summarize)
 
 RECENT = 8  # newest cards shown
 
 
 def _small(it: dict) -> dict:
-    keep = ("key", "id", "name", "set", "number", "foil", "qty", "price", "change", "bin", "image", "rarity")
+    keep = ("key", "id", "name", "set", "number", "foil", "qty", "price", "change", "trend", "bin", "image", "rarity")
     return {k: it.get(k) for k in keep}
 
 
@@ -40,6 +41,16 @@ def movers(items: list[dict], n: int = 3) -> dict:
     up = [_small(it) for it in reversed(moved[-n:]) if it["change"] > 0]
     down = [_small(it) for it in moved[:n] if it["change"] < 0]
     return {"up": up, "down": down}
+
+
+def week_movers(items: list[dict], n: int = 3) -> dict:
+    """The cards whose price moved the most this week (library.price_trend), by total value."""
+    moved = [it for it in items if it.get("trend") and it["trend"]["change"]]
+    moved.sort(key=lambda it: it["trend"]["change"] * it["qty"])
+    up = [_small(it) for it in reversed(moved[-n:]) if it["trend"]["change"] > 0]
+    down = [_small(it) for it in moved[:n] if it["trend"]["change"] < 0]
+    since = min((it["trend"]["since"] for it in moved), default=None)
+    return {"up": up, "down": down, "since": since}
 
 
 def scanner_info(scanner) -> dict:
@@ -71,6 +82,7 @@ def add_home_routes(app, scanner, machine, web_dir):
         with scanner.lock:
             rows = read_rows(accounts.collection_csv())
         items = holdings(rows, scanner.matcher, scanner.vault, getattr(scanner, "live", None))
+        add_trends(items, note_card_prices(items))
         summary = summarize(items)
         by_key = {it["key"]: it for it in items}
         found = sessions(rows)
@@ -90,6 +102,7 @@ def add_home_routes(app, scanner, machine, web_dir):
                 "top": [_small(by_key[k]) for k in summary["top"][:4]],
                 "recent": recent_cards(rows, items),
                 "movers": movers(items),
+                "week_movers": week_movers(items),
                 "history": note_value(summary)[-60:],
                 # For Home's charts: cards and value by color and rarity, and the biggest sets.
                 # (jsonify sorts the keys, so the page puts them back in W U B R G order.)

@@ -145,7 +145,10 @@ Then open **http://localhost:5000** in your browser. You get:
   Moxfield, Archidekt, Deckbox and ManaBox exports send them back out. Tap a card to change how many you have, mark it foil, pick a different
   printing or delete it. **Add a card** adds one you didn't scan. It shows the total value,
   how much it changed since you scanned the cards, a value-over-time chart, a breakdown by
-  color, rarity, bin and set, and your 10 most valuable cards. **Refresh prices** gets today's
+  color, rarity, bin and set, and your 10 most valuable cards. Each printing's price is also noted
+  once a day (`data/card_prices.json`, about a year kept), so a card's page shows a small price
+  chart and how much it moved this week, the list sorts by **Price went up/down most this week**,
+  and Home's **Price changes** shows this week's biggest movers. **Refresh prices** gets today's
   Scryfall price for everything. **Export** downloads (or copies) the collection for Moxfield,
   Archidekt, Deckbox, ManaBox, TCGplayer mass entry, a text list, or a
   spreadsheet with prices, either all of it or just the cards your filters show.

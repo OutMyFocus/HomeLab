@@ -151,6 +151,9 @@
     if (bulk && top && totalCards && totalValue) add(8, "bins", "", `<b>${Math.round(top.cards / totalCards * 100)}%</b> of your cards (bin 3) hold <b>${Math.round((top.value || 0) / totalValue * 100)}%</b> of the value. Bulk in bin 1 is ${Math.round(bulk.cards / totalCards * 100)}% of the cards.`, "/bins");
     const colors = Object.entries(c.colors || {}).filter(([k]) => COLORS[k]).sort((a, b) => b[1].value - a[1].value);
     if (colors.length && c.value) add(5, "tag", "", `<b>${COLORS[colors[0][0]]}</b> is your most valuable color: ${money(colors[0][1].value)}, ${Math.round(colors[0][1].value / c.value * 100)}% of the collection.`, `/collection?color=${colors[0][0]}`);
+    const wm = c.week_movers || { up: [], down: [] }, wUp = wm.up[0], wDown = wm.down[0];
+    if (wUp) add(7, "up", "good", `<b>${esc(wUp.name)}</b> is up <b>${signed(wUp.trend.change)}</b> this week.`, "/collection?sort=rise");
+    if (wDown) add(7, "down", "bad", `<b>${esc(wDown.name)}</b> is down <b>${signed(wDown.trend.change).replace("−", "")}</b> this week.`, "/collection?sort=fall");
     const up = c.movers.up[0], down = c.movers.down[0];
     if (up) add(6, "up", "good", `<b>${esc(up.name)}</b> went up <b>${signed(up.change)}</b> since you scanned it.`, "/collection?sort=up");
     if (down) add(6, "down", "bad", `<b>${esc(down.name)}</b> dropped <b>${signed(down.change).replace("−", "")}</b> since you scanned it.`, "/collection?sort=down");
@@ -170,14 +173,26 @@
       ${i != null ? `<span class="rank-n">${i + 1}</span>` : ""}<span class="thumb">${c.image ? `<img src="${esc(small(c.image))}" alt="" loading="lazy">` : ""}</span>
       <span class="info"><b>${esc(c.name)}</b><small>${esc(c.set)} #${esc(c.number)}${c.foil ? " · foil" : ""}${c.qty > 1 ? ` · ×${c.qty}` : ""}</small></span>${end}</a>`;
 
+  // Price changes: this week (each card's price is noted once a day) or since each was scanned.
+  let moverView = null;
+  function renderMovers() {
+    const c = data.collection, wk = c.week_movers || { up: [], down: [] };
+    if (!moverView) moverView = wk.up.length + wk.down.length ? "week" : "scan";
+    for (const b of $("moverSeg").children) b.setAttribute("aria-pressed", b.dataset.v === moverView);
+    const week = moverView === "week", src = week ? wk : c.movers, mv = [...src.up, ...src.down];
+    const amount = x => week ? x.trend.change : x.change;
+    const note = x => week && x.trend.pct != null ? `<small class="pct">${x.trend.pct > 0 ? "+" : "−"}${Math.abs(x.trend.pct)}%</small>` : "";
+    $("moverList").innerHTML = mv.length ? mv.map(x => row(x, `<b class="amt ${amount(x) > 0 ? "up" : "down"}">${signed(amount(x))}${note(x)}</b>`)).join("")
+      : `<p class="none">${week ? "No price has moved this week yet. SortR notes every card's price once a day, so this fills in as the days go by." : "No price has moved yet. Refresh prices on the Collection page to check."}</p>`;
+  }
+  $("moverSeg").onclick = e => { const b = e.target.closest("button"); if (b && data) { moverView = b.dataset.v; renderMovers(); } };
+
   function renderCards() {
     const c = data.collection;
     $("recent").innerHTML = c.recent.length ? c.recent.map(tile).join("")
       : '<p class="none">Nothing yet. Cards you save on the <a href="/scan">Scanner</a> show up here.</p>';
     $("topList").innerHTML = c.top.length ? c.top.map((x, i) => row(x, `<b class="amt">${money(x.price)}</b>`, i)).join("") : '<p class="none">No priced cards yet.</p>';
-    const mv = [...c.movers.up, ...c.movers.down];
-    $("moverList").innerHTML = mv.length ? mv.map(x => row(x, `<b class="amt ${x.change > 0 ? "up" : "down"}">${signed(x.change)}</b>`)).join("")
-      : '<p class="none">No price has moved yet. Refresh prices on the Collection page to check.</p>';
+    renderMovers();
     const total = Math.max(1, c.bins.reduce((a, b) => a + b.cards, 0));
     $("binRows").innerHTML = c.bins.map(b => `<a class="bin-row" href="/collection?bin=${b.bin}"><span class="pill bin-${b.bin}">${b.bin}</span><span class="nm">${esc(b.name)}</span><b>${b.cards.toLocaleString()}</b>
       <span class="track"><i style="width:${(b.cards / total * 100).toFixed(1)}%;background:${BINVAR(b.bin)}"></i></span><small class="bin-val">${money(b.value || 0)}</small></a>`).join("");

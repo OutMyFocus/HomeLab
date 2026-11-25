@@ -7,7 +7,8 @@ by hand. Exports turn it into the formats other sites import (Moxfield, Archidek
 Deckbox, TCGplayer, plain text).
 
 The collection's total value is noted once a day in data/price_history.json, for the
-value-over-time chart.
+value-over-time chart, and each printing's own price in data/card_prices.json, for its price
+chart and the cards that moved the most this week.
 """
 
 import csv
@@ -15,7 +16,7 @@ import io
 import json
 import shutil
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import Response, jsonify, request, send_from_directory
@@ -27,6 +28,9 @@ from . import sort_rules
 from .sorting import bin_for, card_price
 
 HISTORY_FILE_NAME = "price_history.json"
+CARD_PRICES_FILE_NAME = "card_prices.json"
+CARD_PRICE_DAYS = 400   # about a year of each card's prices is kept
+TREND_DAYS = 7          # "this week": the price change since the day closest to a week ago
 COLOR_ORDER = ["W", "U", "B", "R", "G", "M", "C"]
 COLOR_NAMES = {"W": "White", "U": "Blue", "B": "Black", "R": "Red", "G": "Green",
                "M": "Multicolor", "C": "Colorless", "": "Unknown"}
@@ -339,6 +343,111 @@ def note_value(summary: dict, today: str | None = None) -> list[dict]:
     return [{"day": d} | p for d, p in sorted(days.items())]
 
 
+def card_prices_file() -> Path:
+    return accounts.user_file(CARD_PRICES_FILE_NAME)
+
+
+_card_prices_lock = threading.Lock()
+# The file as last read or written, so a page load doesn't read a year of prices again:
+# {path: (modified time, data)}.
+_card_prices_cache: dict = {}
+
+
+def load_card_prices() -> dict:
+    """{"days": [day, ...], "prices": {key: [price or None for each day]}}. Empty when
+    there's no file yet. A file that can't be read is copied to card_prices.json.bad first;
+    OSError is raised if it's there but can't be opened, so it's never saved over."""
+    empty = {"days": [], "prices": {}}
+    path = card_prices_file()
+    try:
+        mtime = path.stat().st_mtime_ns
+        cached = _card_prices_cache.get(str(path))
+        if cached and cached[0] == mtime:
+            return cached[1]
+        text = path.read_text()
+    except FileNotFoundError:
+        return empty
+    try:
+        data = json.loads(text)
+        if (isinstance(data, dict) and isinstance(data.get("days"), list) and isinstance(data.get("prices"), dict)
+                and all(isinstance(v, list) and len(v) == len(data["days"]) for v in data["prices"].values())):
+            _card_prices_cache[str(path)] = (mtime, data)
+            return data
+    except ValueError:
+        pass
+    try:
+        shutil.copyfile(path, path.with_name(path.name + ".bad"))
+    except OSError:
+        pass
+    return empty
+
+
+def note_card_prices(items: list[dict], today: str | None = None) -> dict:
+    """Keep today's price of every printing you have (one point per day, the newest
+    CARD_PRICE_DAYS days) and return all of it, as load_card_prices does."""
+    today = today or date.today().isoformat()
+    now = {it["key"]: it["price"] for it in items if it.get("price") is not None}
+    with _card_prices_lock:
+        try:
+            data = load_card_prices()
+        except OSError:   # can't read it right now: answer with today only, never save over it
+            return {"days": [today], "prices": {k: [p] for k, p in now.items()}}
+        days, prices = data["days"], data["prices"]
+        changed = False
+        if not days or days[-1] < today:
+            days.append(today)
+            for v in prices.values():
+                v.append(None)
+            changed = True
+        if days[-1] == today:   # (a clock set back never rewrites a later day)
+            for key, price in now.items():
+                row = prices.setdefault(key, [None] * len(days))
+                if row[-1] != price:
+                    row[-1], changed = price, True
+        if len(days) > CARD_PRICE_DAYS:
+            cut = len(days) - CARD_PRICE_DAYS
+            del days[:cut]
+            for key in list(prices):
+                del prices[key][:cut]
+                if not any(p is not None for p in prices[key]):
+                    del prices[key]
+        if changed and now:
+            path = card_prices_file()
+            tmp = path.with_name(path.name + ".tmp")
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp.write_text(json.dumps({"days": days, "prices": prices}, separators=(",", ":")))
+                tmp.replace(path)
+                _card_prices_cache[str(path)] = (path.stat().st_mtime_ns, data)
+            except OSError:
+                pass
+    return data
+
+
+def price_trend(data: dict, key: str, days: int = TREND_DAYS) -> dict | None:
+    """How much a printing's price moved: today's price against the newest price noted at
+    least `days` days ago (or the oldest one, when it's been noted for less time).
+    {"change", "pct", "since"}, or None with nothing older than today to compare with."""
+    row, noted = data["prices"].get(key), data["days"]
+    if not row or row[-1] is None:
+        return None
+    cutoff = (date.fromisoformat(noted[-1]) - timedelta(days=days)).isoformat()
+    older = [(d, p) for d, p in zip(noted[:-1], row[:-1]) if p is not None]
+    if not older:
+        return None
+    before = [x for x in older if x[0] <= cutoff]
+    since, base = before[-1] if before else older[0]
+    change = round(row[-1] - base, 2)
+    return {"change": change, "pct": round(100 * change / base, 1) if base else None, "since": since}
+
+
+def add_trends(items: list[dict], data: dict) -> list[dict]:
+    """Each item gets "trend": its price_trend (None when there's nothing to compare)."""
+    for it in items:
+        it["trend"] = price_trend(data, it["key"])
+    return items
+
+
 # --- Changes ----------------------------------------------------------------------------
 
 def _matching(rows, card_id, foil):
@@ -643,6 +752,7 @@ def add_collection_routes(app, scanner, web_dir):
 
     def everything():
         items = current()
+        add_trends(items, note_card_prices(items))
         summary = summarize(items)
         live = getattr(scanner, "live", None)
         return jsonify({
@@ -671,6 +781,18 @@ def add_collection_routes(app, scanner, web_dir):
     @app.get("/api/collection")
     def collection():
         return everything()
+
+    @app.get("/api/collection/price-history")
+    def collection_price_history():
+        """One printing's noted prices: {key, points: [{day, price}], trend}."""
+        key = request.args.get("key", "")
+        try:
+            data = load_card_prices()
+        except OSError:
+            data = {"days": [], "prices": {}}
+        row = data["prices"].get(key) or []
+        points = [{"day": d, "price": p} for d, p in zip(data["days"], row) if p is not None]
+        return jsonify({"key": key, "points": points, "trend": price_trend(data, key) if row else None})
 
     def whole(value, low, high, what) -> int:
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value != int(value) \
