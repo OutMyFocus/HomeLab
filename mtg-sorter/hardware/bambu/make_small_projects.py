@@ -8,14 +8,14 @@ writes, next to this script:
   MTG_Sorter_Feeder_And_Bed_v2.3mf   everything for the new feeder and scan bed
   MTG_Sorter_Chute_v3.3mf            chute v3 (tray, doors, cranks, links, hinge frame) and the
                                      new front bridge with its bearing cap
-  MTG_Sorter_Scan_Bed_v3.3mf         scan bed v3 plate (steeper, centring channel, ribs), the
-                                     all-plastic hopper weight and the one-bar stop gate
+  MTG_Sorter_Bins_And_Organizer.3mf  three bins for the sorter (bins.scad) with removable
+                                     showcase front plates, card dividers, and a 3-wide, 2-high organizer to keep the bins in
   MTG_Sorter_DC_Jack_Holder.3mf      holder + bezel for the servo-power barrel jack (dc_jack_holder.scad)
   MTG_Sorter_Feeder_Box_v4.3mf       feeder box v4 (feeder4.scad): stand, hopper, separator shoe, roller,
                                      and the scan bed v3.1 plate with the wheel slots, and the hopper tower
                                      with its front open
 
-  python3 make_small_projects.py MTG_Sorter_DC_Jack_Holder.3mf   builds just that one
+  python3 make_small_projects.py MTG_Sorter_Bins_And_Organizer.3mf   builds just that one
 
 Run it again after re-exporting STLs (export_enclosure.sh). Needs numpy.
 """
@@ -43,6 +43,11 @@ mp.PER_PART.update({
     "bed_chute_servo_crank3_left": SOLID,
     "bed_chute_door_link3": SOLID,
     "enc_bridge_cap": SOLID,
+    # organizer units stand 231 mm tall on their backs: a brim keeps them down
+    "bins_organizer_2x2": {"brim_type": "outer_only", "brim_width": "5"},
+    "bins_organizer_1x2": {"brim_type": "outer_only", "brim_width": "5"},
+    "bins_key": SOLID,
+    "bins_plate": {"brim_type": "outer_only", "brim_width": "5"},   # thin and 109 tall
     "dc_jack_holder": STRUCTURAL,
     "dc_jack_bezel": STRUCTURAL,
     # scan bed v3.1, slippery smooth: the card's face is flat on this print, so 0.2 mm layers are
@@ -74,6 +79,13 @@ PROJECTS = {
                                                         "bed_chute_servo_crank3", "bed_chute_servo_crank3_left",
                                                         "bed_chute_door_link3", "bed_chute_door_link3"]),
     ],
+    "MTG_Sorter_Bins_And_Organizer.3mf": [
+        ("1 Trays (3)", ["bins_tray"] * 3),
+        ("2 Front plates (3, brim), 6 keys", ["bins_plate"] * 3 + ["bins_key"] * 6),
+        ("3 Dividers (WHITE)", ["bins_divider_l", "bins_divider_m", "bins_divider_r"] * 2),
+        ("4 Blank showcase cards (WHITE, optional)", ["bins_label"] * 3),
+        ("5 Organizer 2x2 (brim)", ["bins_organizer_2x2"]),
+        ("6 Organizer 1x2 (brim)", ["bins_organizer_1x2"]),
     "MTG_Sorter_Scan_Bed_v3.3mf": [
         ("1 Scan bed v3 plate (WHITE)", ["bed_chute_bed_plate3"]),
         ("2 Solid hopper weight (any colour, 100% infill)", ["feeder_weight_solid"]),
