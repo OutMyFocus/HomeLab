@@ -18,8 +18,9 @@
 //              run along the arms (the first version stood on end and snapped across its layers).
 //   cam_arch   two posts and a beam over the bed, riding the same rail as the carrier and keyed to
 //              it. The Camera Module 3 clicks onto two pegs, square to the bed, 135 mm over the
-//              card's centre (the whole card and its collector number in view, with ~6 mm to
-//              spare at each end); a twist-on hood holds a polarizer disc in front of the lens.
+//              card's centre, turned so the sensor's long side runs along the card (~175 x 101 mm
+//              in view: the whole card with ~40 mm to spare at each end and ~19 mm each side);
+//              a twist-on hood holds a polarizer disc in front of the lens.
 //   lightbar   x2, white diffusers: 5 LEDs of the WS2812B strip each, 27 degrees above the card,
 //              outside the angle where foil glare bounces into the lens; a slot in front of each
 //              takes a strip of polarizer film turned 90 degrees to the lens disc.
@@ -66,6 +67,10 @@ lb_x = 50;  lb_n = 25;  lb_s = [6, 82];
 // ---- camera ---------------------------------------------------------------------------------
 cam_board = [25, 24];  cam_holes = [[2, 2], [23, 2], [2, 14.5], [23, 14.5]];   // CM3: 21 x 12.5, 2.2 mm holes
 arch_y = [12, 43];  post_w = 14;
+// (2026-11-25) The board turns 90 degrees, so the sensor's long side runs along the card: the picture
+// is then ~175 mm along the card and ~101 mm across it (it was 101 along and 175 across, so the
+// card's ends sat at the picture's edges). The ribbon leaves towards the right post.
+cam_turn = -90;
 
 // ================================ BED ======================================================
 module bed() {
@@ -236,22 +241,22 @@ module cam_arch() {
             }
             // the beam across, and the camera plate under it, square to the bed
             translate([-car_half, arch_y[0], arch_top - 12]) cube([2 * car_half, arch_y[1] - arch_y[0], 12]);
-            translate([0, cam_c[0], cam_c[1]]) rotate([bed_a, 0, 0]) translate([-cam_board[0] / 2 - 4, -cam_board[1] / 2 - 4, 8]) cube([cam_board[0] + 8, cam_board[1] + 8, 3]);
+            translate([0, cam_c[0], cam_c[1]]) rotate([bed_a, 0, 0]) rotate([0, 0, cam_turn]) translate([-cam_board[0] / 2 - 4, -cam_board[1] / 2 - 4, 8]) cube([cam_board[0] + 8, cam_board[1] + 8, 3]);
             hull() {
-                translate([0, cam_c[0], cam_c[1]]) rotate([bed_a, 0, 0]) translate([-cam_board[0] / 2 - 4, -cam_board[1] / 2 - 4, 10.99]) cube([cam_board[0] + 8, cam_board[1] + 8, 0.01]);
+                translate([0, cam_c[0], cam_c[1]]) rotate([bed_a, 0, 0]) rotate([0, 0, cam_turn]) translate([-cam_board[0] / 2 - 4, -cam_board[1] / 2 - 4, 10.99]) cube([cam_board[0] + 8, cam_board[1] + 8, 0.01]);
                 translate([-cam_board[0] / 2 - 4, arch_y[0], arch_top - 12]) cube([cam_board[0] + 8, arch_y[1] - arch_y[0], 0.01]);
             }
         }
         // the camera's board sits under the plate on two pegs (added below); lens hole through it
         translate([0, cam_c[0], cam_c[1]]) rotate([bed_a, 0, 0]) translate([0, 0, -1]) cylinder(d = 9, h = 30);
         // ribbon slot, and its channel down the right post
-        translate([0, cam_c[0], cam_c[1]]) rotate([bed_a, 0, 0]) translate([-9, cam_board[1] / 2 + 1, 5]) cube([18, 3, 10]);
+        translate([0, cam_c[0], cam_c[1]]) rotate([bed_a, 0, 0]) rotate([0, 0, cam_turn]) translate([-9, cam_board[1] / 2 + 1, 5]) cube([18, 3, 10]);
         translate([car_half - post_w - 0.01, (arch_y[0] + arch_y[1]) / 2 - 9, rail_scan[0]]) cube([2.6, 18, arch_top - rail_scan[0] - 14]);
         // key sockets at the feet's back ends (one key joins each foot to its skid)
         for (m = [-1, 1]) translate([m * (car_half - skid_t / 2), skid_y[0], skid_z[1]]) rotate([0, 0, 90]) key_socket_cut();
     }
     // camera pegs (two diagonal holes are enough), standing down from the plate
-    translate([0, cam_c[0], cam_c[1]]) rotate([bed_a, 0, 0]) for (h = [cam_holes[0], cam_holes[3]])
+    translate([0, cam_c[0], cam_c[1]]) rotate([bed_a, 0, 0]) rotate([0, 0, cam_turn]) for (h = [cam_holes[0], cam_holes[3]])
         translate([h[0] - cam_board[0] / 2, h[1] - cam_board[1] / 2, 8.01]) mirror([0, 0, 1]) board_peg(peg_cam, 3);
 }
 // Lens hood: twists onto the camera plate around the lens, holds a 12 mm polarizer disc.

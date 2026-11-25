@@ -198,8 +198,17 @@ module carriage(lv = 1) {
             for (x = lug_x) translate([x - lug_len / 2, xbar_c, xbar_z[0]]) along_x(lug_len) lug_2d();
         }
         fork_space();
+        // (2026-11-25) ballast: four quarters stand on edge in slots down from the crossbar's top,
+        // two each side of the fork. The pin sliding up the fork drags the carriage up with it
+        // (steel on PLA); with the carriage printed solid and 18 g of coins in it, that drag can't
+        // lift its lugs off the beam. A strip of PTFE tape on each face of the fork cuts the drag too.
+        for (m = [0, 1]) mirror([m, 0, 0]) for (y = coin_slot_y)
+            translate([coin_slot_x - coin_slot[0] / 2, y, xbar_z[1] - coin_slot[2]]) cube([coin_slot[0], coin_slot[1], coin_slot[2] + 1]);
     }
 }
+coin_slot = [24.6, 1.8, 25];           // a quarter (23.9 x 1.6) on edge
+coin_slot_x = 21.5;                    // clear of the fork's tower (x +-9 over the crossbar's top)
+coin_slot_y = [xbar_y[0] + 0.9, xbar_y[1] - 0.8 - coin_slot[1]];
 module carriage_at(L, lv, p = 0) translate([p * push_stroke, 0, L]) carriage(lv);
 
 // the lever: servo horn pocket at its hub, a 3 mm steel pin at its tip
