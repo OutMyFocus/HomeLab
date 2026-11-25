@@ -6,20 +6,26 @@ counts how your current collection would be split by rules you haven't saved yet
 
 from flask import jsonify, request, send_from_directory
 
-from . import accounts, config, decks, sort_rules, wishlist
+from . import accounts, card_facts, config, decks, sort_rules, wishlist
 from .library import holdings, read_rows
 from .sort_run import SortRun
 
 
-def preview(rules: dict, items: list[dict], taken: dict | None = None) -> dict:
-    """How many cards (and how much value) each bin would get, with a few examples. Wanted
-    cards are counted up to the listed number of copies, as a sort run pulls them; `taken`
-    is filled with {name key: copies pulled} for wanted_summary."""
+def preview(rules: dict, items: list[dict], taken: dict | None = None, live=None) -> dict:
+    """How many cards (and how much value) each bin would get, with a few examples, and
+    how many cards each rule caught. Wanted cards are counted up to the listed number of
+    copies, as a sort run pulls them; `taken` is filled with {name key: copies pulled}
+    for wanted_summary. Copies are counted one by one, so "copies beyond 4" sends the
+    fifth and later copies of a card on."""
     from .database import Card
     out = {str(b): {"cards": 0, "value": 0.0, "examples": []} for b in sort_rules.BINS}
+    hits = [0] * len(rules["rules"])
     want = sort_rules.wanted_counts(rules)
-    limit = (rules.get("wanted") or {}).get("limit", True)
+    w = rules.get("wanted") or {}
+    limit = w.get("limit", True)
     taken = {} if taken is None else taken
+    seen: dict[str, int] = {}
+    counting = sort_rules.uses(rules, "copies")
 
     def add(b, qty, it):
         slot = out[str(b)]
@@ -36,14 +42,24 @@ def preview(rules: dict, items: list[dict], taken: dict | None = None) -> dict:
         if key:
             pulled = min(qty, want[key] - taken.get(key, 0)) if limit else qty
             taken[key] = taken.get(key, 0) + pulled
-            add(rules["wanted"]["bin"], pulled, it)
+            add(w["bin"], pulled, it)
             qty -= pulled
-        if qty > 0:
-            b, _ = sort_rules.pick(card, it["foil"], it["price"], rules, taken)
-            add(b, qty, it)
+        name = sort_rules.name_key(it["name"])
+        # One copy at a time only when a rule counts copies: otherwise every copy goes the same way.
+        groups = [1] * qty if counting else ([qty] if qty > 0 else [])
+        for n in groups:
+            seen[name] = seen.get(name, 0) + n
+            hit = sort_rules.rule_for(card, it["foil"], it["price"], rules, seen[name], live)
+            b = rules["rules"][hit - 1]["bin"] if hit else rules["fallback"]
+            if w.get("on") and w.get("only") and b == w["bin"] and want:
+                b = w["others"]
+            if hit:
+                hits[hit - 1] += n
+            add(b, n, it)
     for slot in out.values():
         names = [n for _, n in sorted(slot["examples"], reverse=True)]
         slot["examples"] = list(dict.fromkeys(names))[:4]   # the most valuable, each name once
+    out["_rules"] = hits
     return out
 
 
@@ -69,11 +85,16 @@ def add_bins_routes(app, scanner, web_dir):
     def answer(rules=None):
         rules = rules or sort_rules.load()
         taken: dict[str, int] = {}
-        split = preview(rules, items(), taken)
+        split = preview(rules, items(), taken, getattr(scanner, "live", None))
+        hits = split.pop("_rules")
         return jsonify({
             "rules": rules,
             "custom": sort_rules.is_custom(),
             "preview": split,
+            "rule_hits": hits,
+            "types": sort_rules.TYPES,
+            "formats": sort_rules.FORMATS,
+            "facts": card_facts.status(),
             "wanted": wanted_summary(rules, taken),
             "presets": [{"id": k, "label": v[0], "hint": v[1]} for k, v in sort_rules.PRESETS.items()],
             "colors": sort_rules.COLORS,
@@ -81,9 +102,10 @@ def add_bins_routes(app, scanner, web_dir):
             "bins": sort_rules.BINS,
             # the bins with a tray on this sorter; a card for any other bin (bin 0 on the
             # Mk1) drops into fallback_tray, as a sort run does it with these rules
-            "trays": sorted(config.SORT_BINS),
+            "trays": sorted(sort_rules.trays()),
             "fallback_tray": SortRun.tray_for(rules, 0),
-            "decks": [{"id": d["id"], "name": d.get("name") or "Untitled deck"} for d in decks.load_decks()],
+            "decks": [{"id": k, "name": d["name"], "ci": d["ci"], "cards": len(d["names"])}
+                      for k, d in sort_rules.deck_info().items()],
             "wishlist": len(wishlist.load_items()),
         })
 

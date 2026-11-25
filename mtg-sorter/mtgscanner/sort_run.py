@@ -41,7 +41,7 @@ import time
 
 from flask import jsonify, request
 
-from . import config, sort_rules
+from . import accounts, config, sort_rules
 from .machine import claim, release
 
 log = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ class SortRun:
         self.decision = None        # what was chosen for a card waiting on the bed
         self.rules = None           # the Bins page rules for this run (fixed at the start)
         self.taken = {}             # wanted cards pulled this run: {name key: copies}
+        self.owned, self.seen = {}, {}   # {name key: copies} before the run, and saved in it
         self.state = {"running": False, "cards": [], "done": None, "speed": None, "max_cards": 0,
                       "waiting": None}
 
@@ -76,6 +77,13 @@ class SortRun:
     def start(self, speed=None, max_cards=None, rules=None) -> dict:
         """`rules`: Bins page rules sent with the start (from the server); else the saved ones."""
         rules = sort_rules.clean(rules) if isinstance(rules, dict) else sort_rules.load()
+        # Decks, wishlist and copies owned, from here unless the server sent them along.
+        try:
+            collection = self.scanner.collection()
+        except Exception:
+            collection = None
+        rules = sort_rules.resolve(rules, collection)
+        owned = sort_rules.owned_before(rules, collection)
         with self.lock:
             if self.state["running"]:
                 raise RuntimeError("A sort run is already going: stop it first")
@@ -88,6 +96,8 @@ class SortRun:
             self.stop_asked = False
             self.decision = None
             self.rules, self.taken = rules, {}
+            # copies of each card before the run, and saved during it ("copies beyond N")
+            self.owned, self.seen = owned, {}
             self.state = {"running": True, "cards": [], "done": None, "speed": speed,
                           "max_cards": max_cards, "started_at": time.time(), "waiting": None}
             self.thread = threading.Thread(target=self._run, args=(speed, max_cards), daemon=True)
@@ -240,7 +250,7 @@ class SortRun:
         """The rules' bin 0 (unknown price) has no tray: config.SORT_FALLBACK_BIN instead.
         `bins`: the machine's bins (Mk2 has 4), else config.SORT_BINS."""
         if bins is None:
-            bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
+            bins = sort_rules.trays()
         return int(bin_no) if int(bin_no) in bins else int(getattr(config, "SORT_FALLBACK_BIN", 1))
 
     @staticmethod
@@ -435,7 +445,11 @@ class SortRun:
                     saved = {}
                 # this run's rules (and wanted copies left), not the bin the scan was saved with
                 wanted = sort_rules.wanted_for(shown, rules, self.taken)
-                bin_no, label = sort_rules.pick(shown, foil, saved.get("price"), rules, self.taken)
+                key = sort_rules.name_key(shown.name)
+                self.seen[key] = self.seen.get(key, 0) + 1
+                copy = self.owned.get(key, 0) + self.seen[key]
+                bin_no, label = sort_rules.pick(shown, foil, saved.get("price"), rules, self.taken, copy,
+                                                getattr(self.scanner, "live", None))
                 if wanted:
                     self.taken[wanted] = self.taken.get(wanted, 0) + 1
                     card["wanted"] = True
@@ -470,7 +484,9 @@ def add_sort_run_routes(app, watcher, scanner, machine):
         body = request.get_json(silent=True) or {}
         if run is None:
             # the Pi sorts by the rules (and wanted list) on this server's Bins page
-            return answer(lambda: machine.sort_start({**body, "rules": sort_rules.load()}))
+            # with this server's decks, wishlist and copies written in: the Pi has its own
+            rules = sort_rules.resolve(sort_rules.load(), accounts.collection_csv())
+            return answer(lambda: machine.sort_start({**body, "rules": rules}))
         return answer(lambda: run.start(body.get("speed"), body.get("max_cards"), body.get("rules")), 409)
 
     @app.get("/api/machine/sort")
