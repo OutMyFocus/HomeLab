@@ -312,6 +312,7 @@ SORT_RETRIES = 1              # drop again this many times if the camera still s
 # (about a fifth of its length over the bed) changed the top of the view and stopped 3
 # runs with "still on the bed" on an empty bed (2026-11-08). A card at the bar fills y 0.20-0.79.
 SORT_CHECK_ZONE = (0.05, 0.22, 0.95, 0.95)
+SORT_GONE_BOX_SHARE = 0.18  # the same inside the saved bed box (used when one is saved): empty 0.03-0.06, card 0.6
 SORT_GONE_SHARE = 0.08     # 0.05 called an empty bed "still there" (0.055-0.058) under the rail light, 2026-11-06
 
 # --- The light bars (lights.py) --------------------------------------------
