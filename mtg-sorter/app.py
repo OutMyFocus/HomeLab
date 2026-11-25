@@ -59,6 +59,7 @@ from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
 from mtgscanner.feed_watch import add_feed_watch_routes
+from mtgscanner.health import add_health_routes
 from mtgscanner.tuning import add_tuning_routes
 from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
 from mtgscanner.remote_machine import RemoteCameraSource, RemoteLights, RemoteMachine, remote_url
@@ -803,9 +804,9 @@ class Scanner:
     def _save(
         self, card: Card, foil: bool, track: Track | None = None, auto: bool = False
     ):
-        bin_no, bin_label = choose_bin(card, foil, self.vault, self.live)
-        price = card_price(card, foil, self.vault, self.live)
         path = self.collection()
+        bin_no, bin_label = choose_bin(card, foil, self.vault, self.live, path)
+        price = card_price(card, foil, self.vault, self.live)
         scanned_at = add_card(path, card, foil, bin_label, price, self.owner)
         with accounts.acting_as(self.account):   # their own alerts and wishlist
             special = self._special(card, price[0])
@@ -1090,7 +1091,8 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     add_machine_routes(app, machine, WEB)  # the /machine test page
     watcher = add_feed_watch_routes(app, scanner, machine)  # Feed one card, watching the camera
     add_tuning_routes(app, watcher, machine)               # the tuning run round the bins
-    add_sort_run_routes(app, watcher, scanner, machine)    # Start sorting: the machine on its own
+    run = add_sort_run_routes(app, watcher, scanner, machine)   # Start sorting: the machine on its own
+    add_health_routes(app, scanner, machine, WEB, run)      # the /machine/health page: everything it reports
     add_lights_routes(app, scanner.lights, WEB)  # the /lights page
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
     add_collection_routes(app, scanner, WEB)  # the /collection page

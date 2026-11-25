@@ -199,6 +199,13 @@ class RemoteMachine:
     def reset_saved(self):
         self._call("/api/machine/reset", {})
 
+    # the Machine health page (health.py): the Pi keeps the record, the server shows it
+    def health(self) -> dict:
+        return self._call("/api/machine/health", timeout=(2, 10))
+
+    def set_bin_sensors(self, kind: str, fitted: bool):
+        self._call("/api/machine/health/sensors", {"kind": kind, "fitted": bool(fitted)})
+
     def self_test(self, pause: float = 0.6) -> list[dict]:
         try:
             return self._call("/api/machine/test", {}, timeout=(2, 60)).get("test", [])

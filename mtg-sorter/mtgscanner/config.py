@@ -209,6 +209,19 @@ RELAY_PIN = 22
 SERVO_PULSE = (750, 2250)
 SERVO_PULSE_WIDE = (500, 2500)
 SERVO_WIDE_TRAVEL = True       # until the Machine page's switch is saved (the angles above need it)
+# Mk2's bin sensors (hardware/mk2/MK2.md, Pin map), read by the Machine health page. Each bin
+# has a TCRT5000 "bin full" module looking through the slot in its back wall, and can have an
+# A3144 hall sensor under it that sees the bin's magnet ("bin in"). Until they're wired, the
+# page shows them as not connected (tick "Sensors are fitted" there once they are). Power the
+# TCRT5000 modules from the Pi's 3.3 V (pin 1 or 17), never 5 V: their DO pin then gives the
+# Pi 3.3 V too.
+BIN_FULL_PINS = {1: 16, 2: 20, 3: 21, 4: 12}
+BIN_SEATED_PINS = {1: 5, 2: 6, 3: 13, 4: 26}
+BIN_FULL_ACTIVE_LOW = True     # a TCRT5000's DO goes low (its second LED lights) when it sees cards close by
+BIN_SEATED_ACTIVE_LOW = True   # an A3144 pulls low with a magnet over it
+# Saved servo angles outside this range warn on the Machine and Machine health pages: a servo
+# pushed to its own stop at 0 or 180 strains and wears out (a level 1 pusher did, 2026-11-24).
+SERVO_SAFE_RANGE = (10, 170)
 # The feeder's N20 motor, through the DRV8833 driver: Pi GPIO17 to IN1, GPIO27 to IN2.
 FEEDER_PINS = (17, 27)
 # How fast the feeder turns (0-1) and how long one push lasts (seconds).

@@ -45,8 +45,10 @@ def oracle(name, **extra):
 def test_card_rows_keep_what_the_builder_needs():
     row = carddb.card_row(oracle("Elf", game_changer=True))
     assert row == {"n": "Elf", "m": "{1}{G}", "v": 2, "t": "Creature — Elf", "o": "Draw a card.", "ci": "G", "r": "r",
-                   "pt": "2/1", "gc": 1, "e": 5}
-    assert carddb.card_row(oracle("Banned", legalities={"commander": "banned"}))["b"] == 1
+                   "pt": "2/1", "gc": 1, "e": 5, "lg": "c"}
+    banned = carddb.card_row(oracle("Banned", legalities={"commander": "banned", "modern": "legal",
+                                                          "vintage": "restricted", "legacy": "banned"}))
+    assert banned["b"] == 1 and banned["lg"] == "mv" and banned["bn"] == "lc"
     assert carddb.card_row(oracle("Not legal", legalities={"commander": "not_legal"})) is None
     assert carddb.card_row(oracle("Token", layout="token")) is None
     faces = carddb.card_row({"name": "A // B", "cmc": 3, "type_line": "Creature // Land", "color_identity": ["U"],

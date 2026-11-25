@@ -199,11 +199,18 @@ Then open **http://localhost:5000** in your browser. You get:
   **Prices and card data** shows when the weekly Canadian price check and card database update
   last ran, with buttons to run them now. **Bring in Commander Vault** imports everything from
   a Commander Vault export file (see below).
-- **Bins**: choose what goes into each bin (0 to 3), by price, color,
-  rarity, set and foil, without editing any code. Bins without a tray on your sorter (bin 0
-  on the Mk1, which has trays for bins 1, 2 and 3) drop their cards into another bin; the
-  page says which. Pick a ready-made setup (by price, by rarity,
-  by color, keep the good stuff, pull valuable then by color) or write your own rules. The
+- **Bins**: choose what goes into each of the Mk2's four bins with a rule builder, without
+  editing any code. A rule is any mix of conditions (all or any of them, each one can be
+  turned around with NOT): price, no price, foil, extra copies beyond the first N, card type
+  (lands, tokens, creatures...), words in the type line, color, color identity, number of
+  colors, mana value, rarity, set, name, rules text, format legality, the cards in your decks
+  or that fit a deck's colors, your wishlist, EDHREC rank and Game Changers. Rules are checked
+  from the top; the catch-all bin gets the rest and the cards it can't read. Type, mana value,
+  text and formats come from the card list (Settings, Update now). Bin 0 (the original price
+  bins' "Unknown price") has no tray and drops into another bin; the page says which. Pick a
+  ready-made setup (by price, lands in their own bin, tokens out, lands and tokens out, cards
+  for my decks, fits my decks' colors, keep 4 and extras out, by rarity, by color...) or
+  write your own rules. The
   counts show how your collection would be split before you save. Saved in
   `data/sort_rules.json`; **Back to the original price bins** undoes it.
 - **Train** tab: teach the scanner from your own scans (see below).
@@ -383,6 +390,14 @@ feeder motor and its driver. The Mk2 build is in [`hardware/mk2/MK2.md`](hardwar
 Sorting already works: **Machine → Start sorting** feeds each card, scans it, and drops it
 into its bin ([`mtgscanner/machine.py`](mtgscanner/machine.py) moves the parts,
 [`mtgscanner/sort_run.py`](mtgscanner/sort_run.py) runs the sort).
+
+**Machine → Machine health** (`/machine/health`) shows everything the sorter reports in one
+place, live: the Pi's temperature, power and throttling, the camera, where each servo is and
+when it last moved (with saved angles outside 10-170° flagged), every feeder pulse and what each
+fed card did, the bin-full and bin-in sensors, the lights and power relay, recent scans and
+misreads, and the jams and errors since the app started. The same data is JSON at
+`/api/machine/health` (`?download=1` saves it as a file). On the server it comes from the Pi
+through `MTG_MACHINE_URL` ([`mtgscanner/health.py`](mtgscanner/health.py)).
 
 ### Phase 2: camera rig
 

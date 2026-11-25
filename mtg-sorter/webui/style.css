@@ -10,8 +10,9 @@
   --bin1: #8b93a1;
   --bin2: #22b3a3;
   --bin3: #f2a93b;
+  --bin4: #a78bfa;
   /* the ink on each bin color: white on the grey, dark on the lighter ones (as look.js picks) */
-  --on-bin0: #fff; --on-bin1: #121417; --on-bin2: #121417; --on-bin3: #121417;
+  --on-bin0: #fff; --on-bin1: #121417; --on-bin2: #121417; --on-bin3: #121417; --on-bin4: #121417;
   --good: #34d399;
   --warn: #f5b84a;
   --bad: #f26464;
@@ -326,6 +327,7 @@ main, .wrap { animation: page-in .35s var(--ease); }
 .bin-1 { background: var(--bin1); color: var(--on-bin1, #fff); }
 .bin-2 { background: var(--bin2); color: var(--on-bin2, #fff); }
 .bin-3 { background: var(--bin3); color: var(--on-bin3, #fff); }
+.bin-4 { background: var(--bin4); color: var(--on-bin4, #fff); }
 
 .controls { display: flex; flex-direction: column; gap: 10px; margin-top: auto; }
 .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

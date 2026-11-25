@@ -113,6 +113,8 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
             g["paid_n"] += qty(r)
 
     rules = sort_rules.load()   # once, not once a card
+    counting = sort_rules.uses(rules, "copies")
+    seen: dict[str, int] = {}
     items = []
     for key, g in groups.items():
         last = g["rows"][-1]
@@ -126,7 +128,12 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
         scanned_price = round(g["paid_sum"] / g["paid_n"], 2) if g["paid_n"] else None
         if price is None and scanned_price is not None:
             price, source = scanned_price, "Price when it was scanned"
-        bin_no, bin_label = bin_for(card, foil, price, rules)
+        copy = None
+        if counting:   # which copy the first in this group is, counting the groups before it
+            k = sort_rules.name_key(card.name)
+            copy = seen.get(k, 0) + 1
+            seen[k] = seen.get(k, 0) + g["qty"]
+        bin_no, bin_label = bin_for(card, foil, price, rules, copy, live)
         times = [r.get("Scanned at", "") for r in g["rows"] if r.get("Scanned at")]
         set_code = card.set_code.upper()
         items.append({
