@@ -333,9 +333,9 @@ class Machine:
                 if hasattr(servo, "set_pulse_width_range"):   # cheap: no I2C, just the scale
                     servo.set_pulse_width_range(*self.pulse_range())
                 servo.angle = angle
-            except OSError as e:
+            except OSError:
                 self._kit = None   # board unplugged or lost: find it again next time
-                health.event("servo", f"Lost the servo board moving channel {channel} ({e})", "bad", channel=channel)
+                health.event("servo", f"Lost the servo board moving channel {channel}", "bad", channel=channel)
                 raise
             self.angles[channel] = angle
             health.servo_moved(channel, angle)
@@ -779,7 +779,7 @@ def add_machine_routes(app, machine: Machine, web_dir):
             return jsonify(error=str(e)), 503
         except OSError as e:     # the servo board lost power, an I2C glitch, a full disk
             print(f"Machine: {oserror} ({e})")
-            health.event("error", f"{request.path}: {oserror} ({e})", "bad")
+            health.event("error", f"{request.path}: {oserror}", "bad")
             return jsonify(error=oserror), 503
         return jsonify(machine.state())
 

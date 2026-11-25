@@ -124,9 +124,7 @@ class _WarningLog(logging.Handler):
         if record.name == "werkzeug" and record.levelno < logging.ERROR:
             return   # "This is a development server", every start
         try:
-            msg = record.getMessage()
-            if record.exc_info and record.exc_info[1] is not None:
-                msg += f" ({record.exc_info[1]})"
+            msg = record.getMessage()   # the exception itself stays in the app's log, not on the page
             event("log", msg[:500], "bad" if record.levelno >= logging.ERROR else "warn", logger=record.name)
         except Exception:
             pass
@@ -402,10 +400,10 @@ def add_health_routes(app, scanner, machine, web_dir, run=None, sensors=None):
                 machine.set_bin_sensors(str(body.get("kind")), bool(body.get("fitted")))
                 return jsonify(machine.health())
             sensors.set_fitted(str(body.get("kind")), bool(body.get("fitted")))
-        except ValueError as e:
-            return jsonify(error=str(e)), 400
-        except RuntimeError as e:
-            return jsonify(error=str(e)), 503
+        except ValueError:
+            return jsonify(error="Pick full or seated."), 400
+        except RuntimeError:
+            return jsonify(error="Can't reach the sorter's Pi. Is it on, and is the app running there?"), 503
         except OSError:
             return jsonify(error="Couldn't save that. Is the data folder full or read-only?"), 503
         event("sensors", f"Bin {body.get('kind')} sensors marked as {'fitted' if body.get('fitted') else 'not fitted'}")
