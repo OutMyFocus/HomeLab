@@ -1226,13 +1226,14 @@ def test_mk2_sort_one_feeds_against_the_stop_bar_and_drops(watched, quick_sort, 
     assert out["dropped"] is True
 
 
-def test_runs_do_not_drive_mk2_yet(watched):
+def test_the_tuning_run_does_not_drive_mk2_but_the_sort_run_may(watched):
     client, scanner, machine, cams = watched
     client.post("/api/machine/save", json={"model": "mk2"})
-    r = client.post("/api/machine/sort", json={"max_cards": 1})
+    r = client.post("/api/machine/tune", json={"cycles": 1})
     assert r.status_code >= 400 and "Mk2" in r.get_json()["error"]
-    assert client.post("/api/machine/tune", json={"cycles": 1}).status_code >= 400
-    assert machine.run is None
+    from mtgscanner.machine import claim, release
+    claim(machine, "sort run")      # Nic, 2026-11-25: Start sorting on Mk2
+    release(machine, "sort run")
 
 
 def test_a_fresh_install_drives_mk2_and_the_page_has_no_machine_switch(client, monkeypatch):
