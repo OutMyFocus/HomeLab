@@ -21,7 +21,7 @@ import time
 
 from flask import jsonify, request, send_from_directory
 
-from . import config
+from . import config, health
 
 
 def settings_file():
@@ -335,8 +335,10 @@ class Machine:
                 servo.angle = angle
             except OSError:
                 self._kit = None   # board unplugged or lost: find it again next time
+                health.event("servo", f"Lost the servo board moving channel {channel}", "bad", channel=channel)
                 raise
             self.angles[channel] = angle
+            health.servo_moved(channel, angle)
             if angle is not None:
                 self._remember(channel, angle)
             old = self._relax_timers.pop(channel, None)
@@ -466,6 +468,7 @@ class Machine:
         nothing slams into a stop; a part with no last angle goes straight there."""
         speed = speed or config.SERVO_HOME_SPEED
         servos, last = self.servos(), self.last_angles()
+        health.event("move", "Home: every part to its home position")
         order = config.SERVO_HOME_MK2 if self.model() == "mk2" else config.SERVO_HOME
         for part, position in order.items():
             if part not in servos or position not in servos[part][1]:
@@ -697,6 +700,7 @@ class Machine:
             if defaults["reverse"]:
                 backward = not backward
             (motor.backward if backward else motor.forward)(speed)
+            health.feeder_pulse(seconds, speed, backward)
             self.feeding = True
             self._stop_timer = threading.Timer(seconds, self.stop_feeder)
             self._stop_timer.daemon = True
@@ -771,9 +775,11 @@ def add_machine_routes(app, machine: Machine, web_dir):
         except (ValueError, TypeError) as e:
             return jsonify(error=str(e)), 400
         except RuntimeError as e:
+            health.event("error", f"{request.path}: {e}", "bad")
             return jsonify(error=str(e)), 503
         except OSError as e:     # the servo board lost power, an I2C glitch, a full disk
             print(f"Machine: {oserror} ({e})")
+            health.event("error", f"{request.path}: {oserror}", "bad")
             return jsonify(error=oserror), 503
         return jsonify(machine.state())
 

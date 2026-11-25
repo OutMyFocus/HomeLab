@@ -395,7 +395,9 @@ def test_the_server_watches_the_pis_camera(db, pi, data, monkeypatch):  # noqa: 
     source = RemoteCameraSource("http://10.0.0.247:5000", http=wire)
     source.RETRY = 0.05
     frames = [f for f in (source.read(timeout=1.0) for _ in range(3)) if f is not None]
-    assert frames and frames[0].shape == (48, 64, 3) and frames[0][0, 0][2] > 250   # a red JPEG, give or take
+    # read() hands out the newest picture, so on a busy machine the stream may already be past the
+    # red one when the test first looks: either of the two frames sent is right.
+    assert frames and frames[0].shape == (48, 64, 3) and max(frames[0][0, 0][1:]) > 250   # red or green
     info = source.info()
     assert info["index"] == "pi" and info["remote"] == "http://10.0.0.247:5000" and info["size"] == [64, 48]
     # Focus goes to the Pi's own camera (the test Pi has a webcam stand-in, which can't focus).
