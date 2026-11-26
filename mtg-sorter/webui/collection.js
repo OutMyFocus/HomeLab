@@ -88,8 +88,7 @@
       return;
     }
     if (window.SortRCharts) {   // the same smooth line, hover readout and colors as Home
-      const axis = v => v >= 10000 ? "$" + (v / 1000).toFixed(0) + "k" : v >= 1000 ? "$" + (v / 1000).toFixed(1) + "k" : "$" + Math.round(v);
-      SortRCharts.line(box, pts, { fmt: (v, isAxis) => isAxis ? axis(v) : money(v), tip: p => `${money(p.value)}${p.cards ? ` · ${p.cards.toLocaleString()} cards` : ""}` });
+      SortRCharts.line(box, pts, { fmt: (v, isAxis, step) => isAxis ? SortRCharts.axisMoney(v, step) : money(v), tip: p => `${money(p.value)}${p.cards ? ` · ${p.cards.toLocaleString()} cards` : ""}` });
       return;
     }
     const W = box.clientWidth || 600, H = box.clientHeight || 220, L = 56, R = 12, T = 12, B = 26;
@@ -827,6 +826,8 @@
     else if ((e.key === "e" || e.key === "E") && data) openExport();
   });
 
+  // On a phone the long hint is cut off beside the Filters button.
+  if (matchMedia("(max-width: 600px)").matches) $("q").placeholder = "Search your cards";
   // Other pages link here with a search filled in (/collection?q=Sol Ring).
   { const ps = new URLSearchParams(location.search), q = ps.get("q"), sort = ps.get("sort");
     if (q) $("q").value = q;

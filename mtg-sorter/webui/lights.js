@@ -91,6 +91,7 @@
     $("bOut").value = set.brightness + "%"; $("sOut").value = set.speed + "%";
     $("speed").closest(".slide").hidden = set.effect === "solid";
     if (document.activeElement !== $("count")) $("count").value = set.count;
+    for (const n of document.querySelectorAll("[data-no-status]")) n.hidden = set.count > 0;
     const card = set.card;
     $("cardOn").checked = card.on;
     if (document.activeElement !== $("cardCount")) $("cardCount").value = card.count;

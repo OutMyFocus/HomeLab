@@ -182,8 +182,7 @@
   <section class="panel" id="sortPanel">
     <h2>Start sorting</h2>
     <p class="err" id="sortNote" hidden>On Mk2, set every servo's angles above and try each Bin button with a card
-      before you start a run. The Bins page rules use bins 1 to 3 (bin 4 isn't in the rules yet). Tuning runs are
-      for the first machine only.</p>
+      before you start a run.</p>
     <p class="sub">The machine on its own: it feeds a card, the scanner recognizes it, it is saved to the collection
       and dropped into the bin your <a href="/bins">Bins</a> rules give it, then the next one, until the hopper is empty
       or you press Stop. The stop pins only drop for a card that is recognized: one the scanner isn't sure of, or
@@ -218,7 +217,7 @@
     <p class="sub" id="testStatus"></p>
     <table id="testTable" hidden><thead><tr><th>#</th><th>Bin</th><th>Result</th><th>Landed</th><th>In bin</th><th>Time</th></tr></thead><tbody></tbody></table>
   </section>
-  <section class="panel">
+  <section class="panel" id="tunePanel">
     <h2>Tuning run</h2>
     <p class="sub"><b>A mechanical test, not sorting:</b> it feeds and drops each card straight away without reading it.
       Sorts card after card round the bins and scores every feed. With <b>adjust</b> on it slows the
@@ -332,6 +331,7 @@ function showModel(s) {
     }
   }
   $("sortNote").hidden = !mk2;
+  $("tunePanel").hidden = mk2; // tuning runs are for the first machine only
 }
 // Bin map: pointing at a Bin button lights that bin up in the picture.
 function lightBin(n) {

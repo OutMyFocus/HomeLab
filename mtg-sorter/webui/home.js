@@ -108,7 +108,7 @@
     const pts = prefs.range === "all" ? h : h.filter(p => lastDay - day(p.day).getTime() <= +prefs.range * 864e5);
     for (const b of $("rangeSeg").children) b.setAttribute("aria-pressed", b.dataset.v === prefs.range);
     C.line($("valueChart"), pts.length >= 2 ? pts : h, {
-      fmt: (v, axis) => axis ? axisMoney(v) : money(v),
+      fmt: (v, axis, step) => axis ? C.axisMoney(v, step) : money(v),
       tip: p => `${money(p.value)} · ${plural(p.cards, "card")}`,
       empty: `${h.length ? `Today: <b>${money(h[0].value)}</b>. ` : ""}A line appears here once there are two days to compare.`,
     });
@@ -140,7 +140,7 @@
     const add = (weight, icon, tone, html, href) => out.push({ weight, icon, tone, html, href });
     const t = trend(30);
     if (t && Math.abs(t.diff) >= 1) add(9, t.diff >= 0 ? "up" : "down", t.diff >= 0 ? "good" : "bad",
-      `Your collection is worth <b>${money(Math.abs(t.diff))}</b> (${pct(t.pct)}) ${t.diff >= 0 ? "more" : "less"} than ${t.days} days ago.`, "/collection");
+      `Your collection is worth <b>${money(Math.abs(t.diff))}</b> (${pct(t.pct)}) ${t.diff >= 0 ? "more" : "less"} than ${t.days === 1 ? "yesterday" : `${t.days} days ago`}.`, "/collection");
     const d = s.days, wk = d.slice(-7).reduce((a, x) => a + x.cards, 0), prev = d.slice(0, 7).reduce((a, x) => a + x.cards, 0);
     if (wk || prev) add(7, "clock", "", prev ? `You scanned <b>${plural(wk, "card")}</b> this week, ${Math.round(Math.abs(wk - prev) / prev * 100)}% ${wk >= prev ? "more" : "fewer"} than the week before.`
       : `You scanned <b>${plural(wk, "card")}</b> this week.`, "/history");
