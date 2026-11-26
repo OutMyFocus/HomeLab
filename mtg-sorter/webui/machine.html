@@ -566,15 +566,20 @@ function showTest(t) {
   $("testStatus").textContent = t.running ? `Running: ${rows.length} of ${t.count} cards, ${good} OK`
     : (t.reason ? `${good} of ${rows.length} OK. ${t.reason}` : "");
   if (!t.running && testTimer) { clearInterval(testTimer); testTimer = null; }
+  if (t.running && !testTimer) testTimer = setInterval(pollTest, 1000);
 }
 async function pollTest() {
   try { showTest(await answerOf(await fetch("/api/machine/test_run"))); } catch (e) {}
 }
 $("testStart").onclick = async () => {
-  const t = await call("/api/machine/test_run", { count: +$("testCount").value || 10 });
-  if (t) { showTest(t); if (!testTimer) testTimer = setInterval(pollTest, 1000); }
+  const t = await tuneApi("/api/machine/test_run", { count: +$("testCount").value || 10 });
+  if (t.error) { toast(t.error); return; }
+  showTest(t);
 };
-$("testStop").onclick = () => call("/api/machine/test_run", { stop: true });
+$("testStop").onclick = async () => {
+  const t = await tuneApi("/api/machine/test_run", { stop: true });
+  if (!t.error) showTest(t);
+};
 pollTest();
 </script>
 </body>

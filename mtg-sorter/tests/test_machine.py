@@ -41,6 +41,7 @@ def data(tmp_path, monkeypatch):
 
 @pytest.fixture
 def machine(monkeypatch):
+    monkeypatch.setattr(config, "FEED_LATE_SECONDS", 0.05)
     # Short waits for the fake hardware (tests that set their own value after this still win):
     # a fake card lands after about 0.06 s, and nothing here needs the real pins or lights wait.
     monkeypatch.setattr(config, "FEED_MAX_SECONDS", 0.6)
@@ -1449,3 +1450,22 @@ def test_sort_one_sorts_a_card_already_on_the_bed_without_feeding(watched, quick
     cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=True))
     out = client.post("/api/machine/sort_one", json={"bin": 1}).get_json()   # learns nothing bare: card stays
     assert out["dropped"] is False
+
+
+def test_a_waiting_card_keeps_its_stop_bar_up(machine, mk2, monkeypatch):
+    # The machine lets a servo go 30 s after its last move; a card waiting for a person
+    # (unread, or its bin is full) must stay held, so the run sends "stop up" again.
+    from mtgscanner.sort_run import SortRun
+    run = SortRun(None, None, machine)
+    moves = []
+    monkeypatch.setattr(machine, "move", lambda part, position: moves.append((part, position)))
+    start = time.monotonic()
+    run._keep_stop_up(start)
+    run._keep_stop_up(start)                       # too soon: not sent twice
+    assert moves == [("stop", "up")]
+    run._stop_sent -= 11
+    run._keep_stop_up(start)
+    assert moves == [("stop", "up")] * 2
+    run._stop_sent -= 11
+    run._keep_stop_up(start - 601)                 # ten minutes on: left alone
+    assert len(moves) == 2
