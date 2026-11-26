@@ -138,3 +138,49 @@ def test_an_unreachable_pi_still_answers(db):  # noqa: F811
     r = res.get_json()
     assert res.status_code == 200 and r["reachable"] is False and r["overall"] == "bad"
     assert "Can't reach the sorter's Pi" in r["problems"][0]["text"]
+
+
+def test_a_full_bin_counts_only_when_every_reading_agrees(data):
+    reads = {"n": 0}
+
+    class Pin:
+        def __init__(self, pin):
+            self.pin = pin
+
+        @property
+        def is_active(self):
+            if self.pin == 16:                 # bin 1's sensor sees a card for one reading only
+                reads["n"] += 1
+                return reads["n"] == 1
+            return self.pin == 21              # bin 3 is full every time
+    sensors = BinSensors(make_input=Pin)
+    assert sensors.blocked(gap=0) == {"full": [], "out": []}      # nothing fitted: nothing blocks
+    sensors.set_fitted("full", True)
+    assert sensors.blocked(reads=3, gap=0) == {"full": [3], "out": []}
+
+
+def test_the_sort_run_stops_before_feeding_when_a_bin_is_full(data, machine):
+    from mtgscanner.sort_run import SortRun
+
+    class Sensors:
+        def __init__(self):
+            self.answer = {"full": [], "out": []}
+
+        def blocked(self):
+            return self.answer
+
+    class Watcher:
+        fed = 0
+
+        def sort_one(self, *a, **k):
+            Watcher.fed += 1
+            return {"result": "none"}
+    sensors = Sensors()
+    run = SortRun(Watcher(), None, machine, sensors)
+    assert run._blocked_bins() is None
+    sensors.answer = {"full": [2], "out": [4]}
+    assert run._blocked_bins() == "bin 2 is full and bin 4 is out: empty or seat it, then press Start again"
+    run.state["running"] = True
+    run._run(1.0, 0)
+    assert Watcher.fed == 0 and run.state["done"].startswith("bin 2 is full")
+    assert SortRun(Watcher(), None, machine)._blocked_bins() is None     # no sensors: never blocked

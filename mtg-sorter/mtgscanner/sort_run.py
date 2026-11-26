@@ -60,8 +60,9 @@ class StopHere(RuntimeError):
 
 
 class SortRun:
-    def __init__(self, watcher, scanner, machine):
+    def __init__(self, watcher, scanner, machine, sensors=None):
         self.watcher, self.scanner, self.machine = watcher, scanner, machine
+        self.sensors = sensors      # Mk2's bin sensors (bin_sensors.py), or None
         self.lock = threading.Lock()
         self.thread = None
         self.stop_asked = False
@@ -159,6 +160,10 @@ class SortRun:
                 if max_cards and len(self.state["cards"]) >= max_cards:
                     reason = f"did the {max_cards} cards asked for"
                     return
+                blocked = self._blocked_bins()
+                if blocked:
+                    reason = blocked
+                    return
                 card = {"n": len(self.state["cards"]) + 1, "status": "none", "bin": None, "name": None}
                 t0 = time.monotonic()
                 card["fed_at"] = t0
@@ -238,6 +243,25 @@ class SortRun:
             if gap > 0.2 * max(a.size, b.size, 1.0):
                 return True
         return False
+
+    def _blocked_bins(self) -> str | None:
+        """Why the next card can't be fed: a bin full or out (fitted bin sensors only), or
+        None. Checked before the feed, so the run stops with the bed empty, not with a card
+        waiting for a bin it can't go into."""
+        if self.sensors is None or not getattr(config, "SORT_STOP_WHEN_BIN_FULL", True):
+            return None
+        try:
+            b = self.sensors.blocked()
+        except Exception:           # a sensor that can't be read never stops a run
+            return None
+        parts = []
+        if b["full"]:
+            parts.append(f"bin {', '.join(map(str, b['full']))} {'is' if len(b['full']) == 1 else 'are'} full")
+        if b["out"]:
+            parts.append(f"bin {', '.join(map(str, b['out']))} {'is' if len(b['out']) == 1 else 'are'} out")
+        if not parts:
+            return None
+        return " and ".join(parts) + ": empty or seat it, then press Start again"
 
     def _resting(self):
         """Where the held parts go before each card: the trapdoors shut and the stop up.
@@ -468,10 +492,11 @@ class SortRun:
             return fallback
 
 
-def add_sort_run_routes(app, watcher, scanner, machine):
+def add_sort_run_routes(app, watcher, scanner, machine, sensors=None):
     """POST/GET /api/machine/sort and POST /api/machine/sort/stop. On the server (no
-    hardware) the calls go to the Pi, which has the motor, the camera and a scanner."""
-    run = None if watcher is None else SortRun(watcher, scanner, machine)
+    hardware) the calls go to the Pi, which has the motor, the camera and a scanner.
+    `sensors`: the bin sensors, shared with the health page (a GPIO pin opens only once)."""
+    run = None if watcher is None else SortRun(watcher, scanner, machine, sensors)
 
     def answer(action, timeout_error=503):
         try:

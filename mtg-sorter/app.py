@@ -59,6 +59,7 @@ from mtgscanner.play import add_play_routes
 from mtgscanner.vault import add_vault_routes
 from mtgscanner.live import Live
 from mtgscanner.feed_watch import add_feed_watch_routes
+from mtgscanner.bin_sensors import BinSensors
 from mtgscanner.health import add_health_routes
 from mtgscanner.tuning import add_tuning_routes
 from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
@@ -1091,8 +1092,10 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     add_machine_routes(app, machine, WEB)  # the /machine test page
     watcher = add_feed_watch_routes(app, scanner, machine)  # Feed one card, watching the camera
     add_tuning_routes(app, watcher, machine)               # the tuning run round the bins
-    run = add_sort_run_routes(app, watcher, scanner, machine)   # Start sorting: the machine on its own
-    add_health_routes(app, scanner, machine, WEB, run)      # the /machine/health page: everything it reports
+    # Mk2's bin sensors: one set for the sort run and the health page (a GPIO pin opens only once)
+    sensors = None if isinstance(machine, RemoteMachine) else BinSensors()
+    run = add_sort_run_routes(app, watcher, scanner, machine, sensors)   # Start sorting: the machine on its own
+    add_health_routes(app, scanner, machine, WEB, run, sensors)      # the /machine/health page: everything it reports
     add_lights_routes(app, scanner.lights, WEB)  # the /lights page
     add_system_routes(app, scanner, machine, WEB)  # the /maintenance page
     add_collection_routes(app, scanner, WEB)  # the /collection page

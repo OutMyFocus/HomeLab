@@ -103,3 +103,24 @@ class BinSensors:
                 rows.append(row)
         self.error = ("Couldn't read the bin sensors (" + "; ".join(errors[:2]) + ")") if errors else None
         return {"fitted": fitted, "bins": rows, "error": self.error}
+
+    def blocked(self, reads: int | None = None, gap: float | None = None) -> dict:
+        """Bins a card can't go into right now: {"full": [bins], "out": [bins]}. A bin only
+        counts when every one of `reads` readings `gap` seconds apart says so, so a card
+        still falling past a TCRT5000 (or a flicker on its pin) doesn't stop a run. Sensors
+        that aren't fitted, or can't be read, never block a bin."""
+        import time
+        reads = max(1, int(reads if reads is not None else getattr(config, "BIN_CONFIRM_READS", 3)))
+        gap = max(0.0, float(gap if gap is not None else getattr(config, "BIN_CONFIRM_GAP", 0.1)))
+        full, out = None, None
+        for i in range(reads):
+            if i:
+                time.sleep(gap)
+            bins = self.read()["bins"]
+            now_full = {b["bin"] for b in bins if b["full"] is True}
+            now_out = {b["bin"] for b in bins if b["seated"] is False}
+            full = now_full if full is None else full & now_full
+            out = now_out if out is None else out & now_out
+            if not full and not out:
+                break
+        return {"full": sorted(full or ()), "out": sorted(out or ())}

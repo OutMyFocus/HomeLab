@@ -219,6 +219,12 @@ BIN_FULL_PINS = {1: 16, 2: 20, 3: 21, 4: 12}
 BIN_SEATED_PINS = {1: 5, 2: 6, 3: 13, 4: 26}
 BIN_FULL_ACTIVE_LOW = True     # a TCRT5000's DO goes low (its second LED lights) when it sees cards close by
 BIN_SEATED_ACTIVE_LOW = True   # an A3144 pulls low with a magnet over it
+# A sort run checks the fitted bin sensors before every card and stops, with nothing on the
+# bed, when a bin is full or out. A bin only counts as full (or out) when this many readings
+# this many seconds apart agree, so a card still falling past the sensor doesn't stop it.
+SORT_STOP_WHEN_BIN_FULL = True
+BIN_CONFIRM_READS = 3
+BIN_CONFIRM_GAP = 0.1
 # Saved servo angles outside this range warn on the Machine and Machine health pages: a servo
 # pushed to its own stop at 0 or 180 strains and wears out (a level 1 pusher did, 2026-11-24).
 SERVO_SAFE_RANGE = (10, 170)
