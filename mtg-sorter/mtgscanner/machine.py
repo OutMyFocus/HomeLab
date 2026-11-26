@@ -41,7 +41,7 @@ def load_saved() -> dict:
         return {}
 
 
-MODELS = {"mk1": "First machine", "mk2": "Sorter Mk2"}
+MODELS = {"mk1": "First machine", "mk2": "Sorter Mk2", "mault": "Mault sorter"}
 
 
 def model_of(saved: dict) -> str:
@@ -53,7 +53,15 @@ def model_of(saved: dict) -> str:
 
 def parts_for(model: str) -> dict:
     """{part: (channel, {position: angle})} as config.py has them, for that machine."""
+    if model == "mault":
+        return config.SERVOS_MAULT
     return config.SERVOS_MK2 if model == "mk2" else config.SERVOS
+
+
+def per_model(model: str, name: str, default=None):
+    """config.<NAME>_MK2 or _MAULT for those machines, config.<NAME> for the first one."""
+    suffix = {"mk2": "_MK2", "mault": "_MAULT"}.get(model, "")
+    return getattr(config, name + suffix, default)
 
 
 class Busy(RuntimeError):
@@ -73,7 +81,11 @@ def claim(machine, who: str):
     lock = getattr(machine, "run_lock", None)
     if lock is None:
         return
-    if who == "tuning run" and getattr(machine, "model", lambda: "mk1")() == "mk2":
+    model = getattr(machine, "model", lambda: "mk1")()
+    if model == "mault" and who in ("tuning run", "sort run", "one-card feed", "test run"):
+        raise RuntimeError(f"The {who} doesn't drive the Mault sorter yet. Set each part's angles on the "
+                           "Machine page and try the Bin buttons; runs come once the machine is built.")
+    if who == "tuning run" and model == "mk2":
         raise RuntimeError(f"The {who} doesn't drive Mk2 yet. Set each part's angles on the Machine page "
                            "and try the Bin buttons; runs come once those work.")
     with lock:
@@ -186,12 +198,14 @@ class Machine:
 
     @staticmethod
     def _servos_key(model: str) -> str:
-        return "servos_mk2" if model == "mk2" else "servos"
+        return {"mk2": "servos_mk2", "mault": "servos_mault"}.get(model, "servos")
 
     def bins(self) -> dict:
         """The bins this machine can drop into: {number: how}."""
         if self.model() == "mk2":
             return config.SORT_BINS_MK2
+        if self.model() == "mault":
+            return config.SORT_BINS_MAULT
         return getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
 
     def stop_part(self) -> str:
@@ -292,13 +306,15 @@ class Machine:
 
     def home_at_startup(self) -> bool:
         saved = load_saved()
-        if model_of(saved) == "mk2":
-            return bool(saved.get("home_at_startup_mk2", getattr(config, "HOME_AT_STARTUP_MK2", False)))
+        if model_of(saved) in ("mk2", "mault"):
+            model = model_of(saved)
+            return bool(saved.get("home_at_startup_" + model, per_model(model, "HOME_AT_STARTUP", False)))
         return bool(saved.get("home_at_startup", config.HOME_AT_STARTUP))
 
     def set_home_at_startup(self, on: bool):
         saved = load_saved()
-        saved["home_at_startup_mk2" if model_of(saved) == "mk2" else "home_at_startup"] = bool(on)
+        model = model_of(saved)
+        saved["home_at_startup_" + model if model in ("mk2", "mault") else "home_at_startup"] = bool(on)
         self._write(saved)
 
     def pulse_range(self) -> tuple[int, int]:
@@ -323,7 +339,8 @@ class Machine:
         parts = self.parts()
         if angle is not None and parts is config.SERVOS_MK2:
             self._stop_up_before_push(channel, angle)
-        held = getattr(config, "SERVO_KEEP_HOLDING_MK2" if parts is config.SERVOS_MK2 else "SERVO_KEEP_HOLDING", ())
+        held = (config.SERVO_KEEP_HOLDING_MAULT if parts is config.SERVOS_MAULT else
+                getattr(config, "SERVO_KEEP_HOLDING_MK2" if parts is config.SERVOS_MK2 else "SERVO_KEEP_HOLDING", ()))
         keep = {parts[p][0] for p in held if p in parts}
         with self.lock:
             kit = self._fresh_servos()
@@ -449,6 +466,8 @@ class Machine:
         """Put the stop pins up and wait until they are all the way up (config.FEED_PINS_UP_SECONDS
         after they were sent up; no wait if they were up already), so the next card can't
         arrive under a stop bar that is still rising. Returns how long it waited."""
+        if self.model() == "mault":
+            return 0.0          # no stop bar: the card waits in the module's gate
         self.move(self.stop_part(), "up")
         if self.pins_up_at is None:
             return 0.0
@@ -470,7 +489,7 @@ class Machine:
         speed = speed or config.SERVO_HOME_SPEED
         servos, last = self.servos(), self.last_angles()
         health.event("move", "Home: every part to its home position")
-        order = config.SERVO_HOME_MK2 if self.model() == "mk2" else config.SERVO_HOME
+        order = per_model(self.model(), "SERVO_HOME")
         for part, position in order.items():
             if part not in servos or position not in servos[part][1]:
                 continue
@@ -500,6 +519,8 @@ class Machine:
         plus a moment to clear) once it says True: sort_one passes the camera's view."""
         if self.model() == "mk2":
             return self._drop_mk2(bin_no, card_gone)
+        if self.model() == "mault":
+            return self._drop_mault(bin_no)
         bins = getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
         try:
             position = bins[int(bin_no)]
@@ -620,6 +641,49 @@ class Machine:
                 if part in servos:
                     self.move(part, position)
 
+    def _drop_mault(self, bin_no):
+        """Mault sorter: the card waits in module 1's gate. For a bin on a later module (or
+        the end bin) the trapdoors before it open one after the other and the card slides on.
+        At its module the paddle opens, the pusher slides the card off to that side, waits,
+        comes back, and the paddle shuts. Everything ends shut, pushers in the middle."""
+        bins = config.SORT_BINS_MAULT
+        try:
+            module, side = bins[int(bin_no)]
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"No such bin: {bin_no!r} (bins are {', '.join(map(str, bins))})")
+        servos = self.servos()
+        modules = sorted({int(p[1]) for p in servos if p.startswith("m") and p.endswith("_door")})
+        through = [m for m in modules if module is None or m < module]
+        stagger = float(config.MAULT_STAGGER)
+        self.last_gone_at = None
+        self.last_pins_seconds = 0.0
+        try:
+            for m in through:
+                self.move(f"m{m}_door", "open")
+                time.sleep(stagger)
+            if through:
+                time.sleep(float(config.MAULT_SLIDE_SECONDS) * len(through))
+            if module is not None:
+                if f"m{module}_push" not in servos:
+                    raise ValueError(f"The Mault sorter has no module {module}")
+                self.move(f"m{module}_paddle", "open")
+                time.sleep(float(config.MAULT_PADDLE_SECONDS))
+                self.move(f"m{module}_push", side)
+                time.sleep(float(config.MAULT_PUSH_SECONDS) + float(config.MAULT_PUSH_HOLD))
+                self.move(f"m{module}_push", "centre")
+                time.sleep(float(config.MAULT_PUSH_SECONDS))
+        finally:
+            for m in modules:
+                for part, position in ((f"m{m}_push", "centre"), (f"m{m}_paddle", "closed"), (f"m{m}_door", "closed")):
+                    if part in servos:
+                        self.move(part, position)
+                        time.sleep(stagger)
+
+    def _feeder_servo(self):
+        """The Mault feeder's continuous servo on the servo board, or None with servo_error set."""
+        kit = self._fresh_servos()
+        return None if kit is None else kit.continuous_servo[int(config.MAULT_FEEDER_CHANNEL)]
+
     def _sweep(self, channel, a, b, speed=None):
         """Turn a pusher from angle a to b at a slow average speed (config.MK2_PUSH_SPEED
         degrees a second), so it eases the card along instead of shoving it into a jam
@@ -700,15 +764,19 @@ class Machine:
         defaults = self.feeder_defaults()
         seconds = min(5.0, max(0.05, float(seconds or defaults["seconds"])))
         speed = min(1.0, max(0.1, float(speed or defaults["speed"])))
+        mault = self.model() == "mault"
         with self.lock:
-            motor = self._feeder()
+            motor = self._feeder_servo() if mault else self._feeder()
             if motor is None:
-                raise RuntimeError(self.feeder_error)
+                raise RuntimeError(self.servo_error if mault else self.feeder_error)
             if self._stop_timer:
                 self._stop_timer.cancel()
             if defaults["reverse"]:
                 backward = not backward
-            (motor.backward if backward else motor.forward)(speed)
+            if mault:
+                motor.throttle = -speed if backward else speed
+            else:
+                (motor.backward if backward else motor.forward)(speed)
             health.feeder_pulse(seconds, speed, backward)
             self.feeding = True
             self._stop_timer = threading.Timer(seconds, self.stop_feeder)
@@ -722,6 +790,12 @@ class Machine:
                 self._stop_timer = None
             if self._motor is not None:
                 self._motor.stop()
+            if self._kit is not None and self.model() == "mault":
+                try:
+                    # no pulse at all, so the servo stands still instead of creeping
+                    self._kit.continuous_servo[int(config.MAULT_FEEDER_CHANNEL)].fraction = None
+                except OSError:
+                    self._kit = None
             self.feeding = False
 
     # --- for the page -------------------------------------------------------
@@ -732,10 +806,12 @@ class Machine:
         factory = parts_for(model)
         with self.lock:
             self._servos()
-            self._feeder()
+            if model != "mault":
+                self._feeder()
+            feeder_ok = self._kit is not None if model == "mault" else self._motor is not None
             return {
                 "servos": {"ok": self._kit is not None, "error": self.servo_error},
-                "feeder": {"ok": self._motor is not None, "error": self.feeder_error,
+                "feeder": {"ok": feeder_ok, "error": self.servo_error if model == "mault" else self.feeder_error,
                            "running": self.feeding},
                 "parts": {part: {"channel": ch, "positions": pos,
                                  "factory": factory[part][1],

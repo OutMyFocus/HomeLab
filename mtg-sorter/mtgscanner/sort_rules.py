@@ -68,6 +68,8 @@ def trays() -> dict:
         model = model_of(load_saved())
     except Exception:
         model = getattr(config, "MACHINE_MODEL", "mk2")
+    if model == "mault":
+        return config.SORT_BINS_MAULT
     return config.SORT_BINS_MK2 if model == "mk2" else getattr(config, "SORT_BINS", {1: "left", 2: "centre", 3: "right"})
 
 
