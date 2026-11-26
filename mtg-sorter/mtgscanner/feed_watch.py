@@ -173,6 +173,16 @@ class FeedWatcher:
             # The bed between the slot and the landing zone: a card held in the slot shows
             # here and then stops moving while the motor runs on.
             above = [zone[0], min(float(getattr(config, "FEED_STUCK_TOP", 0.3)), zone[1]), zone[2], zone[1]]
+            # Mk2 since the camera was turned (2026-11-26): the stop is at the right end of the
+            # bed box and cards come in from the left, so "between the slot and the zone" is
+            # the bed to the LEFT of the zone, not the strip above it.
+            box = getattr(self.scanner, "bed_box", None)
+            try:
+                box = [float(v) for v in box] if box is not None and len(box) == 4 else None
+            except (TypeError, ValueError):
+                box = None
+            if box is not None and zone[0] - box[0] > zone[1] - box[1]:
+                above = [box[0], zone[1], zone[0], zone[3]]
             still_since, prev = None, ref
             t0 = time.monotonic()
             # The machine's own timer stops the motor at max_seconds even if this thread dies.
@@ -187,7 +197,7 @@ class FeedWatcher:
                     if share >= config.FEED_LAND_SHARE:
                         landed_ms = trace[-1][0]
                         break
-                    if above[1] < above[3] and changed_share(ref, now, above) >= config.FEED_LAND_SHARE / 2 \
+                    if above[0] < above[2] and above[1] < above[3] and changed_share(ref, now, above) >= config.FEED_LAND_SHARE / 2 \
                             and changed_share(prev, now, above) < getattr(config, "FEED_STILL_SHARE", 0.02):
                         still_since = still_since or time.monotonic()
                         if time.monotonic() - still_since >= getattr(config, "FEED_STUCK_SECONDS", 0.6):
@@ -219,7 +229,13 @@ class FeedWatcher:
                 self.machine.stop_feeder()
             # Let it come to rest, then look again: still there, or did it go over the teeth?
             share = trace[-1][1] if trace else 0.0
-            settle_end = time.monotonic() + float(config.FEED_SETTLE_SECONDS if settle is None else settle)
+            wait = float(config.FEED_SETTLE_SECONDS if settle is None else settle)
+            if landed_ms is None and not stuck:
+                # Nothing was seen landing: a card let go just as the motor stopped is still
+                # sliding. Look a little longer, so it isn't called "none" and then pushed
+                # again at full power with the next card (two cards on the bed, 2026-11-26).
+                wait = max(wait, float(getattr(config, "FEED_LATE_SECONDS", 0.6)))
+            settle_end = time.monotonic() + wait
             while time.monotonic() < settle_end:
                 seq, now = self.tap.next(seq, timeout=0.5)
                 if now is not None:

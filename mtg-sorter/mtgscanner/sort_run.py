@@ -184,6 +184,20 @@ class SortRun:
         except Exception:
             return False
 
+    def _keep_stop_up(self, since):
+        """While a card waits on the bed for a person, send the stop bar up again every 10 s:
+        the machine lets a servo go 30 s after its last move (SERVO_HOLD_LIMIT), and the page
+        says the card is being held. Same angle, so nothing moves. After 10 minutes it is
+        left alone, so a forgotten run can't keep a servo powered against its end stop."""
+        now = time.monotonic()
+        if now - since > 600 or now - getattr(self, "_stop_sent", 0.0) < 10:
+            return
+        self._stop_sent = now
+        try:
+            self.machine.move(self.machine.stop_part(), "up")
+        except Exception:
+            pass
+
     def _room_in(self, card: dict, tray: int, fallback: int, rules) -> int:
         """The tray the card really drops into: `tray`, once its bin has room. A full bin
         (its sensor sees cards) keeps the card on the bed, stop bar up, until it's emptied
@@ -200,6 +214,7 @@ class SortRun:
                                          "kind": "full", "bin": tray, "since": time.time(), "message": message}
         show(f"Bin {tray} is full: empty it, slide it back in, then press Carry on "
              "(or send this card to the unread bin).")
+        waiting_since = time.monotonic()
         try:
             while True:
                 if self.stop_asked:
@@ -218,6 +233,7 @@ class SortRun:
                                      "by_hand": "unread bin (bin full)"})
                         return fallback
                     show(f"The unread bin (bin {fallback}) is full too: empty bin {tray}, then press Carry on.")
+                self._keep_stop_up(waiting_since)
                 time.sleep(0.2)
         finally:
             with self.lock:
@@ -424,6 +440,7 @@ class SortRun:
                                      "since": time.time(),
                                      "message": "Card not recognized: the pins stay up. Straighten or turn it, "
                                                 "then Look again, or send it to the unread bin."}
+        waiting_since = time.monotonic()
         try:
             while True:
                 if self.stop_asked:
@@ -438,6 +455,7 @@ class SortRun:
                     track = self._read(card, fed_at)
                     if track is not None and track.status == "locked":
                         return track            # read after all (moved by hand, say)
+                self._keep_stop_up(waiting_since)
                 time.sleep(0.2)
         finally:
             with self.lock:

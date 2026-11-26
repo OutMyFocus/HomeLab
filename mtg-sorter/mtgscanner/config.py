@@ -282,6 +282,7 @@ FEED_PINS_UP_SECONDS = 1.0   # a feed waits until the stop pins were sent up at 
 # (0.6 until 2026-11-09: Nic saw cards fed before the pins were fully up; the servos share
 # the 5 V supply with the feeder motor and move slower when it sags)
 FEED_SETTLE_SECONDS = 0.8    # then wait this long to see where it came to rest
+FEED_LATE_SECONDS = 0.6      # a feed that saw nothing land looks at least this long for a late card
 # After a card lands, the wheels turn backwards this long: the next card, which they drove
 # part way out of the slot behind the first (they touch it as soon as the first card's tail
 # passes them), goes back into the hopper instead of hanging over the landed card and
@@ -302,8 +303,10 @@ FEED_BACKOFF_MAX = 2.0
 # FEED_STUCK_TOP (share of the height) down to the zone has something in it that hasn't
 # moved for FEED_STUCK_SECONDS, the motor stops and the feed says "stuck" (2026-11-07:
 # the motor ground on for the full 3 s with the card 25 mm short of the pins).
+# When the stop is at the right end of the bed box (Mk2, cards come in from the left), the
+# part watched is the bed to the left of the zone instead.
 FEED_STUCK_TOP = 0.3
-FEED_STUCK_SECONDS = 0.6
+FEED_STUCK_SECONDS = 1.5      # (0.6 until 2026-11-26: a card that only hesitates is not stuck)
 FEED_STILL_SHARE = 0.02      # frame-to-frame change below this = the card isn't moving
 # Dropping a landed card into a bin (Machine.drop, the Machine page's "Sort to bin" buttons,
 # and POST /api/machine/sort_one, which feeds a card first). Bins 1 and 3 are the tilted
