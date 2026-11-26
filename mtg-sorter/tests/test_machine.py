@@ -1259,6 +1259,19 @@ def test_mk2_pusher_sweeps_steadily_to_the_side_and_back(machine, mk2, monkeypat
     assert all(abs(b - a) <= 4.01 for a, b in zip(angles, angles[1:]))
 
 
+def test_mk2_pusher_glides_starting_and_stopping_gently(machine, mk2, monkeypatch):
+    # Nic, 2026-11-26: "they moved so clunky". Small, even-timed steps that are smallest at
+    # the start and the end, and the move still ends exactly on the saved angle.
+    monkeypatch.setattr(config, "MK2_PUSH_SPEED", 4000)
+    sent = []
+    monkeypatch.setattr(machine, "set_angle", lambda ch, a: sent.append(a))
+    machine._sweep(1, 60.0, 150.0)
+    jumps = [b - a for a, b in zip([60.0] + sent, sent)]
+    assert sent[-1] == 150.0 and len(sent) >= 90
+    assert max(jumps) <= 1.61 and min(jumps) >= 0
+    assert jumps[0] < jumps[len(jumps) // 2] and jumps[-1] < jumps[len(jumps) // 2]
+
+
 def test_mk2_pushers_move_slowly_by_default():
     # Nic, 2026-11-24: slow pushers so a card doesn't jam (it was 130 degrees a second).
     assert config.MK2_PUSH_SPEED <= 60 and config.MK2_PUSH_STEP <= 2
