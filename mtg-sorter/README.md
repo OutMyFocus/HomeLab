@@ -10,7 +10,8 @@ It has three parts, built in this order:
 | 1. Scanner software | Webcam recognizes cards, saves a collection CSV | **Done (this folder)** |
 | 2. Raspberry Pi + camera rig | Same software on a Pi 5 with Camera Module 3 and light bars | **Done** (the Pi can run the same Docker image as the server: [`deploy/PI_DOCKER.md`](deploy/PI_DOCKER.md)) |
 | 3. Feeder & sorter, Mk1 | Feeder, scan bed, tilting tray and trapdoors in the enclosure | Built and tested; out of service since its tilting bed broke on 2026-11-09 |
-| 4. Sorter Mk2 | Screwless rebuild: slide-in modules, 4 bins, 450-card magazine, one plug | Printed and being put together: [`hardware/mk2/MK2.md`](hardware/mk2/MK2.md). The app still drives Mk1 until Mk2 is built and its software changes are in |
+| 4. Sorter Mk2 | Screwless rebuild: slide-in modules, 4 bins, 450-card magazine | Built and run; retired on 2026-11-26 in favour of the Mault sorter. Kept for reference: [`hardware/mk2/MK2.md`](hardware/mk2/MK2.md) |
+| 5. Mault sorter | The open Mault design (two modules, 4 bins + end bin), driven by the Pi and SortR with the Mk2's electronics | **Current machine**, being printed: [`hardware/mault/MAULT.md`](hardware/mault/MAULT.md). Servo moves and test buttons are in; full sort runs follow once it is built |
 
 **How it was built:** the week-by-week development log is in [DEVLOG.md](DEVLOG.md).
 
@@ -212,7 +213,7 @@ Then open **http://localhost:5000** in your browser. You get:
   **Prices and card data** shows when the weekly Canadian price check and card database update
   last ran, with buttons to run them now. **Bring in Commander Vault** imports everything from
   a Commander Vault export file (see below).
-- **Bins**: choose what goes into each of the Mk2's four bins with a rule builder, without
+- **Bins**: choose what goes into each of the sorter's bins with a rule builder, without
   editing any code. A rule is any mix of conditions (all or any of them, each one can be
   turned around with NOT): price, no price, foil, extra copies beyond the first N, card type
   (lands, tokens, creatures...), words in the type line, color, color identity, number of
@@ -398,10 +399,12 @@ pytest
 
 The parts list is [SHOPPING.md](SHOPPING.md): a Raspberry Pi 5 with Camera Module 3, four
 MG90S servos on a PCA9685 servo board (with its own 5 V supply, apart from the Pi's), and the
-feeder motor and its driver. The Mk2 build is in [`hardware/mk2/MK2.md`](hardware/mk2/MK2.md).
+feeder motor and its driver. The current machine is the Mault sorter: how the same electronics
+fit it is in [`hardware/mault/MAULT.md`](hardware/mault/MAULT.md). The machine before it, the
+Sorter Mk2, is in [`hardware/mk2/MK2.md`](hardware/mk2/MK2.md).
 
-Sorting already works: **Machine → Start sorting** feeds each card, scans it, and drops it
-into its bin ([`mtgscanner/machine.py`](mtgscanner/machine.py) moves the parts,
+On the Sorter Mk2 and the first machine, **Machine → Start sorting** feeds each card, scans it,
+and drops it into its bin (on the Mault sorter the bin and feed test buttons work; full runs follow) ([`mtgscanner/machine.py`](mtgscanner/machine.py) moves the parts,
 [`mtgscanner/sort_run.py`](mtgscanner/sort_run.py) runs the sort).
 
 **Machine → Machine health** (`/machine/health`) shows everything the sorter reports in one

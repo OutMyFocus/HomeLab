@@ -174,9 +174,10 @@ SERVOS_MK2 = {
     "door_b": (3, {"closed": 135, "open": 45}),               # back trapdoor
     "push2":  (4, {"centre": 90, "left": 50, "right": 130}),  # level 2 pusher: bins 3 (left) and 4 (right)
 }
-# The machine the app drives when nothing else was saved. Nic only has the Sorter Mk2 now, so the
-# Machine page no longer offers a switch; the first machine's code stays for its tests.
-MACHINE_MODEL = "mk2"
+# The machine the app drives when nothing else was saved: the Mault sorter (below) since
+# 2026-11-26. The Sorter Mk2 is the machine before it: its code and docs stay, and the Machine
+# page's "Which machine" picker switches back to it. The first machine's code stays for its tests.
+MACHINE_MODEL = "mault"
 # Home on Mk2: doors shut, pushers to the middle, then the stop bar up (MK2.md).
 # Stop bar up FIRST: down, it rests on the pushers (machine.py lifts it before any pusher move anyway).
 SERVO_HOME_MK2 = {"stop": "up", "door_f": "closed", "door_b": "closed", "push1": "centre", "push2": "centre"}
@@ -227,6 +228,11 @@ MAULT_PADDLE_SECONDS = 0.3    # paddle open this long before the pusher moves, a
 MAULT_PUSH_HOLD = 0.15        # the pusher waits at the side this long before coming back
 MAULT_PUSH_SECONDS = 0.3      # time the pusher gets to reach the side, and to come back
 MAULT_FEEDER_CHANNEL = 15     # the feeder's 360 degree (continuous) servo
+# The Mault sorter's card sensors (hardware/mault/MAULT.md): the same TCRT5000 modules and Pi pins
+# as Mk2's bin sensors, moved. One looks into the hopper, one into each module's gate. They read
+# once "Sensors are fitted" is ticked on the Machine health page (as Mk2's did).
+MAULT_GATE_PINS = {"hopper": 16, 1: 20, 2: 21}
+MAULT_GATE_TIMEOUT = 3.0      # wait this long at most for a card to reach its module's gate
 # Mk2's power relay (MK2.md, Power): servos, feeder motor and lights get their 5 V through it.
 # The app closes it (pin high, the module's trigger jumper on HIGH) when it starts on Mk2; when
 # the app stops the pin lets go, the module's pull-down opens the relay and everything goes dark.

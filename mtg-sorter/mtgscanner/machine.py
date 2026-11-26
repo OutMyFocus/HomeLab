@@ -45,10 +45,10 @@ MODELS = {"mk1": "First machine", "mk2": "Sorter Mk2", "mault": "Mault sorter"}
 
 
 def model_of(saved: dict) -> str:
-    """The machine this is: what was saved, else config.MACHINE_MODEL (Mk2; Nic only has that one now)."""
+    """The machine this is: what was saved, else config.MACHINE_MODEL (the Mault sorter)."""
     if saved.get("model") in MODELS:
         return saved["model"]
-    return getattr(config, "MACHINE_MODEL", "mk2")
+    return getattr(config, "MACHINE_MODEL", "mault")
 
 
 def parts_for(model: str) -> dict:
@@ -666,6 +666,7 @@ class Machine:
             if module is not None:
                 if f"m{module}_push" not in servos:
                     raise ValueError(f"The Mault sorter has no module {module}")
+                self._wait_for_gate(module)
                 self.move(f"m{module}_paddle", "open")
                 time.sleep(float(config.MAULT_PADDLE_SECONDS))
                 self.move(f"m{module}_push", side)
@@ -678,6 +679,39 @@ class Machine:
                     if part in servos:
                         self.move(part, position)
                         time.sleep(stagger)
+
+    def gates(self) -> dict:
+        """The Mault sorter's card sensors: {"hopper": cards in it?, 1: card in module 1's gate?, ...}.
+        None for one that isn't fitted (Machine health, "Sensors are fitted") or can't be read."""
+        from . import bin_sensors
+        sensors = bin_sensors.shared()
+        fitted = sensors.fitted()["full"]
+        seen = {}
+        for where, pin in config.MAULT_GATE_PINS.items():
+            seen[where] = None
+            if not fitted:
+                continue
+            try:
+                with sensors.lock:
+                    low = sensors._low(int(pin))
+                seen[where] = low if config.BIN_FULL_ACTIVE_LOW else not low
+            except Exception:
+                pass
+        return seen
+
+    def _wait_for_gate(self, module):
+        """Give the card until config.MAULT_GATE_TIMEOUT to show up in this module's gate before
+        the paddle and pusher move. No sensor fitted there: carry on at once (the slide time
+        has passed). Returns True/False for seen or not, None with no sensor."""
+        end = time.monotonic() + float(config.MAULT_GATE_TIMEOUT)
+        while True:
+            seen = self.gates().get(module)
+            if seen is None or seen:
+                return seen
+            if time.monotonic() >= end:
+                health.event("sort", f"No card seen in module {module}'s gate: pushing anyway", "warn")
+                return False
+            time.sleep(0.05)
 
     def _feeder_servo(self):
         """The Mault feeder's continuous servo on the servo board, or None with servo_error set."""
@@ -826,6 +860,7 @@ class Machine:
                 "relay": {"on": self._relay is not None and bool(self._relay.value),
                           "error": self.relay_error} if model == "mk2" else None,
                 "models": MODELS,
+                "gates": {str(k): v for k, v in self.gates().items()} if model == "mault" else None,
                 "bins": list(self.bins()),
             }
 
