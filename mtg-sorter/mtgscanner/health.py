@@ -20,7 +20,7 @@ import time
 from collections import deque
 
 from . import config
-from .bin_sensors import BinSensors
+from .bin_sensors import shared as shared_sensors
 
 _lock = threading.Lock()
 EVENTS: deque = deque(maxlen=300)      # moves, drops, jams, errors, run ends, log warnings
@@ -368,7 +368,7 @@ def add_health_routes(app, scanner, machine, web_dir, run=None, sensors=None):
     remote = isinstance(machine, RemoteMachine)
     if not remote:
         keep_warnings()
-        sensors = sensors or BinSensors()
+        sensors = sensors or shared_sensors()
 
     @app.get("/machine/health")
     def health_page():

@@ -850,6 +850,8 @@
     const w = running && d.waiting;
     $("sortWait").hidden = !w;
     if (w) $("sortWaitText").textContent = `Card ${w.n}${w.name ? ` (best guess ${w.name})` : ""}: ${w.message}`;
+    // a full bin waits for you to empty it: its "look again" button means carry on
+    for (const b of document.querySelectorAll('[data-decide="retry"]')) b.textContent = w && w.kind === "full" ? "Bin emptied: carry on" : "Look again";
     if (running && !sortT) sortT = setInterval(pollSortRun, 2000);
     if (!running && sortT) { clearInterval(sortT); sortT = null; }
   }
