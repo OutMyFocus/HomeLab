@@ -85,7 +85,8 @@
     <p class="sub" id="maultNote" hidden><b>Mault sorter:</b> its angles start as guesses. Each module has a trapdoor
       (door), a paddle and a pusher. Set each servo with its slider, then save it under the position it is in.
       Bin 1 and 2 are module 1's left and right, bin 3 and 4 module 2's, bin 5 the end bin. The feed buttons turn
-      the feeder servo on channel 15. Sort runs come once the machine is built.</p>
+      the feeder servo on channel 15. Sort runs come once the machine is built.
+      <span id="maultGates"></span></p>
     <p class="sub" id="mk2Note" hidden><b>Mk2:</b> its angles start as guesses. Set each servo before you trust Home:
       drag its slider slowly until the part sits right, then press the position under it to save. Stop bar up holds
       the card, down lets it go. Each pusher's centre is the paddle in the middle, left and right the two ends.
@@ -325,6 +326,8 @@ function show(s) {
 function showModel(s) {
   const mk2 = s.model === "mk2";
   $("maultNote").hidden = s.model !== "mault";
+  const g = s.gates || {}, word = (v, yes, no) => v == null ? "no sensor yet" : (v ? yes : no);
+  $("maultGates").textContent = s.gates ? `Sensors: hopper ${word(g.hopper, "has cards", "empty")}, gate 1 ${word(g["1"], "card", "clear")}, gate 2 ${word(g["2"], "card", "clear")}.` : "";
   const pick = $("modelPick"), models = Object.entries(s.models || {}).filter(([k]) => k !== "mk1");
   pick.parentElement.parentElement.hidden = models.length < 2;
   if (pick.options.length !== models.length) pick.innerHTML = models.map(([k, n]) => `<option value="${k}">${n}</option>`).join("");

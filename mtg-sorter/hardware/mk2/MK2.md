@@ -1,5 +1,9 @@
 # Sorter Mk2
 
+> **Retired on 2026-11-26.** The project now runs on the [Mault sorter](../mault/MAULT.md), which
+> reuses this machine's electronics. This page is kept for reference; SortR can still drive the
+> Mk2 (Machine page, *Which machine*).
+
 A full redesign of the sorter. It's one solid box, 244 mm wide, 308 mm deep and 580 mm tall. Every module slides into place on a dovetail rail and clicks home on a magnet, so there are no screws and no glue anywhere. It has four identical bins with handles, a 450-card magazine you load from the top, and one plug with one power button.
 
 - **Print file:** [`../bambu/MTG_Sorter_Mk2.3mf`](../bambu/MTG_Sorter_Mk2.3mf). It has 31 plates in print order, with the settings already applied. Answer **No** to "load as a single object".

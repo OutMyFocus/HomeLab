@@ -1,8 +1,9 @@
 # Hardware
 
 Step-by-step build: [ASSEMBLY.md](ASSEMBLY.md). Power (one plug, one button): [POWER.md](POWER.md).
-**Building the sorter now? Go to [Mk2](mk2/MK2.md).** It's the screwless rebuild: print file
-`bambu/MTG_Sorter_Mk2.3mf`, fit coupon first. Everything below is **Mk1** (the enclosure
+**Building the sorter now? Go to the [Mault sorter](mault/MAULT.md)**, the current machine. The
+[Mk2](mk2/MK2.md) (the screwless rebuild, print file `bambu/MTG_Sorter_Mk2.3mf`) was retired on
+2026-11-26 and is kept for reference. Everything below is **Mk1** (the enclosure
 machine), out of service since its tilting bed broke on 2026-11-09. It's kept for reference
 and for the parts Mk2 reuses (the feeder v4 and the scan bed ideas).
 
