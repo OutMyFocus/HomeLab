@@ -376,3 +376,11 @@ def test_health_shows_problems_only_to_admins(client, data, monkeypatch):
     assert "problems" not in stranger.get("/api/health", environ_base=away).get_json()
     assert "problems" not in sam.get("/api/health").get_json()
     assert any(p["label"] == "Camera" for p in nic.get("/api/health").get_json()["problems"])
+
+
+def test_memory_reads_in_gb_once_it_is_over_a_gb(monkeypatch):
+    monkeypatch.setattr(system, "memory", lambda: {"free_mb": 15090, "total_mb": 16087})
+    assert system.memory_check()["summary"] == "14.7 GB free of 15.7 GB"
+    monkeypatch.setattr(system, "memory", lambda: {"free_mb": 150, "total_mb": 900})
+    c = system.memory_check()
+    assert c["state"] == "warn" and c["summary"].startswith("150 MB free of 900 MB")

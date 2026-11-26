@@ -11,7 +11,8 @@
     if (s < 60) return `${Math.round(s)} s ago`;
     if (s < 3600) return `${Math.round(s / 60)} min ago`;
     if (s < 86400) return `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min ago`;
-    return `${Math.round(s / 86400)} days ago`;
+    const d = Math.round(s / 86400);
+    return d === 1 ? "1 day ago" : `${d} days ago`;
   };
   const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
   const span = (s) => {
@@ -81,15 +82,23 @@
     $("servoTag").className = "tag " + (board.ok === false ? "bad" : board.ok ? "ok" : "");
     const pct = (a) => `${Math.min(100, Math.max(0, a / 180 * 100))}%`;
     $("servos").innerHTML = list.length ? list.map((s) => {
-      const marks = Object.entries(s.positions || {}).map(([pos, a]) =>
-        `<span class="mark ${a < lo || a > hi ? "out" : ""}" style="left:${pct(a)}" title="${esc(pos)} ${a}°"><i></i><span>${esc(pos)} ${Math.round(a)}°</span></span>`).join("");
+      // Labels of saved angles that sit close together ("up 90°", "down 108°") would print over
+      // each other, so a label that doesn't fit beside the one before it drops to a second line.
+      const trackPx = Math.max(120, ($("servos").clientWidth || 300) - 50), lanes = [];
+      const marks = Object.entries(s.positions || {}).sort((x, y) => x[1] - y[1]).map(([pos, a]) => {
+        const text = `${pos} ${Math.round(a)}°`, half = (text.length * 6.6 + 8) / 2 / trackPx * 180;
+        let lane = lanes.findIndex(end => end <= a - half);
+        if (lane < 0) { lane = lanes.length; lanes.push(0); }
+        lanes[lane] = a + half;
+        return `<span class="mark ${a < lo || a > hi ? "out" : ""}${lane ? " low" : ""}" style="left:${pct(a)}" title="${esc(pos)} ${a}°"><i></i><span>${esc(text)}</span></span>`;
+      }).join("");
       const at = s.angle != null ? s.angle : s.last_move_angle != null ? s.last_move_angle : s.last_sent;
       const now = at == null ? "" : `<span class="now ${s.angle == null ? "relaxed" : ""}" style="left:${pct(at)}" title="${s.angle == null ? "let go, last sent" : "now"} ${Math.round(at)}°"></span>`;
       const where = s.angle != null ? `holding at <b>${Math.round(s.angle)}°</b>` : at != null ? `let go (last sent ${Math.round(at)}°)` : "not moved yet";
       return `<div class="servo">
         <span><span class="name">${esc(s.name)}</span> <span class="sub">channel ${s.channel}</span><br><span class="sub">${where}</span></span>
         <span class="when">last move<br>${esc(ago(s.last_move_at))}</span>
-        <div class="track"><div class="rail"></div>${marks}${now}</div>
+        <div class="track${lanes.length > 1 ? " two" : ""}"><div class="rail"></div>${marks}${now}</div>
         ${s.warnings.length ? `<p class="warns">${s.warnings.map(esc).join(" · ")}</p>` : ""}
       </div>`;
     }).join("") : `<p class="empty">No servos reported.</p>`;

@@ -333,7 +333,8 @@ def memory_check() -> dict:
     m = memory()
     if not m:
         return check("memory", "Memory", "off", "Only measured on the Pi.")
-    text = f"{m['free_mb']} MB free of {m['total_mb']} MB"
+    mb = lambda n: f"{n / 1024:.1f} GB" if n >= 1024 else f"{n} MB"
+    text = f"{mb(m['free_mb'])} free of {mb(m['total_mb'])}"
     if m["free_mb"] < 200:
         return check("memory", "Memory", "warn", text + ": low.", "Restart the app, or reboot the Pi.", "restart")
     return check("memory", "Memory", "ok", text)

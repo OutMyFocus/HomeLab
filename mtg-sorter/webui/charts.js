@@ -27,19 +27,20 @@ window.SortRCharts = (() => {
   function line(box, pts, { fmt = v => v, tip = p => fmt(p.value), empty = "" } = {}) {
     if (pts.length < 2) { box.innerHTML = `<div class="empty"><p>${empty}</p></div>`; return; }
     const id = "g" + (++uid);
-    const W = box.clientWidth || 600, H = box.clientHeight || 220, L = 56, R = 12, T = 14, B = 26;
     const vals = pts.map(p => p.value), lo = Math.min(...vals), hi = Math.max(...vals);
     const pad = (hi - lo) * .15 || Math.max(1, hi * .05), y0 = Math.max(0, lo - pad), y1 = hi + pad;
+    const ticks = [0, 1, 2, 3].map(i => y0 + (y1 - y0) * i / 3), labels = ticks.map(v => fmt(v, true, (y1 - y0) / 3));
+    // The left margin fits the longest side label (about 6.5 px a character at the axis size).
+    const W = box.clientWidth || 600, H = box.clientHeight || 220, L = Math.max(56, 16 + Math.ceil(Math.max(...labels.map(l => String(l).length)) * 6.5)), R = 12, T = 14, B = 26;
     const t = pts.map(p => day(p.day).getTime()), t0 = t[0], t1 = t[t.length - 1];
     const x = v => L + (v - t0) / (t1 - t0 || 1) * (W - L - R), y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
     const P = pts.map((p, i) => [x(t[i]), y(p.value)]);
     const path = smooth(P);
-    const ticks = [0, 1, 2, 3].map(i => y0 + (y1 - y0) * i / 3);
     const last = P[P.length - 1];
     box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Over time, now ${esc(fmt(vals[vals.length - 1]))}">
       <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".32"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient>
       <linearGradient id="${id}s" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs>
-      ${ticks.map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="axis" x="${L - 10}" y="${y(v).toFixed(1)}" text-anchor="end" dominant-baseline="middle">${esc(fmt(v, true))}</text>`).join("")}
+      ${ticks.map((v, i) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="axis" x="${L - 10}" y="${y(v).toFixed(1)}" text-anchor="end" dominant-baseline="middle">${esc(labels[i])}</text>`).join("")}
       <text class="axis" x="${L}" y="${H - 6}">${short(pts[0].day)}</text><text class="axis" x="${W - R}" y="${H - 6}" text-anchor="end">${short(pts[pts.length - 1].day)}</text>
       <path d="${path}L${last[0].toFixed(1)},${H - B}L${L},${H - B}Z" fill="url(#${id})"/>
       <path class="line" d="${path}" style="stroke:url(#${id}s)"/>
@@ -110,5 +111,15 @@ window.SortRCharts = (() => {
     requestAnimationFrame(step);
   }
 
-  return { line, donut, bars, spark, countUp };
+  // Money on a chart's side: short ("$3.3k") when the lines are far apart, and with as many
+  // digits as it takes to tell the lines apart when they're close ("$3,325", "$3,325.40").
+  function axisMoney(v, step = Infinity) {
+    const k = v >= 1000 && step >= 100;
+    const unit = k ? 1000 : 1, s = step / unit;
+    const dec = s >= 1 || !isFinite(s) ? (k && v < 10000 && s < 10 ? 1 : 0) : Math.min(2, Math.ceil(-Math.log10(s)));
+    const n = (v / unit).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    return "$" + n + (k ? "k" : "");
+  }
+
+  return { line, donut, bars, spark, countUp, axisMoney };
 })();
