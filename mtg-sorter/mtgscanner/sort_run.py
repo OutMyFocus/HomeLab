@@ -25,6 +25,11 @@ What each card ends up as:
   stuck     a card came part way out and stopped moving: the gate holds it; the run stops
   double    two cards came out together: the run stops with the pins up, nothing dropped
 
+A full bin (Mk2's bin-full sensors, once the Machine health page says they're wired): the
+card isn't dropped into it. It waits on the bed with the stop bar up ("waiting", kind
+"full") until you empty the bin and press Carry on (the sensor must see it empty by then),
+send it to the unread bin instead, or press Stop.
+
 The run stops on its own when a card is left on the bed after the retries (something is
 caught) or when nothing came out twice in a row.
 
@@ -60,8 +65,9 @@ class StopHere(RuntimeError):
 
 
 class SortRun:
-    def __init__(self, watcher, scanner, machine):
+    def __init__(self, watcher, scanner, machine, sensors=None):
         self.watcher, self.scanner, self.machine = watcher, scanner, machine
+        self.sensors = sensors      # the bin sensors (bin_sensors.shared() unless given)
         self.lock = threading.Lock()
         self.thread = None
         self.stop_asked = False
@@ -142,11 +148,80 @@ class SortRun:
                        "found": sum(min(self.taken.get(k, 0), q) for k, q in want.items()),
                        "pulled": [c["name"] for c in cards if c.get("wanted")]} if want else None
         s["value"] = round(sum(c.get("price") or 0 for c in cards if c.get("status") == "saved"), 2)
+        sensed = self._sensed_full()
+        if sensed is not None:          # the bins' own sensors say which are full
+            s["full"] = sensed
+            s["warning"] = (f"Bin {', '.join(map(str, sensed))} is full (its sensor sees cards): empty it"
+                            if sensed else None)
+            return s
         warn = int(getattr(config, "SORT_BIN_WARN", 0) or 0)
         s["full"] = [t["bin"] for t in s["tally"] if warn and t["cards"] >= warn]
         s["warning"] = (f"Bin {', '.join(map(str, s['full']))} has had {warn}+ cards since the start: "
                         "empty it so the cards keep dropping clear" if s["full"] else None)
         return s
+
+    # --- the bin-full sensors ------------------------------------------------------
+
+    def _bin_sensors(self):
+        if self.sensors is None:
+            from .bin_sensors import shared
+            self.sensors = shared()
+        return self.sensors
+
+    def _sensed_full(self):
+        """The bins whose full sensor sees cards, or None when those sensors aren't wired."""
+        try:
+            s = self._bin_sensors().read()
+        except Exception:
+            return None
+        if not (s.get("fitted") or {}).get("full"):
+            return None
+        return [b["bin"] for b in s.get("bins", []) if b.get("full")]
+
+    def _bin_full(self, tray) -> bool:
+        try:
+            return self._bin_sensors().is_full(int(tray)) is True
+        except Exception:
+            return False
+
+    def _room_in(self, card: dict, tray: int, fallback: int, rules) -> int:
+        """The tray the card really drops into: `tray`, once its bin has room. A full bin
+        (its sensor sees cards) keeps the card on the bed, stop bar up, until it's emptied
+        and Carry on is pressed ("retry"), the unread bin is chosen ("fallback") or Stop."""
+        if not self._bin_full(tray):
+            return tray
+        card["waited_full"] = tray
+        health.event("bins", f"Bin {tray} is full: the sort run waits for it to be emptied", "warn")
+        self.decision = None
+
+        def show(message):
+            with self.lock:
+                self.state["waiting"] = {"n": card["n"], "status": card.get("status"), "name": card.get("name"),
+                                         "kind": "full", "bin": tray, "since": time.time(), "message": message}
+        show(f"Bin {tray} is full: empty it, slide it back in, then press Carry on "
+             "(or send this card to the unread bin).")
+        try:
+            while True:
+                if self.stop_asked:
+                    raise StopHere(f"stopped: bin {tray} is full and the card is still on the bed")
+                choice, self.decision = self.decision, None
+                if choice == "stop":
+                    self.stop_asked = True
+                    raise StopHere(f"stopped: bin {tray} is full and the card is still on the bed")
+                if choice == "retry":
+                    if not self._bin_full(tray):
+                        return tray
+                    show(f"Bin {tray} still looks full to its sensor: empty it, then press Carry on.")
+                elif choice == "fallback":
+                    if int(fallback) != int(tray) and not self._bin_full(fallback):
+                        card.update({"bin": fallback, "bin_label": rules["names"][str(fallback)],
+                                     "by_hand": "unread bin (bin full)"})
+                        return fallback
+                    show(f"The unread bin (bin {fallback}) is full too: empty bin {tray}, then press Carry on.")
+                time.sleep(0.2)
+        finally:
+            with self.lock:
+                self.state["waiting"] = None
 
     # --- the run ----------------------------------------------------------------
 
@@ -394,7 +469,8 @@ class SortRun:
             if track is None:
                 card["by_hand"] = "unread bin"
             break
-        return self._finish(card, track, rules, fallback)
+        tray = self._finish(card, track, rules, fallback)
+        return self._room_in(card, tray, fallback, rules)
 
     def _look(self, card: dict):
         """Wait up to SORT_RECOGNIZE_SECONDS for the card to be read (dimming the bars for

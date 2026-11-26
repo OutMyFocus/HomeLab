@@ -769,6 +769,86 @@ def test_sort_run_stop_while_a_card_waits_leaves_it_on_the_bed(watched, quick_so
     assert machine.angles.get(pins[0]) == pins[1]["up"]
 
 
+class FakeFullSensors:
+    """Bin-full sensors whose pins the test sets: a pin in `low` sees cards."""
+
+    def __init__(self, data_dir, low=()):
+        from mtgscanner.bin_sensors import BinSensors
+        self.low = set(low)
+        outer = self
+
+        class Pin:
+            def __init__(self, pin):
+                self.pin = pin
+
+            @property
+            def is_active(self):
+                return self.pin in outer.low
+        self.sensors = BinSensors(make_input=Pin)
+        self.sensors.set_fitted("full", True)
+
+
+def _full_bin_run(watched, db, monkeypatch, low):
+    from mtgscanner import bin_sensors
+    monkeypatch.setattr(config, "BIN_FULL_SAMPLE_GAP", 0.0)
+    client, scanner, machine, cams = watched
+    fake = FakeFullSensors(config.DATA_DIR, low)
+    monkeypatch.setattr(bin_sensors, "_shared", fake.sensors)
+    cams.append(FakeCamera(scanner.tap, machine, card_after=3, card_stays=False))
+    cams.append(FakeRecognizer(scanner, db.get_card("id1")))     # Card 1, $4.50 -> bin 2
+    client.post("/api/machine/sort", json={"max_cards": 1, "speed": 0.8})
+    return client, machine, fake
+
+
+def test_sort_run_waits_with_the_card_on_the_bed_while_its_bin_is_full(watched, quick_sort, db, monkeypatch):
+    """Mk2's bin-full sensors: no card drops into a full bin. It waits, Carry on checks the
+    sensor again, and once the bin is emptied the card drops where the rules said."""
+    pin2 = config.BIN_FULL_PINS[2]
+    client, machine, fake = _full_bin_run(watched, db, monkeypatch, {pin2})
+    d = _wait_for(client, lambda d: d.get("waiting"))
+    assert d["waiting"]["kind"] == "full" and d["waiting"]["bin"] == 2 and "Bin 2 is full" in d["waiting"]["message"]
+    assert d["full"] == [2] and "sensor" in d["warning"]
+    pins = config.SERVOS["pins"]
+    time.sleep(0.3)
+    assert machine.angles.get(pins[0]) == pins[1]["up"]          # still holding the card
+    first = d["waiting"]["since"]
+    client.post("/api/machine/sort/decide", json={"action": "retry"})     # not emptied yet
+    d = _wait_for(client, lambda d: d.get("waiting") and d["waiting"]["since"] > first)
+    assert "still looks full" in d["waiting"]["message"]
+    fake.low.clear()                                               # emptied
+    client.post("/api/machine/sort/decide", json={"action": "retry"})
+    d = wait_sort(client)
+    c = d["cards"][0]
+    assert c["bin"] == 2 and c["dropped"] and c["waited_full"] == 2 and c["status"] == "saved", d
+
+
+def test_a_card_for_a_full_bin_can_go_to_the_unread_bin(watched, quick_sort, db, monkeypatch):
+    client, machine, fake = _full_bin_run(watched, db, monkeypatch, {config.BIN_FULL_PINS[2]})
+    _wait_for(client, lambda d: d.get("waiting"))
+    client.post("/api/machine/sort/decide", json={"action": "fallback"})
+    d = wait_sort(client)
+    c = d["cards"][0]
+    assert c["bin"] == config.SORT_FALLBACK_BIN != 2 and c["by_hand"].startswith("unread bin") and c["dropped"], d
+
+
+def test_a_card_falling_past_a_sensor_is_not_a_full_bin(data):
+    from mtgscanner.bin_sensors import BinSensors
+    reads = iter([True, True, False, True, True])
+
+    class Pin:
+        def __init__(self, pin):
+            pass
+
+        @property
+        def is_active(self):
+            return next(reads)
+    sensors = BinSensors(make_input=Pin)
+    assert sensors.is_full(1) is None                   # not wired yet: no answer
+    sensors.set_fitted("full", True)
+    assert sensors.is_full(1, gap=0) is False           # one clear read in the middle
+    assert sensors.is_full(9) is None                   # no such bin
+
+
 def test_sort_run_warns_when_a_bin_is_filling_up(watched, quick_sort, db, monkeypatch):
     monkeypatch.setattr(config, "SORT_BIN_WARN", 2)
     client, scanner, machine, cams = watched

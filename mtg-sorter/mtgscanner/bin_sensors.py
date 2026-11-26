@@ -10,10 +10,23 @@ Reading a sensor only listens on a pin: it never moves anything.
 
 import json
 import threading
+import time
 
 from . import config
 
 KINDS = ("full", "seated")
+_shared = None
+_shared_lock = threading.Lock()
+
+
+def shared() -> "BinSensors":
+    """The one BinSensors the app uses (the Health page and the sort run): a GPIO pin can only
+    be opened once, so they must share it."""
+    global _shared
+    with _shared_lock:
+        if _shared is None:
+            _shared = BinSensors()
+        return _shared
 
 
 def settings_file():
@@ -79,6 +92,28 @@ class BinSensors:
 
     def _low(self, pin: int) -> bool:
         return bool(self._input(pin).is_active)
+
+    def is_full(self, bin_no: int, samples: int = None, gap: float = None):
+        """Is this bin full? True only when the sensor sees cards on every one of a few reads
+        over a short moment, so a card falling past it doesn't count. None when the full
+        sensors aren't fitted, the bin has none, or its pin can't be read."""
+        pin = self._pins("full").get(int(bin_no))
+        if pin is None or not self.fitted()["full"]:
+            return None
+        samples = int(samples if samples is not None else getattr(config, "BIN_FULL_SAMPLES", 5))
+        gap = float(gap if gap is not None else getattr(config, "BIN_FULL_SAMPLE_GAP", 0.05))
+        active_low = config.BIN_FULL_ACTIVE_LOW
+        for i in range(max(1, samples)):
+            if i:
+                time.sleep(gap)
+            try:
+                with self.lock:
+                    low = self._low(int(pin))
+            except Exception:
+                return None
+            if not (low if active_low else not low):
+                return False
+        return True
 
     def read(self) -> dict:
         """Every bin: {"bin", "full", "seated", "full_pin", "seated_pin"}, where full and seated

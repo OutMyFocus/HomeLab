@@ -201,6 +201,8 @@ MK2_PUSH_HOLD = 0.3           # the pusher waits at the side this long before co
 # Mk2's power relay (MK2.md, Power): servos, feeder motor and lights get their 5 V through it.
 # The app closes it (pin high, the module's trigger jumper on HIGH) when it starts on Mk2; when
 # the app stops the pin lets go, the module's pull-down opens the relay and everything goes dark.
+# Nic's Mk2 runs without the relay (2026-11-25): this pin (header pin 15) drives the motor
+# driver's EEP (sleep) input instead, so the feeder wakes once the app has started. Keep it on.
 RELAY_PIN = 22
 # Servo pulse widths in microseconds for 0 and 180 degrees. The first is ServoKit's
 # default, which turns an MG90S only about 130-140 real degrees. "Wider servo travel" on
@@ -218,6 +220,12 @@ SERVO_WIDE_TRAVEL = True       # until the Machine page's switch is saved (the a
 BIN_FULL_PINS = {1: 16, 2: 20, 3: 21, 4: 12}
 BIN_SEATED_PINS = {1: 5, 2: 6, 3: 13, 4: 26}
 BIN_FULL_ACTIVE_LOW = True     # a TCRT5000's DO goes low (its second LED lights) when it sees cards close by
+# A sort run won't drop a card into a bin whose full sensor sees cards: it waits, stop bar up,
+# until the bin is emptied (Carry on) or the card goes to the unread bin. "Full" means every
+# one of BIN_FULL_SAMPLES reads, BIN_FULL_SAMPLE_GAP seconds apart, saw cards, so a card
+# falling past the sensor doesn't count.
+BIN_FULL_SAMPLES = 5
+BIN_FULL_SAMPLE_GAP = 0.05
 BIN_SEATED_ACTIVE_LOW = True   # an A3144 pulls low with a magnet over it
 # Saved servo angles outside this range warn on the Machine and Machine health pages: a servo
 # pushed to its own stop at 0 or 180 strains and wears out (a level 1 pusher did, 2026-11-24).

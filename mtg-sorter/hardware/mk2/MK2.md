@@ -141,12 +141,15 @@ The heat comes from the Pi 5 (with its Active Cooler) and the relay in the elect
 | Back trapdoor servo | PCA9685 ch 3 | |
 | Level 2 pusher servo | PCA9685 ch 4 | |
 | Feeder motor | GPIO17 / GPIO27 → DRV8833 IN1 / IN2 | unchanged |
+| Feeder driver wake (DRV8833 EEP) | GPIO22 (pin 15) | built without the relay: the relay's pin wakes the driver once the app starts |
 | Light strip data | GPIO10 (pin 19) | unchanged |
 | Relay | GPIO22 | new |
 | Bin seated (hall A3144), bins 1 to 4 | GPIO5, 6, 13, 26 | new, pull-ups on |
-| Bin full (TCRT5000), bins 1 to 4 | GPIO16, 20, 21, 12 | new |
+| Bin full (TCRT5000), bins 1 to 4 | GPIO16, 20, 21, 12 (pins 36, 38, 40, 32) | GND on pins 20, 34, 25, 30; VCC from a third Wago fed only by 3.3 V pin 17, never 5 V |
 | Beam (spare IR input) | GPIO24 | optional |
 | Power button | GPIO23 (pin 16) + GND (pin 30) | new, gpio-shutdown overlay |
+
+As built (2026-11-25): no relay and no power button (unplug the brick to turn it off). The Pi stays on its own USB-C charger: through the USB-C screw cable from the brick it read 4.6 V and throttled. A sort run won't drop a card into a bin whose full sensor sees cards: the card waits on the bed until the bin is emptied (Carry on) or goes to the unread bin.
 
 Servo plugs: brown is GND, orange is 5 V, yellow is signal. Every servo reaches the PCA9685 through a 300 mm extension in the wall trunk.
 
