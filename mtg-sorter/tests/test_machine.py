@@ -1329,17 +1329,17 @@ def test_the_tuning_run_does_not_drive_mk2_but_the_sort_run_may(watched):
     release(machine, "sort run")
 
 
-def test_a_fresh_install_drives_mk2_and_the_page_has_no_machine_switch(client, monkeypatch):
+def test_a_fresh_install_drives_the_mault_sorter(client, monkeypatch):
     # Nic, 2026-11-24: only the Sorter Mk2 is left, so no "First machine / Sorter Mk2" choice.
     from mtgscanner import config as real_config
     import importlib.util, pathlib
     spec = importlib.util.spec_from_file_location("cfg", pathlib.Path(real_config.__file__))
     fresh = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fresh)
-    assert fresh.MACHINE_MODEL == "mk2"
-    monkeypatch.setattr(config, "MACHINE_MODEL", "mk2")
+    assert fresh.MACHINE_MODEL == "mault"
+    monkeypatch.setattr(config, "MACHINE_MODEL", "mault")
     state = client.get("/api/machine").get_json()
-    assert state["model"] == "mk2" and sorted(state["parts"]) == sorted(config.SERVOS_MK2)
+    assert state["model"] == "mault" and sorted(state["parts"]) == sorted(config.SERVOS_MAULT)
     page = client.get("/machine").get_data(as_text=True)
     assert "First machine" not in page and "data-model" not in page
 
@@ -1515,3 +1515,23 @@ def test_mault_runs_wait_until_the_machine_is_built(client, mault):
     r = client.post("/api/machine/sort", json={})
     assert r.status_code != 200
     assert "Mault" in str(r.get_json())
+
+
+def test_mault_waits_for_the_card_in_its_modules_gate_before_pushing(client, logged, mault, monkeypatch):
+    seen = iter([False, False, True])
+    asked = []
+    monkeypatch.setattr(logged, "gates", lambda: (asked.append(len(logged._moves)) or {"hopper": True, 2: next(seen, True), 1: False}))
+    assert client.post("/api/machine/drop", json={"bin": 4}).status_code == 200
+    m = moves(logged)
+    assert len(asked) >= 3 and max(asked[:3]) <= m.index(("m2_paddle", "open"))
+
+
+def test_mault_pushes_anyway_when_no_card_shows_in_the_gate(client, logged, mault, monkeypatch):
+    monkeypatch.setattr(config, "MAULT_GATE_TIMEOUT", 0.1)
+    monkeypatch.setattr(logged, "gates", lambda: {"hopper": True, 1: False, 2: False})
+    assert client.post("/api/machine/drop", json={"bin": 1}).status_code == 200
+    assert ("m1_push", "left") in moves(logged)
+
+
+def test_mault_sensors_show_as_not_fitted_until_ticked(client, mault):
+    assert mault["gates"] == {"hopper": None, "1": None, "2": None}
