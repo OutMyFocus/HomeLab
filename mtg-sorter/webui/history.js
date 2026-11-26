@@ -4,6 +4,16 @@
   let data = null, shown = 20, open = new Set();
   const day = iso => new Date(iso).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
   const clock = iso => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const cards = n => `${n.toLocaleString()} card${n === 1 ? "" : "s"}`;
+  // Sessions are listed under a heading per day: "Today", "Yesterday" or the date.
+  const dayKey = iso => new Date(iso).toDateString();
+  const dayName = iso => {
+    const k = dayKey(iso), now = new Date(), y = new Date(now); y.setDate(now.getDate() - 1);
+    if (k === now.toDateString()) return "Today";
+    if (k === y.toDateString()) return "Yesterday";
+    return new Date(iso).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", year: new Date(iso).getFullYear() === now.getFullYear() ? undefined : "numeric" });
+  };
+  const span = x => clock(x.start) === clock(x.end) ? clock(x.start) : `${clock(x.start)} – ${clock(x.end)}`;
   const dur = m => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
 
   async function load() {
@@ -22,7 +32,7 @@
     $("tBestSub").textContent = best ? `cards on ${day(best.start)}` : "";
     const find = s.reduce((b, x) => x.top.price && (!b || x.top.price > b.price) ? x.top : b, null);
     $("tFind").textContent = find ? find.name : "None yet";
-    $("tFindSub").textContent = find ? `${money(find.price)} · ${find.set}` : "";
+    $("tFindSub").textContent = find ? `${money(find.price)} · ${String(find.set).toUpperCase()}` : "";
     renderDays(); renderSessions();
   }
 
@@ -48,19 +58,20 @@
       if (!r) return tip.hidden = true;
       const x = d[+r.dataset.i], br = box.getBoundingClientRect(), rr = r.getBoundingClientRect();
       tip.hidden = false; tip.style.left = (rr.left - br.left + rr.width / 2) + "px"; tip.style.top = "40px";
-      tip.innerHTML = `<b>${x.cards.toLocaleString()} cards</b>${fmt(x.day)} · ${money(x.value)}`;
+      tip.innerHTML = `<b>${cards(x.cards)}</b>${fmt(x.day)} · ${money(x.value)}`;
     };
     box.onpointerleave = () => $("tip").hidden = true;
   }
 
   function renderSessions() {
     const s = data.sessions.slice(0, shown);
-    $("sessions").innerHTML = s.length ? s.map(x => `<div class="session-row${open.has(x.start) ? " open" : ""}" data-start="${esc(x.start)}">
+    let last = "";
+    $("sessions").innerHTML = s.length ? s.map(x => `${dayKey(x.start) !== last ? `<h4 class="session-day">${esc(dayName((last = dayKey(x.start), x.start)))}</h4>` : ""}<div class="session-row${open.has(x.start) ? " open" : ""}" data-start="${esc(x.start)}">
       <button class="session-sum" aria-expanded="${open.has(x.start)}">
-        <span class="when"><b>${esc(day(x.start))}</b><small>${esc(clock(x.start))} to ${esc(clock(x.end))}${x.minutes ? ` · ${dur(x.minutes)}` : ""}</small></span>
-        <span class="nums"><b>${x.cards.toLocaleString()}</b><small>cards</small></span>
+        <span class="when"><b>${esc(span(x))}</b>${x.minutes ? `<small>${dur(x.minutes)}</small>` : ""}</span>
+        <span class="nums"><b>${x.cards.toLocaleString()}</b><small>${x.cards === 1 ? "card" : "cards"}</small></span>
         <span class="nums"><b>${money(x.value)}</b><small>when scanned</small></span>
-        <span class="topcard hide-sm">${x.top.price ? `Best: <b>${esc(x.top.name)}</b> ${money(x.top.price)}` : ""}</span>
+        <span class="topcard">${x.top.price ? `Best: <b>${esc(x.top.name)}</b> ${money(x.top.price)}` : ""}</span>
       </button>
       ${open.has(x.start) ? `<div class="session-body">
         <div class="session-acts">

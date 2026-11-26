@@ -81,6 +81,11 @@
     <h2><span class="dot" id="servoDot"></span>Servos</h2>
     <p class="err" id="servoErr" hidden></p>
     <p class="sub" id="remoteNote" hidden></p>
+    <p class="sub"><label>Which machine <select id="modelPick"></select></label></p>
+    <p class="sub" id="maultNote" hidden><b>Mault sorter:</b> its angles start as guesses. Each module has a trapdoor
+      (door), a paddle and a pusher. Set each servo with its slider, then save it under the position it is in.
+      Bin 1 and 2 are module 1's left and right, bin 3 and 4 module 2's, bin 5 the end bin. The feed buttons turn
+      the feeder servo on channel 15. Sort runs come once the machine is built.</p>
     <p class="sub" id="mk2Note" hidden><b>Mk2:</b> its angles start as guesses. Set each servo before you trust Home:
       drag its slider slowly until the part sits right, then press the position under it to save. Stop bar up holds
       the card, down lets it go. Each pusher's centre is the paddle in the middle, left and right the two ends.
@@ -182,8 +187,7 @@
   <section class="panel" id="sortPanel">
     <h2>Start sorting</h2>
     <p class="err" id="sortNote" hidden>On Mk2, set every servo's angles above and try each Bin button with a card
-      before you start a run. The Bins page rules use bins 1 to 3 (bin 4 isn't in the rules yet). Tuning runs are
-      for the first machine only.</p>
+      before you start a run.</p>
     <p class="sub">The machine on its own: it feeds a card, the scanner recognizes it, it is saved to the collection
       and dropped into the bin your <a href="/bins">Bins</a> rules give it, then the next one, until the hopper is empty
       or you press Stop. The stop pins only drop for a card that is recognized: one the scanner isn't sure of, or
@@ -218,7 +222,7 @@
     <p class="sub" id="testStatus"></p>
     <table id="testTable" hidden><thead><tr><th>#</th><th>Bin</th><th>Result</th><th>Landed</th><th>In bin</th><th>Time</th></tr></thead><tbody></tbody></table>
   </section>
-  <section class="panel">
+  <section class="panel" id="tunePanel">
     <h2>Tuning run</h2>
     <p class="sub"><b>A mechanical test, not sorting:</b> it feeds and drops each card straight away without reading it.
       Sorts card after card round the bins and scores every feed. With <b>adjust</b> on it slows the
@@ -320,6 +324,11 @@ function show(s) {
 // Mk2's notes and its bin buttons
 function showModel(s) {
   const mk2 = s.model === "mk2";
+  $("maultNote").hidden = s.model !== "mault";
+  const pick = $("modelPick"), models = Object.entries(s.models || {}).filter(([k]) => k !== "mk1");
+  pick.parentElement.parentElement.hidden = models.length < 2;
+  if (pick.options.length !== models.length) pick.innerHTML = models.map(([k, n]) => `<option value="${k}">${n}</option>`).join("");
+  if (document.activeElement !== pick) pick.value = s.model;
   $("mk2Note").hidden = !mk2; $("binMk2").hidden = !mk2; $("binMapMk2").hidden = !mk2;
   const bins = (s.bins && s.bins.length ? s.bins : [1, 2, 3]).join();
   const row = $("binRow");
@@ -332,6 +341,7 @@ function showModel(s) {
     }
   }
   $("sortNote").hidden = !mk2;
+  $("tunePanel").hidden = mk2; // tuning runs are for the first machine only
 }
 // Bin map: pointing at a Bin button lights that bin up in the picture.
 function lightBin(n) {
@@ -416,6 +426,10 @@ function build(s) {
   if (s.feeder_defaults.backoff != null) $("feedBackoff").value = s.feeder_defaults.backoff;
   $("feedReverse").checked = !!s.feeder_defaults.reverse;
 }
+$("modelPick").onchange = async (e) => {
+  const got = await call("/api/machine/save", { model: e.target.value });
+  if (got) { show(got); toast("Saved: this is now the " + e.target.selectedOptions[0].textContent + ". Every servo let go."); }
+};
 $("wideTravel").onchange = async (e) => {
   if (await call("/api/machine/save", { wide_travel: e.target.checked }))
     toast(e.target.checked ? "Saved: servos now turn about the full 180°. Check each part's positions." : "Saved: normal servo travel.");

@@ -200,6 +200,33 @@ MK2_DOORS_SECONDS = 0.8       # trapdoors open this long (the card drops in abou
 MK2_PUSH_SPEED = 45           # pusher servo degrees a second, on average
 MK2_PUSH_STEP = 1             # about this many degrees per step (up to 1.6 mid-move)
 MK2_PUSH_HOLD = 0.3           # the pusher waits at the side this long before coming back
+# --- Mault sorter (mault.xyz/build), driven by this app instead of its own controller board.
+# Two sorting modules in a row, each with a trapdoor, a paddle gate and a pusher, on the servo
+# board channels the Mault build guide uses (module 1: 0-2, module 2: 3-5, feeder: 15). The
+# angles are only starting points near the middle: set each one on the Machine page once the
+# horns are on. Picked with {"model": "mault"} saved from the Machine page.
+SERVOS_MAULT = {
+    "m1_door":   (0, {"closed": 90, "open": 110}),               # module 1 trapdoor: open lets the card on to module 2
+    "m1_paddle": (1, {"closed": 90, "open": 110}),               # module 1 paddle: lowers out of the pusher's way
+    "m1_push":   (2, {"centre": 90, "left": 60, "right": 120}),  # module 1 pusher: bins 1 (left) and 2 (right)
+    "m2_door":   (3, {"closed": 90, "open": 110}),
+    "m2_paddle": (4, {"closed": 90, "open": 110}),
+    "m2_push":   (5, {"centre": 90, "left": 60, "right": 120}),  # module 2 pusher: bins 3 (left) and 4 (right)
+}
+SERVO_HOME_MAULT = {"m1_push": "centre", "m2_push": "centre", "m1_paddle": "closed", "m2_paddle": "closed",
+                    "m1_door": "closed", "m2_door": "closed"}
+SERVO_KEEP_HOLDING_MAULT = ("m1_door", "m2_door", "m1_paddle", "m2_paddle")
+HOME_AT_STARTUP_MAULT = False  # as Mk2: guessed angles could push a part into the frame
+# Mault bins: number -> (module, side). Bin 5 is the end bin: the card goes through every trapdoor.
+SORT_BINS_MAULT = {1: (1, "left"), 2: (1, "right"), 3: (2, "left"), 4: (2, "right"), 5: (None, "end")}
+# Timings from the Mault firmware (seconds): trapdoors open one after the other, the paddle
+# opens before the pusher moves, the pusher waits at the side, the card gets time to pass.
+MAULT_STAGGER = 0.025         # between two servos starting
+MAULT_SLIDE_SECONDS = 0.6     # a card through one open trapdoor to the next module (or the end bin)
+MAULT_PADDLE_SECONDS = 0.3    # paddle open this long before the pusher moves, and to shut after
+MAULT_PUSH_HOLD = 0.15        # the pusher waits at the side this long before coming back
+MAULT_PUSH_SECONDS = 0.3      # time the pusher gets to reach the side, and to come back
+MAULT_FEEDER_CHANNEL = 15     # the feeder's 360 degree (continuous) servo
 # Mk2's power relay (MK2.md, Power): servos, feeder motor and lights get their 5 V through it.
 # The app closes it (pin high, the module's trigger jumper on HIGH) when it starts on Mk2; when
 # the app stops the pin lets go, the module's pull-down opens the relay and everything goes dark.

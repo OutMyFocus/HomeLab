@@ -334,6 +334,8 @@ class SortRun:
         """Where the held parts go before each card: the trapdoors shut and the stop up.
         Mk2's are its two trapdoors and its stop bar (stop bar first: down, it rests on
         level 1's pusher)."""
+        if getattr(self.machine, "model", lambda: "mk1")() == "mault":
+            return (("m1_door", "closed"), ("m2_door", "closed"))
         if getattr(self.machine, "model", lambda: "mk1")() == "mk2":
             return (("stop", "up"), ("door_f", "closed"), ("door_b", "closed"))
         return (("door_l", "closed"), ("door_r", "closed"), ("pins", "up"))

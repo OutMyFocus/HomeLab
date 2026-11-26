@@ -394,8 +394,8 @@
       healthCard.hidden = false;
       healthCard.dataset.state = h.overall;
       healthCard.title = tip || "Everything checks out";
-      healthCard.querySelector("b").textContent = h.overall === "ok" ? "All systems good" : p.length === 1 ? p[0].label : `${p.length} things to check`;
-      healthCard.querySelector("small").textContent = h.overall === "ok" ? "SortR health" : (p.length === 1 ? p[0].summary : "Open Maintenance");
+      healthCard.querySelector("b").textContent = h.overall === "ok" ? "All systems good" : p.length === 1 ? p[0].label : `${p.length} to check`;
+      healthCard.querySelector("small").textContent = h.overall === "ok" ? "SortR health" : (p.length === 1 ? p[0].summary : "In Maintenance");
     }
   }
 

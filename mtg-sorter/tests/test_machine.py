@@ -1469,3 +1469,69 @@ def test_a_waiting_card_keeps_its_stop_bar_up(machine, mk2, monkeypatch):
     run._stop_sent -= 11
     run._keep_stop_up(start - 601)                 # ten minutes on: left alone
     assert len(moves) == 2
+
+
+# --- Mault sorter ----------------------------------------------------------------------
+
+class FakeContinuous:
+    throttle = 0.0
+    fraction = 0.5
+
+
+@pytest.fixture
+def mault(client, machine, monkeypatch):
+    for name in ("MAULT_SLIDE_SECONDS", "MAULT_PADDLE_SECONDS", "MAULT_PUSH_HOLD", "MAULT_PUSH_SECONDS", "MAULT_STAGGER"):
+        monkeypatch.setattr(config, name, 0.01)
+    machine._kit.continuous_servo = [FakeContinuous() for _ in range(16)]
+    state = client.post("/api/machine/save", json={"model": "mault"}).get_json()
+    assert state["model"] == "mault", state
+    return state
+
+
+def test_mault_has_two_modules_on_the_build_guides_channels(client, mault):
+    assert {p: v["channel"] for p, v in mault["parts"].items()} == {
+        "m1_door": 0, "m1_paddle": 1, "m1_push": 2, "m2_door": 3, "m2_paddle": 4, "m2_push": 5}
+    assert mault["bins"] == [1, 2, 3, 4, 5]
+    assert mault["home_at_startup"] is False
+    assert mault["feeder"]["ok"] is True          # the feeder is a servo on the same board
+
+
+def test_mault_module_1_bin_opens_the_paddle_before_the_pusher_and_no_trapdoor(client, logged, mault):
+    r = client.post("/api/machine/drop", json={"bin": 2})
+    assert r.status_code == 200, r.get_json()
+    m = moves(logged)
+    assert m.index(("m1_paddle", "open")) < m.index(("m1_push", "right")) < m.index(("m1_push", "centre"))
+    assert ("m1_door", "open") not in m and ("m2_paddle", "open") not in m
+    assert m.index(("m1_push", "centre")) < len(m) - 1 - m[::-1].index(("m1_paddle", "closed"))
+
+
+def test_mault_module_2_bin_lets_the_card_through_module_1_first(client, logged, mault):
+    assert client.post("/api/machine/drop", json={"bin": 3}).status_code == 200
+    m = moves(logged)
+    assert m.index(("m1_door", "open")) < m.index(("m2_paddle", "open")) < m.index(("m2_push", "left"))
+    assert ("m2_door", "open") not in m
+    assert m[-1] == ("m2_door", "closed")           # everything ends shut
+
+
+def test_mault_end_bin_opens_every_trapdoor_and_moves_no_pusher(client, logged, mault):
+    assert client.post("/api/machine/drop", json={"bin": 5}).status_code == 200
+    m = moves(logged)
+    assert m.index(("m1_door", "open")) < m.index(("m2_door", "open"))
+    assert not [x for x in m if x[0].endswith("_push") and x[1] != "centre"]
+    assert not [x for x in m if x[1] == "open" and x[0].endswith("_paddle")]
+
+
+def test_mault_feeder_is_the_servo_on_channel_15_and_stops_with_no_pulse(client, machine, mault):
+    r = client.post("/api/machine/feed", json={"seconds": 0.05, "speed": 0.5})
+    assert r.status_code == 200, r.get_json()
+    feeder = machine._kit.continuous_servo[config.MAULT_FEEDER_CHANNEL]
+    assert feeder.throttle == 0.5
+    assert machine._motor.calls == []               # the first machines' motor is left alone
+    time.sleep(0.2)
+    assert feeder.fraction is None and machine.feeding is False
+
+
+def test_mault_runs_wait_until_the_machine_is_built(client, mault):
+    r = client.post("/api/machine/sort", json={})
+    assert r.status_code != 200
+    assert "Mault" in str(r.get_json())
