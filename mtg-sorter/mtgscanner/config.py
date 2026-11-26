@@ -194,9 +194,11 @@ MK2_STOP_CLEAR_SECONDS = 0.3  # after the camera sees the bed empty, wait this m
 MK2_DOORS_SECONDS = 0.8       # trapdoors open this long (the card drops in about 0.4 s)
 # Pushers move slowly so a card is eased off the floor, not shoved into a jam (Nic, 2026-11-24):
 # 45 degrees a second is about 40 mm/s at the paddle (it was 130). Every pusher move goes at
-# this speed in MK2_PUSH_STEP degree steps: a sort, the page's buttons, and Home (no faster).
-MK2_PUSH_SPEED = 45           # pusher servo degrees a second
-MK2_PUSH_STEP = 2             # degrees per step
+# this speed: a sort, the page's buttons, and Home (no faster). They start and stop gently and
+# step about MK2_PUSH_STEP degrees at a time, so the servo glides (2 degree steps looked clunky,
+# Nic 2026-11-26).
+MK2_PUSH_SPEED = 45           # pusher servo degrees a second, on average
+MK2_PUSH_STEP = 1             # about this many degrees per step (up to 1.6 mid-move)
 MK2_PUSH_HOLD = 0.3           # the pusher waits at the side this long before coming back
 # Mk2's power relay (MK2.md, Power): servos, feeder motor and lights get their 5 V through it.
 # The app closes it (pin high, the module's trigger jumper on HIGH) when it starts on Mk2; when

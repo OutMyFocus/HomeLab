@@ -16,6 +16,7 @@ config.py on the Pi would: see deploy/update.sh).
 
 import copy
 import json
+import math
 import threading
 import time
 
@@ -477,7 +478,10 @@ class Machine:
             start = last.get(str(channel))
             # Pushers no faster than a sort moves them (MK2_PUSH_SPEED).
             part_speed = min(speed, float(getattr(config, "MK2_PUSH_SPEED", speed)))                 if part in getattr(config, "MK2_PUSHERS", ()) else speed
-            if isinstance(start, (int, float)) and part_speed > 0:
+            if part in getattr(config, "MK2_PUSHERS", ()) and self.model() == "mk2" \
+                    and isinstance(start, (int, float)) and part_speed > 0:
+                self._sweep(channel, float(start), target, part_speed)   # the same glide as a sort
+            elif isinstance(start, (int, float)) and part_speed > 0:
                 steps = int(abs(target - start) // 2)            # 2 degree steps
                 for i in range(1, steps + 1):
                     self.set_angle(channel, start + (target - start) * i / (steps + 1))
@@ -617,15 +621,20 @@ class Machine:
                     self.move(part, position)
 
     def _sweep(self, channel, a, b, speed=None):
-        """Turn a pusher from angle a to b at a steady, slow speed (config.MK2_PUSH_SPEED
-        degrees a second) in small steps, so it eases the card along instead of shoving it
-        into a jam (Nic, 2026-11-24)."""
+        """Turn a pusher from angle a to b at a slow average speed (config.MK2_PUSH_SPEED
+        degrees a second), so it eases the card along instead of shoving it into a jam
+        (Nic, 2026-11-24). It starts and stops gently (a cosine ease) and moves in steps of
+        about config.MK2_PUSH_STEP degrees at a steady rate, which a cheap servo follows as one
+        smooth glide instead of a row of little jerks (Nic, 2026-11-26: "they moved so clunky")."""
         speed = float(speed or getattr(config, "MK2_PUSH_SPEED", 45))
-        step = float(getattr(config, "MK2_PUSH_STEP", 2))
-        steps = max(1, int(round(abs(b - a) / step)))
+        step = float(getattr(config, "MK2_PUSH_STEP", 1))
+        span = b - a
+        steps = max(1, int(math.ceil(abs(span) / step)))
+        tick = abs(span) / speed / steps
         for i in range(1, steps + 1):
-            self.set_angle(channel, a + (b - a) * i / steps)
-            time.sleep(abs(b - a) / steps / speed)
+            eased = (1 - math.cos(math.pi * i / steps)) / 2
+            self.set_angle(channel, b if i == steps else round(a + span * eased, 2))
+            time.sleep(tick)
 
     def _push(self, pusher, side, speed=None):
         """Sweep a pusher from the centre to one side at a steady speed, wait, and sweep back."""
