@@ -55,6 +55,7 @@
       const n = items.reduce((s, x) => s + x[1], 0);
       const title = k === "Unknown" ? (S.cards ? "Not found" : "Cards") : k + (k === "Sorcery" ? " cards" : k === "Other" ? "" : "s");
       return `<div class="panel group"><header><h3>${title}</h3><span class="sub">${n}</span></header><ul>${items.map(([nm, q, c]) => {
+        const have = V.BASICS.has(norm(nm)) ? q : V.ownedQty(nm), proxy = deck.proxied && have < q, ok = deck.proxied || have >= q;
         // PRX: covered by proxies (the deck's "Complete with proxies", or proxies you marked in the collection)
         const have = V.ownedQty(nm), ok = deck.proxied || have >= q, proxy = ok && V.realQty(nm) < q && !V.BASICS.has(norm(nm));
         return `<li class="${bad.has(norm(c ? c.n : nm)) || bad.has(norm(nm)) ? "bad" : ""}"><span class="own ${proxy ? "p" : ok ? "y" : "n"}" title="${proxy ? "Proxy" : ok ? "Owned" : "Not owned"}">${proxy ? "PRX" : ok ? "OWN" : "BUY"}</span>

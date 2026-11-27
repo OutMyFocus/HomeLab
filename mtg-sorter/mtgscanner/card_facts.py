@@ -48,12 +48,22 @@ def _load() -> dict:
             for r in rows:
                 if not isinstance(r, dict) or not r.get("n"):
                     continue
-                row = {k: r[k] for k in ("t", "v", "o", "ci", "b", "gc", "e", "lg", "bn") if k in r}
+                row = {k: r[k] for k in ("n", "m", "t", "v", "o", "ci", "b", "gc", "e", "lg", "bn", "pt") if k in r}
                 formats = formats or "lg" in r
                 cards.setdefault(r["n"].lower(), row)
                 cards.setdefault(name_key(r["n"]), row)
         _db.update(mtime=mtime, cards=cards, formats=formats)
         return cards
+
+
+def all_rows() -> list[dict]:
+    """Every card in the card list once (for deck suggestions, decks_suggest.py)."""
+    seen, out = set(), []
+    for row in _load().values():
+        if id(row) not in seen:
+            seen.add(id(row))
+            out.append(row)
+    return out
 
 
 def status() -> dict:
