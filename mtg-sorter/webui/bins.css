@@ -69,3 +69,9 @@
   .save-bar .btn { padding: 8px 12px; font-size: .86rem; }
   .catch-all .goto-else { display: grid; gap: 6px; width: 100%; }
 }
+
+/* A computer: the ready-made setups line up in even columns instead of a ragged row. */
+@media (min-width: 641px) {
+  .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+  .presets .preset { max-width: none; }
+}
