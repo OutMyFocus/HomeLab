@@ -51,6 +51,7 @@ from mtgscanner.news import add_news_routes
 from mtgscanner.bins import add_bins_routes
 from mtgscanner.decks import add_deck_routes
 from mtgscanner.upgrades import add_upgrade_routes
+from mtgscanner.deck_ideas import add_idea_routes
 from mtgscanner.library import add_collection_routes, lookup
 from mtgscanner.lights import Lights, add_lights_routes
 from mtgscanner.auto_straighten import AutoStraighten
@@ -1147,6 +1148,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     add_collection_routes(app, scanner, WEB)  # the /collection page
     add_deck_routes(app, scanner, WEB)  # the /decks page
     add_upgrade_routes(app, scanner)  # the deck builder's upgrade path (EDHREC)
+    add_idea_routes(app, scanner)  # deck ideas from your own cards
     add_bins_routes(app, scanner, WEB)  # the /bins page
     add_history_routes(app, scanner, WEB)  # the /history page
     add_wishlist_routes(app, scanner, WEB)  # the /wishlist page and alerts

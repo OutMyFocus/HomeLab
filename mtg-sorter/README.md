@@ -190,6 +190,15 @@ Then open **http://localhost:5000** in your browser. You get:
   Pi for a week, in data/edhrec/), or with the most played Commander cards when EDHREC can't be
   reached. Set a most-per-card budget, keep Game Changers out, and press **Swap** or **Make
   these swaps** to change the deck.
+  **Build a deck from your cards** (top of the Decks page) suggests Commander decks your
+  collection can make, best first: for each commander you own, and the most played ones you
+  don't, it picks your cards that fit its colors and theme (a creature type like Goblins, go wide
+  with tokens, +1/+1 counters, the graveyard...), covers ramp, card draw, removal and board wipes,
+  and fills the mana base with your lands and basics. Each idea shows how ready it is to play.
+  Filter by style or colors, only commanders you own, or only spare cards (not already in your
+  other decks), or type any commander's name. Open one to see the whole list and choose what goes
+  in the slots your cards can't fill (EDHREC's picks to get, more lands, or leave them open);
+  **Build this deck** saves it and opens it in the deck builder to change anything.
 - **Card lookup**: search every Commander card (the whole database is on the Pi, so it's
   instant), by name, text, type, color or set and number. Filter by role (ramp, draw, removal…),
   see a card's prices at each Canadian store, every printing, how many you own, which of your

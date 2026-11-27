@@ -304,7 +304,7 @@ window.VAULT = (() => {
     const all = [...cmds(d).map(n => [n, 1]), ...d.list];
     let count = 0, own = 0, cost = 0, value = 0; const need = [];
     for (const [n, q] of all) {
-      count += q; const have = d.proxied ? q : Math.min(q, ownedQty(n)); own += have;
+      count += q; const have = d.proxied || BASICS.has(norm(n)) ? q : Math.min(q, ownedQty(n)); own += have;   // basics: everyone has a pile
       const p = priceOf(n) || 0; value += p * q;
       if (have < q && !BASICS.has(norm(n))) { cost += p * (q - have); need.push([n, q - have, p]); }
     }

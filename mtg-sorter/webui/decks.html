@@ -31,6 +31,9 @@
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.7" /></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" /></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3c.6 4.2 2.2 6 6.5 6.6-4.3.6-5.9 2.4-6.5 6.6-.6-4.2-2.2-6-6.5-6.6C9.8 9 11.4 7.2 12 3Z" fill="currentColor" /><path d="M18.5 15c.3 1.9 1 2.7 3 3-2 .3-2.7 1.1-3 3-.3-1.9-1-2.7-3-3 2-.3 2.7-1.1 3-3Z" fill="currentColor" opacity=".6" /></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></symbol>
   </svg>
 
@@ -40,6 +43,29 @@
   <script src="/static/shell.js"></script>
 
   <main class="coll decks">
+    <section class="panel ideas" id="ideas" aria-labelledby="ideasTitle">
+      <div class="ideas-head">
+        <div class="ideas-title">
+          <span class="ideas-ic"><svg><use href="#i-spark" /></svg></span>
+          <div><h3 id="ideasTitle">Build a deck from your cards</h3><p class="sub" id="ideasSub">Commander decks your collection can make, best first.</p></div>
+        </div>
+        <button class="icon-btn ideas-fold" id="ideasFold" aria-expanded="true" aria-controls="ideasBody" title="Hide or show deck ideas"><svg><use href="#i-chev" /></svg></button>
+      </div>
+      <div id="ideasBody">
+        <div class="ideas-tools">
+          <div class="add-card ideas-search"><input class="field" id="iCmd" placeholder="Or start from any commander: type a name" autocomplete="off" spellcheck="false" aria-label="Start from a commander"><ul class="suggest" id="iSug" role="listbox" hidden></ul></div>
+          <div class="ideas-colors" id="iColors" role="group" aria-label="Colors">
+            <button class="chip" data-c="W" aria-pressed="false" title="White"><span class="pip W">W</span></button><button class="chip" data-c="U" aria-pressed="false" title="Blue"><span class="pip U">U</span></button><button class="chip" data-c="B" aria-pressed="false" title="Black"><span class="pip B">B</span></button><button class="chip" data-c="R" aria-pressed="false" title="Red"><span class="pip R">R</span></button><button class="chip" data-c="G" aria-pressed="false" title="Green"><span class="pip G">G</span></button>
+          </div>
+          <label class="switch" title="Leave out commanders you don't have yet"><input type="checkbox" id="iOwned"><span></span>Commanders I own</label>
+          <label class="switch" title="Don't use cards that are already in your other saved decks (decks marked complete with proxies don't count)"><input type="checkbox" id="iSpare"><span></span>Spare cards only</label>
+        </div>
+        <div class="ideas-styles" id="iStyles" role="group" aria-label="Deck style"></div>
+        <div class="ideas-grid" id="iGrid" aria-live="polite"></div>
+        <div class="ideas-foot"><button class="btn ghost" id="iMore" hidden>Show more ideas</button><span class="sub" id="iNote"></span></div>
+      </div>
+    </section>
+
     <section class="deck-layout">
       <aside class="panel deck-list">
         <div class="panel-head"><h3>Your decks</h3><button class="btn ghost small-btn" id="newDeck"><svg><use href="#i-plus" /></svg>New</button></div>
@@ -150,11 +176,37 @@ The deck builder (checks, mana curve, test hands) appears below for any deck of 
     <p class="hint center">Your cards are matched by name, so any printing counts. A card needed in both the main deck and sideboard uses your copies once.</p>
   </main>
 
+  <div class="modal idea-modal" id="idea" hidden>
+    <div class="modal-box idea-box" role="dialog" aria-modal="true" aria-labelledby="ipName">
+      <div class="idea-hero" id="ipHero">
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-close" /></svg></button>
+        <div class="idea-hero-text"><span class="sub" id="ipPips"></span><h3 id="ipName"></h3><div class="idea-tags" id="ipTags"></div></div>
+      </div>
+      <div class="idea-body">
+        <div class="idea-stats" id="ipStats"></div>
+        <div class="idea-jobs" id="ipJobs"></div>
+        <div class="idea-fill" id="ipFillRow">
+          <span class="sub">Slots your cards can't fill</span>
+          <div class="seg small" id="ipFill">
+            <button data-v="buy" aria-pressed="true">Cards to get</button><button data-v="basics" aria-pressed="false">More lands</button><button data-v="empty" aria-pressed="false">Leave open</button>
+          </div>
+        </div>
+        <div class="idea-list" id="ipList"><p class="sub">Building…</p></div>
+      </div>
+      <div class="idea-acts">
+        <span class="sub" id="ipNote"></span>
+        <button class="btn ghost" data-close>Cancel</button>
+        <button class="btn primary" id="ipBuild" disabled>Build this deck</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" hidden><svg><use href="#i-check" /></svg><span id="toastText"></span></div>
   <script src="/static/common.js"></script>
   <script src="/static/decks.js"></script>
   <script src="/static/vault.js"></script>
   <script src="/static/builder.js"></script>
   <script src="/static/upgrades.js"></script>
+  <script src="/static/ideas.js"></script>
 </body>
 </html>

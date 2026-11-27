@@ -55,7 +55,7 @@
       const n = items.reduce((s, x) => s + x[1], 0);
       const title = k === "Unknown" ? (S.cards ? "Not found" : "Cards") : k + (k === "Sorcery" ? " cards" : k === "Other" ? "" : "s");
       return `<div class="panel group"><header><h3>${title}</h3><span class="sub">${n}</span></header><ul>${items.map(([nm, q, c]) => {
-        const have = V.ownedQty(nm), proxy = deck.proxied && have < q, ok = deck.proxied || have >= q;
+        const have = V.BASICS.has(norm(nm)) ? q : V.ownedQty(nm), proxy = deck.proxied && have < q, ok = deck.proxied || have >= q;
         return `<li class="${bad.has(norm(c ? c.n : nm)) || bad.has(norm(nm)) ? "bad" : ""}"><span class="own ${proxy ? "p" : ok ? "y" : "n"}" title="${proxy ? "Proxy" : ok ? "Owned" : "Not owned"}">${proxy ? "PRX" : ok ? "OWN" : "BUY"}</span>
           <span>${q > 1 ? `${q}x ` : ""}<a class="cardlink" href="/cards?card=${encodeURIComponent(nm)}">${esc(nm)}</a>${c && c.gc ? ' <span class="badge warn">GC</span>' : ""}</span>
           <span class="right">${c ? V.mana(c.m) : ""}<span>${V.money(V.priceInfo(nm))}</span>${V.BASICS.has(norm(nm)) || (constructed && q < 4) ? `<button class="x" data-inc="${esc(nm)}" title="One more">+</button>` : ""}<button class="x" data-rm="${esc(nm)}" title="Remove one">×</button></span></li>`;

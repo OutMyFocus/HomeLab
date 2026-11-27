@@ -183,6 +183,15 @@
       decks = js.decks; renderDecks(); return js.deck;
     },
     changed() { countLines(); },
+    unsaved,
+    // A new saved deck (from Build a deck), opened in the editor like one you picked.
+    async create(name, text) {
+      const js = await api("/api/decks/save", { name, text });
+      decks = js.decks; currentId = js.deck.id; $("deckName").value = js.deck.name; $("deckText").value = js.deck.text;
+      renderDecks(); countLines(); checkDeck();
+      document.dispatchEvent(new CustomEvent("deck-opened"));
+      return js.deck;
+    },
   };
 
   async function start() {
