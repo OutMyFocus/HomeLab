@@ -63,8 +63,16 @@
 .preset small { color: var(--muted); font-size: .76rem; line-height: 1.3; }
 .bin-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap); }
 .bin-card { padding: var(--pad); display: flex; flex-direction: column; gap: 8px; min-width: 0; border-top: 4px solid var(--c); }
-.bin-card .head { display: flex; align-items: center; gap: 8px; }
-.bin-card input { flex: 1; min-width: 0; padding: 7px 10px; font-weight: 600; }
+.bin-card { position: relative; overflow: hidden; }
+.bin-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 70px; pointer-events: none;
+  background: linear-gradient(to bottom, color-mix(in oklab, var(--c) 13%, transparent), transparent); }
+/* The bin's name reads as its title (on its own line, never cut off) and turns into a text box when touched. */
+.bin-card .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bin-card .head .pill { font-size: .72rem; letter-spacing: .02em; }
+.bin-card input { flex: 1 1 100%; min-width: 0; padding: 6px 9px; margin-left: -9px; width: calc(100% + 9px); font-weight: 650; font-size: 1.02rem;
+  border-color: transparent !important; background: transparent !important; text-overflow: ellipsis; }
+.bin-card input:hover { border-color: var(--line); background: var(--raised); }
+.bin-card input:focus { border-color: color-mix(in oklab, var(--accent) 70%, transparent); background: var(--raised); }
 .bin-card .count { font-size: 1.5rem; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .bin-card .ex { color: var(--muted); font-size: .8rem; line-height: 1.35; min-height: 2.7em; overflow: hidden; }
 .share { height: 6px; border-radius: 999px; background: var(--raised); overflow: hidden; }

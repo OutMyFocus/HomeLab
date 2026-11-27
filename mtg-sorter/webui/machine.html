@@ -52,6 +52,13 @@
     .binmap .bin.hl path { stroke: var(--accent); fill: color-mix(in srgb, var(--accent) 18%, var(--panel-solid)); }
     .binmap .bin.hl text { fill: var(--accent); }
     .binmap ul { margin: 0; padding-left: 1.1em; display: grid; gap: 2px; }
+    /* A wide screen: the servos on the left, the feeder and the runs beside them. */
+    @media (min-width: 1240px) {
+      .wrap { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: start; }
+      .wrap > .head, .wrap > #runNote { grid-column: 1 / -1; }
+      .wrap > #servoPanel { grid-column: 1; grid-row: span 4; }
+      .wrap > section:not(#servoPanel) { grid-column: 2; }
+    }
     #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--panel-solid);
              border: 1px solid var(--line-strong); padding: 10px 16px; border-radius: 12px; max-width: calc(100% - 32px); }
   </style>

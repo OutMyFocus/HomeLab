@@ -19,12 +19,12 @@
   <script src="/static/look.js"></script>
   <style>
     /* Machine health: everything the sorter reports. Builds on style.css. */
-    .hw { max-width: 1180px; margin: 0 auto; padding: 20px 16px 72px; display: grid; gap: 18px; }
-    .hw .panel { padding: 18px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+    .hw { display: grid; gap: var(--gap); }   /* width and edges: main's, like every other page */
+    .hw .panel { padding: var(--pad); display: grid; gap: 12px; align-content: start; min-width: 0; }
     .hw h2 { margin: 0; font-size: 1.02rem; display: flex; align-items: center; gap: 8px; }
     .hw h2 .tag { margin-left: auto; }
     .sub { color: var(--muted); font-size: .88rem; margin: 0; }
-    .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; display: inline-block; }
     .dot.ok { background: var(--good); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
     .tag { font: 600 .74rem var(--mono); padding: 3px 8px; border-radius: 99px; background: var(--raised); color: var(--muted); white-space: nowrap; }

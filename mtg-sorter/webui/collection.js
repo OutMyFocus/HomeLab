@@ -85,7 +85,7 @@
     const box = $("lineChart"), pts = data.history || [];
     $("histNote").textContent = pts.length ? `${pts.length} day${pts.length === 1 ? "" : "s"} noted` : "";
     if (pts.length < 2) {
-      box.innerHTML = `<div class="empty"><p>${pts.length ? `Today: <b>${money(pts[0].value)}</b>. ` : ""}The chart fills in as the days go by: the total is noted once a day whenever this page or Home is opened.</p></div>`;
+      box.innerHTML = `<div class="empty"><p>${pts.length ? `Today: <b>${money(pts[0].value)}</b>. ` : ""}The line grows by one point each day SortR is opened.</p></div>`;
       return;
     }
     if (window.SortRCharts) {   // the same smooth line, hover readout and colors as Home
