@@ -62,6 +62,12 @@
 .tile.foil .art::after { content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: soft-light;
   background: linear-gradient(115deg, transparent 20%, rgba(255, 120, 200, .45) 35%, rgba(120, 220, 255, .45) 50%, rgba(255, 240, 120, .45) 65%, transparent 80%); }
 .tile .qty { position: absolute; top: 6px; left: 6px; background: rgba(10, 12, 15, .78); color: #fff; font-weight: 700; font-size: .78rem; padding: 1px 8px; border-radius: 999px; }
+.proxy-badge { position: absolute; right: 6px; bottom: 6px; z-index: 2; background: #f5b84a; color: #1b1300; font-weight: 800;
+  font-size: .66rem; letter-spacing: .05em; padding: 1px 7px; border-radius: 999px; }
+.pocket .proxy-badge { right: 5px; bottom: 26px; font-size: .6rem; }
+.selecting .tile .proxy-badge { bottom: 38px; }
+.tile.proxy .art img, .pocket.proxy img { filter: saturate(.75); }
+.tile.proxy em { text-decoration: line-through; opacity: .7; }
 .tile .foil-badge { position: absolute; top: 6px; right: 6px; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: .68rem; padding: 1px 7px; border-radius: 999px; }
 .tile b { font-size: .86rem; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile span { font-size: .76rem; color: var(--muted); display: flex; justify-content: space-between; gap: 6px; }

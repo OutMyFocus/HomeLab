@@ -142,6 +142,8 @@ def priced(items, rows, matcher, vault=None, live=None) -> list[dict]:
     """Each wishlist card with today's price, how many you own, and any alert."""
     owned: dict[str, int] = {}
     for h in holdings(rows, matcher, vault, live):
+        if h["proxy"]:   # a proxy doesn't get the real card off the wishlist
+            continue
         owned[name_key(h["name"])] = owned.get(name_key(h["name"]), 0) + h["qty"]
     found = live.by_names([i["name"] for i in items]) if live and items else {}
     out = []

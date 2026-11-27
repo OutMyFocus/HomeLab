@@ -254,7 +254,8 @@
       $("cardArt").classList.toggle("foil", !!c.foil);
       $("cardName").textContent = c.name;
       $("cardSet").textContent = `${c.set_name} · ${c.set} #${c.number} · ${c.rarity}${c.foil ? " · foil" : ""}`;
-      $("cardPrice").textContent = money(c.price);
+      // With Proxies on, what it's saved as: a proxy, worth nothing to the collection
+      $("cardPrice").innerHTML = esc(money(c.price)) + (s.proxy ? '<span class="proxy-tag" title="Saved as a proxy: not counted in your collection\'s value">PROXY</span>' : "");
       $("cardSource").textContent = c.price_source ? c.price_source : "";
       window.Montreal?.show($("cardMontreal"), c);  // today's prices at Face to Face Games and other Montreal stores
       const b = $("cardBin"); b.textContent = `Bin ${c.bin} · ${c.bin_label}`; b.className = "bin bin-" + c.bin;
@@ -289,6 +290,7 @@
     $("learnSwitch").checked = s.learn;
     showSorter(s);
     $("foilBtn").setAttribute("aria-pressed", s.foil);
+    $("proxyBtn").setAttribute("aria-pressed", !!s.proxy);
     $("autoBtn").setAttribute("aria-pressed", s.auto);
     $("collectBtn").setAttribute("aria-pressed", s.collect);
     $("collectSwitch").checked = s.collect;
@@ -307,7 +309,7 @@
     announce(s);
     const more = (s.session_count || s.session.length) - s.session.length;
     setHTML($("sessionRows"), (s.session.length ? s.session.map(r => `<tr${r.wanted ? ' class="wanted"' : ""}>
-        <td>${esc(r.name)}${r.foil ? '<span class="foil-tag">foil</span>' : ""}</td>
+        <td>${esc(r.name)}${r.foil ? '<span class="foil-tag">foil</span>' : ""}${r.proxy ? '<span class="proxy-tag">proxy</span>' : ""}</td>
         <td>${esc(r.set)} #${esc(r.number)}</td>
         <td class="num">${money(r.price)}</td>
         <td><span class="pill bin-${r.bin}">${r.bin} · ${esc(r.bin_label || BIN_NAMES[r.bin])}</span></td>
@@ -888,6 +890,7 @@
     pollSortRun();
   }
   $("foilBtn").onclick = () => setting("foil");
+  $("proxyBtn").onclick = () => setting("proxy").then(() => toast(state.proxy ? "Proxies on: cards you save are marked as proxies" : "Proxies off: cards save as real cards"));
   $("autoBtn").onclick = () => setting("auto");
   $("collectBtn").onclick = () => setting("collect").then(() => toast(state.collect ? "Collecting scans" : "Stopped collecting"));
   $("collectSwitch").onchange = e => api("/api/settings", { collect: e.target.checked }).then(render);
@@ -912,6 +915,7 @@
     if ($("tab-live").hidden) return;
     if (e.code === "Space") { e.preventDefault(); saveCurrent(); }
     else if (e.key === "f" || e.key === "F") setting("foil");
+    else if (e.key === "x" || e.key === "X") $("proxyBtn").click();
     else if (e.key === "a" || e.key === "A") setting("auto");
     else if (e.key === "r" || e.key === "R") $("collectBtn").click();
     else if (e.key === "s" || e.key === "S") $("modeBtn").click();

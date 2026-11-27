@@ -8,14 +8,13 @@ from flask import jsonify, send_from_directory
 
 from . import accounts, config, decks, sort_rules, wishlist
 from .history import per_day, sessions
-from .library import (add_trends, holdings, make_key, note_card_prices, note_value, read_rows, row_foil, row_id,
-                      summarize)
+from .library import add_trends, holdings, note_card_prices, note_value, read_rows, row_key, summarize
 
 RECENT = 8  # newest cards shown
 
 
 def _small(it: dict) -> dict:
-    keep = ("key", "id", "name", "set", "number", "foil", "qty", "price", "change", "trend", "bin", "image", "rarity")
+    keep = ("key", "id", "name", "set", "number", "foil", "proxy", "qty", "price", "change", "trend", "bin", "image", "rarity")
     return {k: it.get(k) for k in keep}
 
 
@@ -24,7 +23,7 @@ def recent_cards(rows: list[dict], items: list[dict]) -> list[dict]:
     by_key = {it["key"]: it for it in items}
     seen, out = set(), []
     for r in sorted(rows, key=lambda r: r.get("Scanned at", ""), reverse=True):
-        key = make_key(row_id(r), row_foil(r))
+        key = row_key(r)
         if key in seen or key not in by_key:
             continue
         seen.add(key)
@@ -91,7 +90,7 @@ def add_home_routes(app, scanner, machine, web_dir):
         week = days[-7:]
         names = sort_rules.names()
         wanted = wishlist.wanted_names()
-        owned_wanted = {decks.name_key(it["name"]) for it in items} & wanted
+        owned_wanted = {decks.name_key(it["name"]) for it in items if not it["proxy"]} & wanted
         return jsonify({
             "scanner": scanner_info(scanner),
             "machine": machine_info(machine),
@@ -99,6 +98,7 @@ def add_home_routes(app, scanner, machine, web_dir):
                 "cards": summary["cards"], "unique": summary["names"], "value": summary["value"],
                 "change": summary["change"], "sets": summary["set_count"], "foils": summary["foils"],
                 "unpriced": summary["unpriced"],
+                "proxies": summary["proxies"], "proxy_value": summary["proxy_value"],
                 "top": [_small(by_key[k]) for k in summary["top"][:4]],
                 "recent": recent_cards(rows, items),
                 "movers": movers(items),

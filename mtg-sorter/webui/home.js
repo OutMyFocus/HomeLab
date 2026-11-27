@@ -90,7 +90,8 @@
   function renderNumbers() {
     const c = data.collection, w = data.sessions.week, s = data.scanner.session;
     C.countUp($("kCards"), c.cards);
-    $("kCardsSub").textContent = c.cards ? `${c.unique.toLocaleString()} different` + (c.foils ? ` · ${c.foils} foil` : "") : "Scan some to get started";
+    $("kCardsSub").textContent = c.cards ? `${c.unique.toLocaleString()} different` + (c.foils ? ` · ${c.foils} foil` : "") + (c.proxies ? ` · ${c.proxies} prox${c.proxies === 1 ? "y" : "ies"}` : "") : "Scan some to get started";
+    $("kCardsSub").title = c.proxies ? "Proxies aren't counted in the value" : "";
     $("kCardsSpark").innerHTML = C.spark((c.history || []).slice(-30).map(p => p.cards));
     C.countUp($("kWeek"), w.cards);
     $("kWeekSub").textContent = w.cards ? `cards · ${money(w.value)}` : "cards";

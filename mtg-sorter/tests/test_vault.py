@@ -595,3 +595,10 @@ def test_sixty_card_deck_checks(tmp_path):
     assert levels["17 cards"] == "bad"                   # sideboard over 15
     assert bad["bad"] == ["lightning bolt", "duress"]    # 5 and 16 copies; 35 Mountains are fine
     assert any("Black Lotus" in m and lvl == "warn" for lvl, m in bad["checks"])   # not in the database
+
+
+def test_manabox_proxies_come_in_marked(db):  # noqa: F811
+    _, client = make(db)
+    text = "Name,Set code,Collector number,Foil,Quantity,Proxy\nSol Ring,C21,263,normal,1,true\nIsland,FDN,1,normal,1,false\n"
+    client.post("/api/sources/manabox", json={"csv": text, "name": "Deck"})
+    assert [(r["Name"], r["Proxy"]) for r in rows()] == [("Sol Ring", "yes"), ("Island", "")]

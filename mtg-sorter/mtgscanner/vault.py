@@ -128,6 +128,8 @@ def to_rows(scanner, cards: list[dict], source: str, added: str) -> list[dict]:
             row["Condition"] = c["cond"]
         if c.get("lang") and c["lang"] != "EN":
             row["Language"] = c["lang"]
+        if c.get("px"):
+            row["Proxy"] = "yes"
         if price is not None:
             row["Price CAD"], row["Price source"] = f"{price:.2f}", how
         rows.append(row)
@@ -155,7 +157,7 @@ def manabox_cards(text: str) -> list[dict]:
     for r in rows[1:]:
         cell = lambda i: r[i].strip() if 0 <= i < len(r) else ""   # noqa: E731
         name = cell(i_name)
-        if not name or cell(i_proxy).lower() == "true":
+        if not name:
             continue
         try:
             q = max(1, int(float(cell(i_qty) or 1)))
@@ -175,6 +177,8 @@ def manabox_cards(text: str) -> list[dict]:
             card["cond"] = condition_code(cell(i_cond))
         if cell(i_lang):
             card["lang"] = language_code(cell(i_lang))
+        if cell(i_proxy).lower() in ("true", "yes", "1"):
+            card["px"] = 1   # kept, marked as a proxy (worth nothing)
         cards.append(card)
     if not cards:
         raise ValueError("The file has no card rows")

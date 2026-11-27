@@ -65,6 +65,16 @@ def test_check_counts_owned_missing_and_cost(db):  # noqa: F811
     assert main["where"][0]["qty"] == 2
 
 
+def test_check_counts_proxies_as_filling_the_deck(db):  # noqa: F811
+    client = make_client(db)
+    client.post("/api/add", json={"id": "id1"})
+    client.post("/api/collection/add", json={"id": "id1", "qty": 2, "proxy": True})
+    res = client.post("/api/decks/check", json={"text": "2 Card 1"}).get_json()
+    line = res["lines"][0]
+    assert (line["have"], line["missing"], line["proxies"]) == (2, 0, 1)   # the real copy is used first
+    assert res["proxies"] == 1 and {w["proxy"] for w in line["where"]} == {True, False}
+
+
 def test_check_prices_missing_cards_from_scryfall(db):  # noqa: F811
     live = Live(fake_fetch({"/cards/collection": lambda body: {"data": [
         scryfall_card("aaaaaaaa-0000-0000-0000-000000000000", "Lightning Bolt", usd="2.00")
