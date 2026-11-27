@@ -39,6 +39,7 @@ DIFFER_SHARE = 10      # the percent of the card where the look-alikes differ mo
 DIFFER_LEAST = 8.0     # ...as long as they differ at least this much there (0-255 grey)
 DIFFER_PIXELS = 200    # fewer differing pixels than this: the pictures are the same, nothing to compare
 SHIFT, SHIFT_STEP = 6, 2    # the scan may be this many pixels off the stock picture, each way
+GLARE = 235            # scan pixels this bright (0-255 grey, softened) are glare, not detail
 # How much the fingerprint still counts: each bit further away costs a look-alike this
 # much of its likeness (0-1). Measured on 511 test photos of cards with look-alikes:
 # 0.015 picked the right printing in 93% (the fingerprint alone: 80%) and overruled a
@@ -224,6 +225,14 @@ def pick_printing(card_bgr: np.ndarray, lookalikes: list[tuple[str, int]],
         return None
     ys, xs = np.nonzero(differ)
     scan = align(prepare(card_bgr), stock[ids[0]]).astype(np.float32)
+    # Glare (a foil under the lights) is no detail of any printing: leave those pixels out.
+    clear = scan[ys, xs] < GLARE
+    if int(clear.sum()) >= DIFFER_PIXELS:
+        ys, xs = ys[clear], xs[clear]
+    # Only the fine detail is compared: a foil's rainbow sheen and uneven light shift whole
+    # areas lighter or darker, which isn't a difference between printings.
+    scan = _detail(scan)
+    plain, stack = stack, np.stack([_detail(p) for p in stack])
     # The scan's pixels for every small shift, each with its average taken off: the same
     # for every look-alike, so made once.
     shifted = []
@@ -242,7 +251,7 @@ def pick_printing(card_bgr: np.ndarray, lookalikes: list[tuple[str, int]],
     scores = []
     for k, card_id in enumerate(ids):
         likeness = like(stack[k])
-        own = [like(_upright(t, stack[k])) for t in (taught or {}).get(card_id, [])]
+        own = [like(_detail(_upright(t, plain[k]))) for t in (taught or {}).get(card_id, [])]
         if own and max(own) > likeness:
             likeness += TAUGHT_PULL * (max(own) - likeness)
         scores.append(likeness - BIT_COST * bits[card_id])
@@ -281,6 +290,14 @@ def align(scan: np.ndarray, stock: np.ndarray) -> np.ndarray:
         return scan
     return cv2.warpPerspective(scan, warp, (w, h), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
                                borderMode=cv2.BORDER_REPLICATE)
+
+
+DETAIL_BLUR = 6.0      # what changes over more than this many pixels is light, not detail
+
+
+def _detail(picture: np.ndarray) -> np.ndarray:
+    picture = picture.astype(np.float32)
+    return picture - cv2.GaussianBlur(picture, (0, 0), DETAIL_BLUR)
 
 
 def _upright(scan: np.ndarray, stock: np.ndarray) -> np.ndarray:

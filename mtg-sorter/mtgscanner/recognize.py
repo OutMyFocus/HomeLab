@@ -6,8 +6,8 @@ import cv2
 import numpy as np
 
 from . import config, printings
-from .database import Card, Hit, Matcher
-from .vision import (SIDES_GOOD_FIT, boost_contrast, fill_outlines, find_scored_candidates, fingerprint, grow,
+from .database import Card, Hit, Matcher, _name_key
+from .vision import (ART_BOX, SIDES_GOOD_FIT, boost_contrast, fill_outlines, find_scored_candidates, fingerprint, grow,
                      tame_glare, warp_card)
 
 GOOD_ENOUGH = 40   # a match this close is certain: stop trying other outlines
@@ -27,6 +27,7 @@ class Match:
     candidates: list[tuple[Card, int]] = field(default_factory=list)   # other possible cards, closest first
     lookalikes: tuple[str, ...] = ()    # ids of the printings the fingerprint can't tell apart (this card among them)
     printing_lead: float = 0.0          # how clearly their details chose this one (0: the fingerprint chose)
+    verified: float = 0.0               # how alike its art is to the stock picture's, when that made it sure (verify)
 
 
 def confidence_of(distance: int, margin: int) -> str | None:
@@ -318,9 +319,12 @@ def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray], refin
             # toward a plain card), so the nudged outline only counts when it's sure.
             if again.distance < hit.distance and confidence_of(again.distance, again.margin) == "sure":
                 corners, hit = better, again
+    closest = corners
     if hit.distance > config.MAX_MATCH_DISTANCE:
         corners = outlines[0]       # nothing matched, so the "best" outline means little: keep the card's main one
     match = _match(matcher, corners, hit)
+    if printing and match.confidence != "sure":
+        _verify(matcher, frame, closest, match, wait)
     if match.card is not None and match.confidence != "sure" and _sticks_out(corners, frame.shape):
         # The part outside the picture comes out black, which looks a little like any
         # dark or plain card: an outline that leaves the picture has to be sure, or it's
@@ -332,6 +336,66 @@ def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray], refin
 
 
 PRINTING_NUDGE_OVER = 20    # a match further than this has its outline nudged before choosing its printing
+
+
+# Not sure by the fingerprint (a foil's sheen, a thumb, glare, a dim bed): the closest
+# cards' art is then laid over the scan's (printings.align) and compared pixel by pixel.
+# On 377 test pictures the right card's art scored 0.96 (median) and no wrong card's above
+# 0.69; so a card whose art scores this high, well ahead of the others, is sure.
+VERIFY_MOST = 3          # the closest cards (different names) compared
+VERIFY_SURE = 0.8        # art this alike to the stock picture's (-1 to 1)...
+VERIFY_LEAD = 0.2        # ...and this far ahead of the next card's makes the card sure
+VERIFY_GLARE = 245       # pixels this bright in the scan (glare) are left out
+
+
+def art_likeness(card_bgr: np.ndarray, stock: np.ndarray) -> float:
+    """How alike a straightened card's art is to a prepared stock picture's (-1 to 1),
+    after laying it exactly over it, either way up."""
+    best = -1.0
+    x0, y0, x1, y1 = ART_BOX
+    for img in (card_bgr, cv2.rotate(card_bgr, cv2.ROTATE_180)):
+        scan = printings.align(printings.prepare(img), stock)
+        h, w = scan.shape[:2]
+        box = (slice(int(y0 * h), int(y1 * h)), slice(int(x0 * w), int(x1 * w)))
+        a, b = scan[box].astype(np.float32), stock[box].astype(np.float32)
+        keep = a < VERIFY_GLARE
+        if keep.sum() < 0.5 * keep.size:
+            continue        # more glare than art
+        a, b = a[keep] - a[keep].mean(), b[keep] - b[keep].mean()
+        best = max(best, float(a @ b) / (float(np.linalg.norm(a) * np.linalg.norm(b)) + 1e-6))
+    return best
+
+
+def _verify(matcher: Matcher, frame, corners, match: Match, wait: float):
+    """Make a match that isn't sure sure (or a near miss a match), when the art of one of
+    the closest cards is clearly the scan's: see VERIFY_SURE. Changes match in place."""
+    if matcher.pictures is None:
+        return
+    options = ([(match.card, match.distance)] if match.card is not None else []) + list(match.candidates)
+    seen, cards = set(), []
+    for card, distance in options:
+        if card is not None and _name_key(card.name) not in seen and distance <= config.CANDIDATE_DISTANCE:
+            seen.add(_name_key(card.name))
+            cards.append(card)
+    cards = cards[:VERIFY_MOST]
+    if not cards:
+        return
+    try:
+        stock = matcher.pictures.get_all([c.id for c in cards], wait)
+        img = warp_card(frame, corners)
+        scores = sorted(((art_likeness(img, stock[c.id]), c) for c in cards if c.id in stock),
+                        key=lambda t: -t[0])
+    except Exception as e:      # never let this stop a card being read
+        print(f"Art check skipped after an error: {e!r}")
+        return
+    if len(scores) < len(cards) or not scores:
+        return          # a picture missing: can't say it's ahead of that one
+    score, card = scores[0]
+    runner_up = scores[1][0] if len(scores) > 1 else 0.0
+    if score >= VERIFY_SURE and score - runner_up >= VERIFY_LEAD:
+        if match.card is None or match.card.id != card.id:
+            match.candidates = [(c, d) for c, d in options if c is not None and c.id != card.id]
+        match.card, match.corners, match.confidence, match.verified = card, corners, "sure", score
 
 
 def _choose_printing(matcher: Matcher, frame, match: Match, wait: float):
