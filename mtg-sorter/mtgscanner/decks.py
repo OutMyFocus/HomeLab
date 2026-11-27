@@ -134,8 +134,11 @@ def check(text: str, rows: list[dict], matcher, vault=None, live=None) -> dict:
             "missing": missing, "found": found or basic, "image": image, "extra": extra, "basic": basic,
             "price": price if missing else None,
             "cost": round(price * missing, 2) if missing and price is not None else None,
-            "where": [{"set": i["set"], "number": i["number"], "foil": i["foil"], "qty": i["qty"],
-                       "bin": i["bin"], "sorted_into": i["sorted_into"]} for i in mine],
+            "where": [{"set": i["set"], "number": i["number"], "foil": i["foil"], "proxy": i["proxy"],
+                       "qty": i["qty"], "bin": i["bin"], "sorted_into": i["sorted_into"]} for i in mine],
+            # How many of the copies used are proxies: they fill the deck, but aren't the real card
+            # (the real copies are used first).
+            "proxies": 0 if basic else max(0, have - sum(i["qty"] for i in mine if not i["proxy"])),
         })
     counted = [x for x in lines if not x["extra"]]
     need = sum(x["need"] for x in counted)
@@ -149,6 +152,7 @@ def check(text: str, rows: list[dict], matcher, vault=None, live=None) -> dict:
         "unpriced": sum(x["missing"] for x in counted if x["missing"] and x["cost"] is None),
         "unknown": [x["asked"] for x in counted if not x["found"]],
         "percent": round(100 * have / need) if need else 0,
+        "proxies": sum(x["proxies"] for x in counted),
     }
 
 

@@ -12,7 +12,7 @@ from flask import Response, jsonify, request, send_from_directory
 
 from . import accounts, config
 from .collection import COLLECTION_LOCK
-from .library import export, holdings, qty, read_rows, write_rows
+from .library import export, holdings, qty, read_rows, row_proxy, write_rows
 from .vault import SCANNED
 
 GAP = timedelta(minutes=30)
@@ -26,6 +26,8 @@ def _when(row) -> datetime | None:
 
 
 def _price(row) -> float:
+    if row_proxy(row):   # a proxy adds nothing to a session's value
+        return 0.0
     try:
         return float(row.get("Price CAD") or 0)
     except ValueError:

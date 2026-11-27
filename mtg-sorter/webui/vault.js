@@ -98,13 +98,17 @@ window.VAULT = (() => {
   // ---------- your cards and decks ----------
   async function loadOwned() {
     const js = await api("/api/collection");
-    S.items = js.cards || []; S.owned = new Map(); S.copies = new Map();
+    S.items = js.cards || []; S.owned = new Map(); S.real = new Map(); S.copies = new Map();
     for (const it of S.items) {
-      for (const k of new Set([norm(it.name), front(norm(it.name))])) { S.owned.set(k, (S.owned.get(k) || 0) + it.qty); if (!S.copies.has(k)) S.copies.set(k, []); S.copies.get(k).push(it); }
+      for (const k of new Set([norm(it.name), front(norm(it.name))])) {
+        S.owned.set(k, (S.owned.get(k) || 0) + it.qty); if (!S.copies.has(k)) S.copies.set(k, []); S.copies.get(k).push(it);
+        if (!it.proxy) S.real.set(k, (S.real.get(k) || 0) + it.qty);   // the real cards, without proxies
+      }
     }
     return S.items;
   }
   const ownedQty = name => { const k = norm(name); return S.owned.get(k) || S.owned.get(front(k)) || 0; };
+  const realQty = name => { const k = norm(name); return (S.real || new Map()).get(k) || (S.real || new Map()).get(front(k)) || 0; };
   const copiesOf = name => { const k = norm(name); return S.copies.get(k) || S.copies.get(front(k)) || []; };
 
   // A decklist's text as {commander, partner, list: [[name, qty]], side}. The Commander
@@ -311,5 +315,5 @@ window.VAULT = (() => {
     return { count, own, cost, value, need };
   }
 
-  return { S, norm, BASICS, STORES, cad, loadCards, lookup, loadPrices, caRec, priceInfo, priceOf, money, trend, storeTable, loadOwned, ownedQty, copiesOf, parseDeck, deckToText, editDeckText, cmds, cmdCI, loadDecks, deckIndex, TYPES, typeOf, isCommander, pips, mana, ROLES, ROLEF, deckChecks, constructedChecks, deckStats };
+  return { S, norm, BASICS, STORES, cad, loadCards, lookup, loadPrices, caRec, priceInfo, priceOf, money, trend, storeTable, loadOwned, ownedQty, realQty, copiesOf, parseDeck, deckToText, editDeckText, cmds, cmdCI, loadDecks, deckIndex, TYPES, typeOf, isCommander, pips, mana, ROLES, ROLEF, deckChecks, constructedChecks, deckStats };
 })();
