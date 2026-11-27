@@ -55,7 +55,7 @@
       const n = items.reduce((s, x) => s + x[1], 0);
       const title = k === "Unknown" ? (S.cards ? "Not found" : "Cards") : k + (k === "Sorcery" ? " cards" : k === "Other" ? "" : "s");
       return `<div class="panel group"><header><h3>${title}</h3><span class="sub">${n}</span></header><ul>${items.map(([nm, q, c]) => {
-        // basic lands always count as owned; PRX: covered by proxies (the deck's "Complete with proxies", or proxies you marked in the collection)
+        // PRX: covered by proxies (the deck's "Complete with proxies", or proxies you marked in the collection)
         const basic = V.BASICS.has(norm(nm)), have = basic ? q : V.ownedQty(nm), ok = deck.proxied || have >= q, proxy = ok && !basic && V.realQty(nm) < q;
         return `<li class="${bad.has(norm(c ? c.n : nm)) || bad.has(norm(nm)) ? "bad" : ""}"><span class="own ${proxy ? "p" : ok ? "y" : "n"}" title="${proxy ? "Proxy" : ok ? "Owned" : "Not owned"}">${proxy ? "PRX" : ok ? "OWN" : "BUY"}</span>
           <span>${q > 1 ? `${q}x ` : ""}<a class="cardlink" href="/cards?card=${encodeURIComponent(nm)}">${esc(nm)}</a>${c && c.gc ? ' <span class="badge warn">GC</span>' : ""}</span>
