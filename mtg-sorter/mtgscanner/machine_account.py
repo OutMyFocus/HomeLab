@@ -184,10 +184,10 @@ def install(app):
             abort(make_response(jsonify({"error": "Only an admin can choose whose account the machine "
                                                   "scans into.", "forbidden": True}), 403))
         body = request.get_json(silent=True) or {}
-        try:
-            pick(body.get("user"))
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+        user = clean(body.get("user"))
+        if user and not accounts.get(user):
+            return jsonify({"error": "There's no account with that username."}), 400
+        pick(user)
         from . import pi_sync
         pi_sync.poke()    # tell the Pi now, not at the next ask
         return jsonify(state())
