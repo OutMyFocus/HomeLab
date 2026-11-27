@@ -208,6 +208,7 @@ class Scanner:
         self._ids = itertools.count(1)
         self._table = 0   # goes up each time the tracks are forgotten (see process)
         self.foil = False
+        self.proxy = False  # every card saved is marked a proxy (scanning a proxy deck)
         self.auto = False
         self.mode = "auto"  # "auto": cards anywhere in the picture; "slots": only in the boxes you drew
         self.slots: list[
@@ -856,13 +857,14 @@ class Scanner:
         path = self.collection()
         bin_no, bin_label = choose_bin(card, foil, self.vault, self.live, path)
         price = card_price(card, foil, self.vault, self.live)
-        scanned_at = add_card(path, card, foil, bin_label, price, self.owner)
+        scanned_at = add_card(path, card, foil, bin_label, price, self.owner, proxy=self.proxy)
         with accounts.acting_as(self.account):   # their own alerts and wishlist
-            special = self._special(card, price[0])
+            special = not self.proxy and self._special(card, price[0])
         self._light("valuable" if special else "saved")
         self.session.append(
             card_info(card, foil, self.vault, live=self.live)
             | {
+                "proxy": self.proxy,
                 "time": time.strftime("%H:%M:%S"),
                 "scanned_at": scanned_at,
                 "track": track.id if track else None,
@@ -960,7 +962,7 @@ class Scanner:
         with self.lock:
             totals = {
                 "count": len(self.session),
-                "value": round(sum(c["price"] or 0 for c in self.session), 2),
+                "value": round(sum(c["price"] or 0 for c in self.session if not c.get("proxy")), 2),
                 "bins": {},
             }
             for c in self.session:
@@ -1020,6 +1022,7 @@ class Scanner:
                     for t in visible
                 ],
                 "foil": self.foil,
+                "proxy": self.proxy,
                 "auto": self.auto,
                 "mode": self.mode,
                 "slots": self.slots,
@@ -1303,7 +1306,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         sc = acting()
         remember = sc is scanner   # a phone's choices last as long as its page does
         with sc.lock:
-            for key in ("foil", "auto", "collect", "learn"):
+            for key in ("foil", "proxy", "auto", "collect", "learn"):
                 if key in body:
                     setattr(sc, key, bool(body[key]))
             if "collect" in body and not sc.collect:

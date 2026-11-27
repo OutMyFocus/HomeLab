@@ -331,6 +331,9 @@ main, .wrap { animation: page-in .35s var(--ease); }
 
 .controls { display: flex; flex-direction: column; gap: 10px; margin-top: auto; }
 .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.toggles .wide { grid-column: 1 / -1; }
+.proxy-tag { margin-left: 8px; font-size: .7rem; font-weight: 700; letter-spacing: .04em; color: var(--warn, #b7791f);
+  background: color-mix(in oklab, var(--warn, #b7791f) 16%, transparent); border-radius: 999px; padding: 1px 7px; }
 .sorter { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .sorter .btn.start { font-size: 1.1em; padding: 16px; }
 .sorter .btn.start.running { background: #c8342b; }

@@ -11,7 +11,7 @@ from flask import jsonify, request, send_from_directory
 
 from . import accounts, config
 from .decks import name_key
-from .library import holdings, read_rows, row_foil, qty
+from .library import holdings, read_rows, row_foil, row_proxy, qty
 from .sorting import card_price
 
 PLAYSET = 4  # copies most players keep of a card; the rest are spares
@@ -25,9 +25,12 @@ def number_key(number: str):
 
 
 def owned_by_set(rows: list[dict]) -> dict[str, dict[str, dict]]:
-    """{SET: {collector number: {"qty": n, "foil": n}}} from the collection rows."""
+    """{SET: {collector number: {"qty": n, "foil": n}}} from the collection rows. Proxies
+    don't count: a set is only done with the real cards."""
     out: dict[str, dict[str, dict]] = {}
     for r in rows:
+        if row_proxy(r):
+            continue
         code = (r.get("Set code") or "").strip().upper()
         number = (r.get("Collector number") or "").strip()
         if not code or not number:
@@ -90,9 +93,12 @@ def set_detail(matcher, code: str, rows: list[dict], vault=None, live=None) -> d
 
 def spares(items: list[dict], keep: int = PLAYSET, lands: bool = False) -> list[dict]:
     """Cards you have more than `keep` copies of (any printing counts toward the copies
-    you keep), most valuable spares first. Basic lands are left out unless asked."""
+    you keep), most valuable spares first. Basic lands are left out unless asked.
+    Proxies aren't spares: nobody trades for one."""
     by_name: dict[str, list[dict]] = {}
     for it in items:
+        if it.get("proxy"):
+            continue
         by_name.setdefault(name_key(it["name"]), []).append(it)
     out = []
     for key, group in by_name.items():

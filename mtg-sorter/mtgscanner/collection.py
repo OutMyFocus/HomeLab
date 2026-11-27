@@ -19,7 +19,9 @@ from .database import Card
 COLUMNS = ["Name", "Quantity", "Set code", "Set name", "Collector number", "Foil", "Rarity",
            "Scryfall ID", "Price CAD", "Price source", "Bin", "Scanned at", "Source",
            # Filled in on the Collection page (blank: near mint, English, price not known, no tags)
-           "Condition", "Language", "Purchase price", "Tags"]
+           "Condition", "Language", "Purchase price", "Tags",
+           # "yes" for a proxy (a printed copy, not the real card): kept, but worth nothing
+           "Proxy"]
 # The columns the scanner fills in itself, in order (add_card writes these, the rest blank).
 SCANNED_COLUMNS = COLUMNS[:13]
 
@@ -147,10 +149,11 @@ def remove_entry(path: Path, card_id: str, scanned_at: str) -> bool:
 
 
 def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[float | None, str],
-             origin: str = "") -> str:
+             origin: str = "", proxy: bool = False) -> str:
     """price is (CAD price, source), as returned by sorting.card_price(). `origin` goes in
     the Source column: who the card came from (a name typed on a phone; blank for the
-    machine). Returns the time it was saved, which remove_entry() uses to find it again."""
+    machine). proxy: it's a proxy, not the real card (the Proxy column says yes).
+    Returns the time it was saved, which remove_entry() uses to find it again."""
     with COLLECTION_LOCK:
         path.parent.mkdir(parents=True, exist_ok=True)
         ensure_columns(path)
@@ -175,5 +178,5 @@ def add_card(path: Path, card: Card, foil: bool, bin_label: str, price: tuple[fl
                 bin_label,
                 scanned_at,
                 origin,
-            ] + [""] * (len(COLUMNS) - len(SCANNED_COLUMNS)))
+            ] + ["yes" if proxy and c == "Proxy" else "" for c in COLUMNS[len(SCANNED_COLUMNS):]])
     return scanned_at
