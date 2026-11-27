@@ -541,12 +541,15 @@ class SortRun:
                 saved = self.scanner.session[-1] if self.scanner.session else {}
                 if saved.get("track") != track.id:
                     saved = {}
+                # A proxy (the scanner's Proxy switch) is worth nothing and never a wanted card
+                proxy = bool(saved.get("proxy"))
                 # this run's rules (and wanted copies left), not the bin the scan was saved with
-                wanted = sort_rules.wanted_for(shown, rules, self.taken)
+                wanted = None if proxy else sort_rules.wanted_for(shown, rules, self.taken)
                 key = sort_rules.name_key(shown.name)
                 self.seen[key] = self.seen.get(key, 0) + 1
                 copy = self.owned.get(key, 0) + self.seen[key]
-                bin_no, label = sort_rules.pick(shown, foil, saved.get("price"), rules, self.taken, copy,
+                bin_no, label = sort_rules.pick(shown, foil, 0.0 if proxy else saved.get("price"),
+                                                {**rules, "wanted": {}} if proxy else rules, self.taken, copy,
                                                 getattr(self.scanner, "live", None))
                 if wanted:
                     self.taken[wanted] = self.taken.get(wanted, 0) + 1
