@@ -707,6 +707,7 @@
   // ---------- rotate and crop the machine camera's picture (kept on the scanner) ----------
   function renderView(s) {
     const machineCam = !!s.camera && !s.camera.browser, v = s.view || {};
+    $("scanForWrap").hidden = !machineCam;   // whose account the machine scans into
     if (!machineCam) cropping = false;
     $("rotateBtn").hidden = $("cropBtn").hidden = !machineCam;
     $("uncropBtn").hidden = !machineCam || !v.crop || cropping;
@@ -1167,6 +1168,7 @@
 
   buildControls();
   applyLook();
+  if (window.scanFor) scanFor($("scanForRow"), $("scanFor"), { toast });
   // Other pages link straight to a tab (/scan#photos) or to the look (/scan?customize).
   if (/^#(photos|train)$/.test(location.hash)) showTab(location.hash.slice(1));
   if (new URLSearchParams(location.search).has("customize")) setDrawer(true);

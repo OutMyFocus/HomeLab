@@ -492,6 +492,12 @@
                   <svg><use href="#i-proxy" /></svg>Proxies <kbd>X</kbd>
                 </button>
               </div>
+              <div id="scanForWrap" hidden>
+                <label class="scan-for" id="scanForRow" hidden>
+                  <span>Cards go into</span>
+                  <select id="scanFor" aria-label="Whose account the machine scans into"></select>
+                </label>
+              </div>
               <button class="collect" id="collectBtn" aria-pressed="false">
                 <span class="rec"></span>
                 <span class="collect-text"
@@ -815,6 +821,7 @@
     <div id="toastLive" class="sr-only" role="status" aria-live="polite"></div>
     <script src="/static/chime.js"></script>
     <script src="/static/montreal.js"></script>
+    <script src="/static/scan_for.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>

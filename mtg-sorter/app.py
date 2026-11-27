@@ -42,7 +42,7 @@ from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect, fingerprint_distance
 from mtgscanner.vision import fill_outlines, fingerprint, warp_card
 from mtgscanner.exchange import load_rate
-from mtgscanner import accounts, assets, logins, pi_sync, security, sort_rules, wishlist
+from mtgscanner import accounts, assets, logins, machine_account, pi_sync, security, sort_rules, wishlist
 from mtgscanner.decks import name_key
 from mtgscanner.history import add_history_routes
 from mtgscanner.home import add_home_routes
@@ -1136,6 +1136,9 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     # On the server, MTG_MACHINE_URL points at the sorter's Pi, which does the moving.
     machine = machine or (RemoteMachine(remote_url()) if remote_url() else Machine())
     scanner.lights = lights or scanner.lights or make_lights()
+    machine_account.install(app)  # whose account the machine scans into
+    machine_account.listeners[:] = [lambda user: setattr(scanner, "account", user)]
+    scanner.account = machine_account.picked() or scanner.account
     pi_sync.install(app)  # the Pi follows the server: its cards copied there, its pages sent there
     assets.install(app, WEB)  # versioned script and style links, so caches never mix old and new
     logins.install(app, WEB)  # user accounts, once they're on: logging in, and who may do what
@@ -1222,7 +1225,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         if sc is scanner:
             if not accounts.can("machine"):
                 refuse("The machine is for people with the machine permission: pick This device's camera")
-            sc.account = me
+            sc.account = machine_account.for_machine(me)   # the account picked for the machine
         elif sc.account != me and not accounts.can("admin"):
             refuse("That's someone else's scanner")
         return sc

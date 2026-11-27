@@ -195,6 +195,10 @@
       can't read in time, stays on the bed with the pins up until you choose Look again, Unread bin (not saved,
       dropped into the fallback bin) or Stop. If the scanner reads it meanwhile, it carries on by itself. Keep your
       hands out while it runs.</p>
+    <div class="row" id="scanForRow" hidden>
+      <label class="inline">Cards go into <select id="scanFor" aria-label="Whose account the machine scans into"></select></label>
+      <span class="sub" id="scanForNote"></span>
+    </div>
     <div class="row">
       <label class="inline">Cards <input type="number" id="sortMax" min="0" max="1000" value="0" title="0 = until the hopper is empty"></label>
       <button class="btn primary" id="sortStart">Start sorting</button>
@@ -245,6 +249,7 @@
 <!-- what the toast says, read out by screen readers (never shown) -->
 <div id="toastLive" class="sr-only" role="status" aria-live="polite"></div>
 
+<script src="/static/scan_for.js"></script>
 <script>
 const NAMES = { pins: "Stop pins", chute: "Chute tilt", door_r: "Right trapdoor", door_l: "Left trapdoor",
                 stop: "Stop bar", push1: "Level 1 pusher", door_f: "Front trapdoor", door_b: "Back trapdoor",
@@ -544,6 +549,7 @@ function showSort(d) {
   if (d.running && !sortTimer) sortTimer = setInterval(async () => showSort(await tuneApi("/api/machine/sort")), 2000);
   if (!d.running && sortTimer) { clearInterval(sortTimer); sortTimer = null; }
 }
+scanFor($("scanForRow"), $("scanFor"), { note: $("scanForNote"), toast });
 $("sortStart").onclick = async () => showSort(await tuneApi("/api/machine/sort", { max_cards: +$("sortMax").value, speed: +$("feedSpeed").value }));
 $("sortStop").onclick = async () => showSort(await tuneApi("/api/machine/sort/stop", {}));
 for (const b of document.querySelectorAll("[data-decide]"))
