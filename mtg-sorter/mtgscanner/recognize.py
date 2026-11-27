@@ -255,7 +255,8 @@ def _nudge(corners: np.ndarray, side: int, share: float) -> np.ndarray:
     return moved
 
 
-def refine_outline(matcher: Matcher, frame, corners: np.ndarray, card_id: str) -> np.ndarray | None:
+def refine_outline(matcher: Matcher, frame, corners: np.ndarray, card_id: str,
+                   steps=REFINE_STEPS) -> np.ndarray | None:
     """The outline moved to where it reads closest to one card (None: no closer than it is)."""
     def distance(c) -> int | None:
         return matcher.distance_to(card_id, fingerprint(warp_card(frame, c)))
@@ -267,7 +268,7 @@ def refine_outline(matcher: Matcher, frame, corners: np.ndarray, card_id: str) -
     other = distance(turned)
     best, at = (other, turned) if other < start else (start, corners)
     first = min(start, other)
-    for step in REFINE_STEPS:
+    for step in steps:
         for side in range(4):
             tries = [(distance(c), c) for c in (_nudge(at, side, step), _nudge(at, side, -step))]
             d, c = min(tries, key=lambda t: t[0])
@@ -335,16 +336,19 @@ def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray], refin
     return match
 
 
+PRINTING_NUDGE_STEPS = (0.03, 0.01)   # fewer, coarser nudges than refine_outline's: the printing check lines the details up itself
 PRINTING_NUDGE_OVER = 20    # a match further than this has its outline nudged before choosing its printing
 
 
 # Not sure by the fingerprint (a foil's sheen, a thumb, glare, a dim bed): the closest
-# cards' art is then laid over the scan's (printings.align) and compared pixel by pixel.
-# On 377 test pictures the right card's art scored 0.96 (median) and no wrong card's above
-# 0.69; so a card whose art scores this high, well ahead of the others, is sure.
+# cards' art is then laid over the scan's (printings.align) and its fine detail compared
+# pixel by pixel. On 377 test pictures the right card's art scored 0.98 (median) and no
+# wrong card's above 0.50; so a card whose art scores this high, well ahead of the
+# others, is sure. (Plain grey levels were tried first: a smooth patch of sky matched
+# any smooth art well enough, so a patch of an art print read as a card.)
 VERIFY_MOST = 3          # the closest cards (different names) compared
 VERIFY_SURE = 0.8        # art this alike to the stock picture's (-1 to 1)...
-VERIFY_LEAD = 0.2        # ...and this far ahead of the next card's makes the card sure
+VERIFY_LEAD = 0.3        # ...and this far ahead of the next card's makes the card sure
 VERIFY_GLARE = 245       # pixels this bright in the scan (glare) are left out
 
 
@@ -357,8 +361,8 @@ def art_likeness(card_bgr: np.ndarray, stock: np.ndarray) -> float:
         scan = printings.align(printings.prepare(img), stock)
         h, w = scan.shape[:2]
         box = (slice(int(y0 * h), int(y1 * h)), slice(int(x0 * w), int(x1 * w)))
-        a, b = scan[box].astype(np.float32), stock[box].astype(np.float32)
-        keep = a < VERIFY_GLARE
+        a, b = printings._detail(scan)[box], printings._detail(stock)[box]
+        keep = scan[box] < VERIFY_GLARE
         if keep.sum() < 0.5 * keep.size:
             continue        # more glare than art
         a, b = a[keep] - a[keep].mean(), b[keep] - b[keep].mean()
@@ -407,7 +411,7 @@ def _choose_printing(matcher: Matcher, frame, match: Match, wait: float):
         # Not a close read: the outline is likely a little off, which hides the small
         # details that tell printings apart, and can leave the right printing out of the
         # look-alikes altogether. Lay it onto the card first.
-        better = refine_outline(matcher, frame, corners, match.card.id)
+        better = refine_outline(matcher, frame, corners, match.card.id, PRINTING_NUDGE_STEPS)
         if better is not None:
             corners = better
     card_img = warp_card(frame, corners)
