@@ -37,7 +37,7 @@ from urllib.parse import urlsplit
 import requests
 from flask import jsonify, redirect, request
 
-from . import accounts, config
+from . import accounts, config, machine_account
 from .collection import COLLECTION_LOCK, COLUMNS, append_rows, read_text
 from .remote_machine import KEY_HEADER, remote_url
 
@@ -113,6 +113,7 @@ def saved_since(after: str | None, limit: int = MAX_ROWS) -> dict:
     oldest first. Cards saved in the same second are told apart by `n`, their place in that
     second. A cut at `limit` never splits a second, so the next ask can start at the last one."""
     rows = []
+    picks = machine_account.changes()   # whose account the server had the machine scan into, when
     with COLLECTION_LOCK:
         for user, path in _collections():
             if not path.exists():
@@ -124,7 +125,8 @@ def saved_since(after: str | None, limit: int = MAX_ROWS) -> dict:
                     continue
                 same = (row.get("Scryfall ID", ""), row.get("Foil", ""), at)
                 counts[same] = counts.get(same, 0) + 1
-                rows.append({k: row.get(k, "") or "" for k in COLUMNS} | {"user": user, "n": counts[same]})
+                rows.append({k: row.get(k, "") or "" for k in COLUMNS} | {"user": user, "n": counts[same]}
+                            | ({"for": machine_account.meant_for(at, picks)} if not user and picks else {}))
     rows.sort(key=lambda r: r["Scanned at"])
     more = False
     if len(rows) > limit:
@@ -231,12 +233,14 @@ class PiSync:
         self.error: str | None = None
         self.last_try: float | None = None
         self._stop = threading.Event()
+        self._wake = threading.Event()
 
     def _ask(self, after: str | None) -> dict:
         headers = {KEY_HEADER: self.key} if self.key else {}
         site = public_url()
         if site:
             headers[SITE_HEADER] = site
+        headers[machine_account.HEADER] = machine_account.header_value()
         params = {"after": after} if after else {"start": "1"}
         try:
             r = self.http.get(self.url + "/api/machine/saved", params=params, headers=headers, timeout=(2, 20))
@@ -256,8 +260,12 @@ class PiSync:
         return data
 
     @staticmethod
-    def _target(user: str):
-        """Where a Pi account's cards go here: the same username if it exists, else the owner."""
+    def _target(user: str, meant_for: str = ""):
+        """Where a Pi account's cards go here: the account the machine was scanning into when
+        the Pi saved it (machine_account.py), else the same username if it exists, else the
+        owner."""
+        if meant_for and accounts.enabled() and accounts.get(meant_for):
+            return accounts.collection_csv(meant_for)
         if user and accounts.enabled() and accounts.get(user):
             return accounts.collection_csv(user)
         return accounts.collection_csv(accounts.owner() if accounts.enabled() else None)
@@ -280,7 +288,7 @@ class PiSync:
             new = [r for r in data.get("rows") or [] if isinstance(r, dict) and r.get("key") not in done]
             by_file: dict = {}
             for r in new:
-                by_file.setdefault(self._target(str(r.get("user") or "")), []).append(
+                by_file.setdefault(self._target(str(r.get("user") or ""), str(r.get("for") or "")), []).append(
                     {k: str(r.get(k, "") or "") for k in COLUMNS})
             for path, rows in by_file.items():
                 append_rows(path, rows)
@@ -312,13 +320,19 @@ class PiSync:
                 self.error = None
             except Exception as e:   # the Pi being off mustn't stop the loop
                 self.error = str(e) or "Copying from the sorter's Pi failed"
-            self._stop.wait(SYNC_SECONDS)
+            self._wake.wait(SYNC_SECONDS)
+            self._wake.clear()
 
     def start(self):
         threading.Thread(target=self.loop, name="pi-sync", daemon=True).start()
 
     def stop(self):
         self._stop.set()
+        self._wake.set()
+
+    def poke(self):
+        """Ask the Pi now rather than at the next turn (the machine's account was changed)."""
+        self._wake.set()
 
     def state(self) -> dict:
         s = _read_json(state_file())
@@ -344,6 +358,12 @@ def sync_check() -> dict | None:
     state = "off" if s["error"].startswith("Can't reach") else "warn"   # the Pi being off is normal
     return check("pisync", "Cards from the sorter", state, "Not copying the sorter's cards right now: " + s["error"],
                  "Cards wait on the Pi and come over once it answers again.")
+
+
+def poke():
+    """The server: tell the Pi what changed (whose account the machine scans into) now."""
+    if _sync is not None:
+        _sync.poke()
 
 
 def start() -> PiSync | None:
@@ -375,6 +395,8 @@ def install(app):
             return jsonify({"error": "Only the sorter's Pi answers this."}), 404
         # past the login checks: the server (its machine key) says where people should go
         heard_from_server(request.headers.get(SITE_HEADER))
+        if machine_account.HEADER in request.headers:   # an older server doesn't say
+            machine_account.heard(request.headers.get(machine_account.HEADER))
         if request.args.get("start") == "1":   # the server's first ask: where the collection ends
             now = _now()
             ending = [r["key"] for r in saved_since(now)["rows"] if r["Scanned at"] == now]
