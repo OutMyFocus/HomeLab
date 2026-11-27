@@ -40,7 +40,7 @@ from mtgscanner.camera import BrowserSource, CameraSource, list_cameras  # noqa:
 from mtgscanner.captures import CaptureLog, true_card
 from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect, fingerprint_distance
-from mtgscanner.vision import fingerprint, warp_card
+from mtgscanner.vision import fill_outlines, fingerprint, warp_card
 from mtgscanner.exchange import load_rate
 from mtgscanner import accounts, assets, logins, pi_sync, security, sort_rules, wishlist
 from mtgscanner.decks import name_key
@@ -63,7 +63,8 @@ from mtgscanner.health import add_health_routes
 from mtgscanner.tuning import add_tuning_routes
 from mtgscanner.machine import Machine, add_machine_routes, home_at_startup
 from mtgscanner.remote_machine import RemoteCameraSource, RemoteLights, RemoteMachine, remote_url
-from mtgscanner.recognize import Match, find_card_in_slot, find_cards, identify_card, identify_outlines
+from mtgscanner.recognize import (Match, find_card_in_slot, find_cards, identify_card, identify_filled,
+                                  identify_outlines)
 from mtgscanner.sort_run import add_sort_run_routes
 from mtgscanner.sorting import card_price, choose_bin
 from mtgscanner.system import ON_PI, add_system_routes
@@ -176,6 +177,12 @@ class BedBox(list):
     no card there at all, so a bed box that doesn't match a card isn't kept as one."""
 
 
+class FilledFrame(BedBox):
+    """Where a card that fills the whole picture would be (vision.fill_outlines): a card
+    held close to the phone has no edge of its own in the picture. Only a sure read
+    counts as a card; anything less is dropped, as for the bed box."""
+
+
 def _smooth(old: float | None, new: float, weight: float = 0.2) -> float:
     """A running average that follows changes gently (for the speed readout)."""
     return new if old is None else old + weight * (new - old)
@@ -224,6 +231,7 @@ class Scanner:
         self._seen = None       # the last picture as the scanner sees it (rotated, cropped, straightened)
         self._bed_small = None  # the bed box, small and grey, on the last picture (_bed_still)
         self._bed_moved_at = 0.0
+        self._fill_tried = 0.0  # when a card filling the whole picture was last looked for (_filled_or)
         self._auto_straight = AutoStraighten()
         self._pending_straight = None  # a new straightening, put in between cards
         self.outline = (
@@ -383,6 +391,11 @@ class Scanner:
     def _screen(self, outlines, result):
         """A match the bare bed could have given (a bed lookalike, not sure, on the bed)
         is no card at all."""
+        if isinstance(outlines, FilledFrame) and result is not None and result.card is not None \
+                and result.confidence != "sure":
+            # The whole picture read as a card, but not surely: likely a table, a binder
+            # page or a hand. Not a card.
+            return Match(result.corners, None, result.distance, result.margin, None, result.candidates)
         if (result is None or result.card is None or result.confidence == "sure"
                 or not self.bed_box or self.frame_size is None):
             return result
@@ -515,19 +528,51 @@ class Scanner:
             # card and the ribs read as Precise Redaction there, ~2 s after each real card
             # (tower, 2026-11-09). The bed box only stands in for a card at rest.
             return cards
+        # A black-bordered card on the black bed: only the coloured frame inside its border
+        # stands out, a little under min_card on a smaller card. It's still where the card
+        # is (grown back to the card's size, see config.OUTLINE_FACTORS), so it's tried as
+        # one more outline of the card on the bed, never as a card of its own.
+        frames = [o for g in found if on_bed(g)
+                  and config.BED_FRAME_SHARE * least <= cv2.contourArea(np.asarray(g[0], np.float32)) < least
+                  for o in g[:1]]
         if cards:
             # A whole outline on a foil is often a little off (a corner pulled in by glare),
             # and the bed box is exactly where a card lies: try it as well, best match wins.
             # On the Pi's unread cards (2026-11-09) the bed box read 3 of 6 the outline missed.
-            return [[g[0], bed, *g[1:]] if on_bed(g) else g for g in cards]
+            return [[g[0], bed, *g[1:], *frames] if on_bed(g) else g for g in cards]
         if not any(on_bed(g) for g in found):
             return []
-        return [BedBox([bed])]
+        return [BedBox([*frames, bed])]
+
+    def _filled_or(self, cards, frame):
+        """The cards found, and a card filling the whole picture (FilledFrame): looked for
+        every config.FILL_TRY_SECONDS while no card in view reads (it's a few outlines
+        more to read, which a picture of a table mustn't pay for every time), and on every
+        picture while one is followed, in place of the pieces of it that show."""
+        with self.lock:
+            following = any(getattr(t, "filled", False) for t in self.tracks)
+            reading = any(t.card is not None for t in self.tracks)
+        now = time.monotonic()
+        if not following and (reading or now - self._fill_tried < config.FILL_TRY_SECONDS):
+            return cards
+        self._fill_tried = now
+        fills = fill_outlines(frame.shape)
+        if not following:
+            # Only a try: whatever else was found stays (an unknown card must keep being seen).
+            return [*cards, FilledFrame(fills)]
+        whole = cv2.contourArea(fills[0])
+        rect = fills[0]
+        # A card filling the picture is being followed: anything well inside it is a piece
+        # of it (its art, its text box), not a card of its own.
+        keep = [g for g in cards
+                if cv2.contourArea(np.asarray(g[0], np.float32)) >= config.FILL_PIECE * whole
+                or cv2.pointPolygonTest(rect, tuple(map(float, np.asarray(g[0], np.float32).mean(axis=0))), False) < 0]
+        return [*keep, FilledFrame(fills)]
 
     def _find(self, frame):
         """Every card in the picture: the outlines of each, and its slot number (None in Auto mode)."""
         if self.mode != "slots" or not self.slots:
-            cards = find_cards(frame) if self.min_card is None else self._whole_cards(frame)
+            cards = self._filled_or(find_cards(frame), frame) if self.min_card is None else self._whole_cards(frame)
             return cards, [None] * len(cards)
         found = [
             (find_card_in_slot(frame, slot), n) for n, slot in enumerate(self.slots, 1)
@@ -655,14 +700,16 @@ class Scanner:
         whole = {id(outlines): [t.corners, *outlines] for t, outlines, check in todo
                  if check and t.card is not None and not isinstance(outlines, BedBox)
                  and is_piece(outlines[0], t.corners)}
-        # The machine's scan bed ("Whole cards only") reads its cards the way it always
-        # has: nudged outlines and the look-alike printing check are for the phone and
-        # webcam, where they were measured.
+        # The machine's scan bed ("Whole cards only") gets no nudged outlines before a card
+        # reads (a plain rectangle there can be pulled toward a plain card), but it does get
+        # the look-alike printing check: measured on 500 bed pictures (2026-11-27) it picked
+        # the right printing 72% -> 85% of the time, and the printing is what the price is.
         careful = self.min_card is None
         found = (
             list(
                 self._pool.map(
-                    lambda o: identify_outlines(self.matcher, frame, whole.get(id(o), o), refine=careful), jobs
+                    lambda o: identify_outlines(self.matcher, frame, whole.get(id(o), o), refine=careful,
+                                                printing=True), jobs
                 )
             )
             if jobs
@@ -687,6 +734,7 @@ class Scanner:
                     self.finish_capture(t)
                     self.tracks.remove(t)
                     continue
+                t.filled = isinstance(outlines, FilledFrame)
                 self._update(t, outlines, result, frame)
             for outlines in new:
                 result = self._screen(outlines, next(results))
@@ -698,6 +746,7 @@ class Scanner:
                 t = Track(
                     next(self._ids), number or free_number(self.tracks), outlines[0]
                 )
+                t.filled = isinstance(outlines, FilledFrame)
                 self.tracks.append(t)
                 self._update(t, outlines, result, frame)
             for t in gone:
@@ -1674,6 +1723,11 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
                 for _, m in identify_card(scanner.matcher, frame, outlines, wait=FETCH_SECONDS)
             ]
             cards = [m for m in found if m.card]
+            if not cards:
+                # Nothing read: the card may fill the whole photo, edges and all.
+                filled = identify_filled(scanner.matcher, frame, wait=FETCH_SECONDS)
+                if filled is not None:
+                    found = cards = [filled]
             if not found:
                 results.append(
                     {"file": f.filename, "index": index, "error": "No card found in the photo"}

@@ -61,7 +61,9 @@ MAX_LEARNED_DISTANCE = 60
 # The detector's outline often lands a little inside or outside the card's real edge
 # (a sleeve adds a margin), and fingerprints are sensitive to that. Each outline is
 # tried scaled by these factors; the closest match wins.
-OUTLINE_FACTORS = (1.0, 1.04, 1.08)
+OUTLINE_FACTORS = (1.0, 1.04, 1.08, (1.105, 1.073))
+# The last one is the card around its coloured frame: a black border (3 mm of the card's
+# 63 x 88) lost against a black table or bed leaves only the frame inside it to outline.
 
 # How many camera frames in a row must agree on a card before we trust it (used by
 # scan.py; app.py needs fewer looks the surer the match is, see tracking.py).
@@ -109,6 +111,17 @@ MIN_CARD_AREA = 0.01
 # is 0.36-0.39 of the picture, its art box or half of it 0.18-0.26, the text box 0.04-0.12.
 # 0.8 of the card (about 0.30) skips every piece and keeps every whole card.
 MIN_CARD_FROM_BED = 0.8
+# On the bed, a card-shaped outline down to this share of min_card is the coloured frame
+# inside a black border lost against the bed (its 3 mm leave 84% of the card), not a
+# card's art box (under 72%). It's tried as an outline of the card, grown to its size.
+BED_FRAME_SHARE = 0.9
+
+# A card held so close to the phone that it fills the picture has no edge to find: where
+# it would lie (vision.fill_outlines) is tried this often while no card in view reads, and
+# only a sure read counts. Outlines inside that spot under FILL_PIECE of it are pieces of
+# the card (its art or text box), left out while it's tried.
+FILL_TRY_SECONDS = 0.5
+FILL_PIECE = 0.6
 
 # --- Slots mode (app.py) ---------------------------------------------------
 # Instead of looking for cards anywhere, the app can look only in boxes you draw on

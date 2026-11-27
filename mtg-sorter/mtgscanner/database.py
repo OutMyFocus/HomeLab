@@ -35,6 +35,13 @@ CREATE TABLE IF NOT EXISTS learned (
     added TEXT
 );
 
+-- The back face of a double-faced card (one that turns over, a modal one): its own
+-- fingerprint, so the card reads whichever face is up. Made by build_db.py.
+CREATE TABLE IF NOT EXISTS faces (
+    card_id TEXT PRIMARY KEY,     -- the card (cards.id) whose back this is
+    fingerprint BLOB NOT NULL
+);
+
 -- Printings picked by hand that aren't in the cards table (fetched from Scryfall with
 -- the "Other printing" picker). No fingerprint of their own; scans taught to them in the
 -- Train tab work like any other learned scan.
@@ -161,12 +168,15 @@ class Matcher:
         """Read the fingerprints again, e.g. after training or after build_db.py added cards."""
         with self._lock:
             rows = self.conn.execute("SELECT id, name, fingerprint FROM cards").fetchall()
+            backs = self.conn.execute(
+                "SELECT f.card_id, c.name, f.fingerprint FROM faces f JOIN cards c ON c.id = f.card_id").fetchall()
             learned = self.conn.execute(
                 "SELECT l.card_id, c.name, l.fingerprint FROM learned l JOIN "
                 "(SELECT id, name FROM cards UNION ALL SELECT id, name FROM extra_cards) c ON c.id = l.card_id").fetchall()
         # An empty database (a fresh install, before build_db.py or a restored backup) still
         # starts: every scan simply comes back as not recognized, and the Maintenance page says why.
-        rows += learned
+        cards = len(rows)
+        rows += backs + learned
         ids = [r[0] for r in rows]
         # Every card name gets a number, so "is this the same card?" is an integer compare.
         self._name_numbers: dict[str, int] = {}
@@ -174,11 +184,15 @@ class Matcher:
                             dtype=np.int32, count=len(rows))
         # Fingerprints as 64-bit numbers: comparing those is much faster.
         hashes = _split([bytes(r[2]) for r in rows])
-        self.card_count, self.learned_count = len(rows) - len(learned), len(learned)
+        self.card_count, self.learned_count, self.back_count = cards, len(learned), len(backs)
+        # The stock fingerprints (every card's front, then the backs) come first, then the learned ones.
+        self._stock = cards + len(backs)
         # Cards still on the whole-card-only fingerprint (built before the art one was added).
         self.old_count = int((~hashes[2][:self.card_count]).sum())
-        # Where each card's own (stock) fingerprint is in the table, for distance_to().
-        self._rows = {card_id: i for i, card_id in reversed(list(enumerate(ids[:self.card_count])))}
+        # Where each card's own (stock) fingerprint is in the table, for distance_to(), and
+        # its back's, for a double-faced card.
+        self._rows = {card_id: i for i, card_id in reversed(list(enumerate(ids[:cards])))}
+        self._backs = {card_id: cards + k for k, card_id in enumerate(ids[cards:self._stock])}
         self._table = ids, hashes, names   # swapped in one step, so a scan never sees half of it
 
     def add_learned(self, scan: str, card_id: str, fp: bytes):
@@ -216,18 +230,28 @@ class Matcher:
         # On a tie, the last one wins: learned scans come after the cards, and what
         # you taught it beats the stock picture.
         i = len(dists) - 1 - int(dists[::-1].argmin())
-        if i >= self.card_count and dists[i] > config.MAX_LEARNED_DISTANCE:
-            i = int(dists[:self.card_count].argmin())   # not close enough to trust: stock pictures only
+        if i >= self._stock and dists[i] > config.MAX_LEARNED_DISTANCE:
+            i = int(dists[:self._stock].argmin())   # not close enough to trust: stock pictures only
         return i
 
     def distance_to(self, card_id: str, fp: bytes) -> int | None:
-        """How far a fingerprint is from one card's stock picture (None: no such card).
-        Much cheaper than rank(), which compares with every card."""
+        """How far a fingerprint is from one card's stock picture (None: no such card),
+        either face of a double-faced card. Much cheaper than rank(), which compares
+        with every card."""
+        front, back = self.face_distances(card_id, fp)
+        return front if back is None or front is None else min(front, back)
+
+    def face_distances(self, card_id: str, fp: bytes) -> tuple[int | None, int | None]:
+        """How far a fingerprint is from a card's front and from its back (None: no such
+        card, or no back)."""
         ids, (whole, art, has_art), _ = self._table
-        i = self._rows.get(card_id)
-        if i is None or i >= len(ids) or ids[i] != card_id:
-            return None
-        return int(_distances((whole[i:i + 1], art[i:i + 1], has_art[i:i + 1]), fp)[0])
+        out = []
+        for i in (self._rows.get(card_id), self._backs.get(card_id)):
+            if i is None or i >= len(ids) or ids[i] != card_id:
+                out.append(None)
+            else:
+                out.append(int(_distances((whole[i:i + 1], art[i:i + 1], has_art[i:i + 1]), fp)[0]))
+        return out[0], out[1]
 
     def lookalikes(self, card_id: str, fp: bytes, window: int, most: int) -> list[tuple[str, int]]:
         """The printings of this card that the fingerprint can hardly tell apart from it:
@@ -237,12 +261,17 @@ class Matcher:
         i = self._rows.get(card_id)
         if i is None or i >= len(ids) or ids[i] != card_id:
             return []
-        same = np.flatnonzero(names[:self.card_count] == names[i])
-        if len(same) < 2:
-            return []
+        same = np.flatnonzero(names[:self._stock] == names[i])
         whole, art, has_art = hashes
         dists = _distances((whole[same], art[same], has_art[same]), fp)
-        close = [(int(d), ids[int(j)]) for d, j in zip(dists, same) if d <= int(dists.min()) + window]
+        nearest: dict[str, int] = {}     # each printing once, by its closer face
+        for d, j in zip(dists, same):
+            card = ids[int(j)]
+            nearest[card] = min(int(d), nearest.get(card, 10 ** 6))
+        if len(nearest) < 2:
+            return []
+        least = min(nearest.values())
+        close = [(d, card) for card, d in nearest.items() if d <= least + window]
         mine = next((d for d, other in close if other == card_id), None)
         if mine is None or len(close) < 2:
             return []

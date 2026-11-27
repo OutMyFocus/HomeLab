@@ -80,12 +80,52 @@ def test_build_adds_new_cards_upgrades_old_ones_and_refreshes_prices(tmp_path, m
               {**_scryfall_card(3), "digital": True}]          # digital-only cards are left out
     batches = []
     result = build_db.build(iter(source), path, progress=lambda s: None, on_batch=lambda: batches.append(1))
-    assert result == {"added": 1, "upgraded": 1, "refreshed": 2, "skipped": 0, "total": 3}
+    assert result == {"added": 1, "upgraded": 1, "refreshed": 2, "skipped": 0, "total": 3, "backs": 0}
     assert sorted(u.rsplit("/", 1)[1] for u in fetched) == ["1.jpg", "2.jpg"]
     conn = connect(path)
     rows = dict(conn.execute("SELECT id, length(fingerprint) FROM cards").fetchall())
     assert rows == {"id0": 64, "id1": 64, "id2": 64}
     assert conn.execute("SELECT price_usd FROM cards WHERE id = 'id0'").fetchone()[0] == 9.99
+
+
+def _double_faced(i: int) -> dict:
+    card = _scryfall_card(i)
+    del card["image_uris"]
+    card["name"] = f"Card {i} // Back {i}"
+    card["card_faces"] = [{"image_uris": {"small": f"https://cards.scryfall.io/small/{i}.jpg"}},
+                          {"image_uris": {"small": f"https://cards.scryfall.io/small/{i + 50}.jpg"}}]
+    return card
+
+
+def test_double_faced_cards_read_on_either_face(tmp_path, monkeypatch):
+    """A double-faced card's back gets its own fingerprint, so the card reads whichever
+    face is up; a database built before that gets the backs on its next build."""
+    path = tmp_path / "cards.db"
+    conn = connect(path)
+    _insert(conn, 4, fingerprint(fake_card(4)))   # in the database already, from before backs were read
+    conn.commit()
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        i = int(url.rsplit("/", 1)[1].split(".")[0])
+        return fingerprint(fake_card(i))
+
+    monkeypatch.setattr(build_db, "fetch_fingerprint", fake_fetch)
+    result = build_db.build(iter([_double_faced(3), {**_double_faced(4)}]), path, progress=lambda s: None)
+    assert result["added"] == 1 and result["backs"] == 2
+    assert sorted(u.rsplit("/", 1)[1] for u in fetched) == ["3.jpg", "53.jpg", "54.jpg"]
+    matcher = Matcher(connect(path))
+    assert matcher.card_count == 2 and matcher.back_count == 2
+    hit = matcher.rank(fingerprint(fake_card(53)))        # the back of card 3, face up
+    assert hit.id == "id3" and hit.distance == 0
+    front, back = matcher.face_distances("id3", fingerprint(fake_card(53)))
+    assert back == 0 and front > 0
+    assert matcher.distance_to("id3", fingerprint(fake_card(53))) == 0
+    # Built again: nothing more to fetch.
+    fetched.clear()
+    build_db.build(iter([_double_faced(3), _double_faced(4)]), path, progress=lambda s: None)
+    assert fetched == []
 
 
 def test_search_waits_out_too_many_requests(monkeypatch):

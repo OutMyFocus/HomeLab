@@ -39,6 +39,7 @@ DIFFER_SHARE = 10      # the percent of the card where the look-alikes differ mo
 DIFFER_LEAST = 8.0     # ...as long as they differ at least this much there (0-255 grey)
 DIFFER_PIXELS = 200    # fewer differing pixels than this: the pictures are the same, nothing to compare
 SHIFT, SHIFT_STEP = 6, 2    # the scan may be this many pixels off the stock picture, each way
+GLARE = 235            # scan pixels this bright (0-255 grey, softened) are glare, not detail
 # How much the fingerprint still counts: each bit further away costs a look-alike this
 # much of its likeness (0-1). Measured on 511 test photos of cards with look-alikes:
 # 0.015 picked the right printing in 93% (the fingerprint alone: 80%) and overruled a
@@ -223,7 +224,15 @@ def pick_printing(card_bgr: np.ndarray, lookalikes: list[tuple[str, int]],
     if int(differ.sum()) < DIFFER_PIXELS:
         return None
     ys, xs = np.nonzero(differ)
-    scan = prepare(card_bgr).astype(np.float32)
+    scan = align(prepare(card_bgr), stock[ids[0]]).astype(np.float32)
+    # Glare (a foil under the lights) is no detail of any printing: leave those pixels out.
+    clear = scan[ys, xs] < GLARE
+    if int(clear.sum()) >= DIFFER_PIXELS:
+        ys, xs = ys[clear], xs[clear]
+    # Only the fine detail is compared: a foil's rainbow sheen and uneven light shift whole
+    # areas lighter or darker, which isn't a difference between printings.
+    scan = _detail(scan)
+    plain, stack = stack, np.stack([_detail(p) for p in stack])
     # The scan's pixels for every small shift, each with its average taken off: the same
     # for every look-alike, so made once.
     shifted = []
@@ -242,12 +251,53 @@ def pick_printing(card_bgr: np.ndarray, lookalikes: list[tuple[str, int]],
     scores = []
     for k, card_id in enumerate(ids):
         likeness = like(stack[k])
-        own = [like(_upright(t, stack[k])) for t in (taught or {}).get(card_id, [])]
+        own = [like(_detail(_upright(t, plain[k]))) for t in (taught or {}).get(card_id, [])]
         if own and max(own) > likeness:
             likeness += TAUGHT_PULL * (max(own) - likeness)
         scores.append(likeness - BIT_COST * bits[card_id])
     order = np.argsort(scores)[::-1]
     return ids[int(order[0])], float(scores[order[0]] - scores[order[1]])
+
+
+# The outline the camera found is often a few pixels off the card's real edge, more than
+# SHIFT makes up for where it's also a touch too big or turned, and the details that tell
+# look-alike printings apart (the set symbol, the small print) are only a few pixels
+# across. So the scan is first laid exactly over the stock picture (OpenCV's ECC image
+# alignment, at half size). Only the look-alikes' shared look is used for that, so it
+# favours none of them.
+ALIGN_SCALE = 0.5
+ALIGN_STEPS = 40
+ALIGN_MOST_MOVE = 0.06     # an alignment that moves the card more than this share of it is ignored
+
+
+def align(scan: np.ndarray, stock: np.ndarray) -> np.ndarray:
+    """The prepared scan moved (shifted, turned, scaled, tilted a little) to lie exactly
+    over a prepared stock picture of the same size. The scan as it was when that fails."""
+    try:
+        small = [cv2.resize(p, None, fx=ALIGN_SCALE, fy=ALIGN_SCALE, interpolation=cv2.INTER_AREA).astype(np.float32)
+                 for p in (scan, stock)]
+        warp = np.eye(3, dtype=np.float32)
+        criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, ALIGN_STEPS, 1e-4)
+        _, warp = cv2.findTransformECC(small[1], small[0], warp, cv2.MOTION_HOMOGRAPHY, criteria, None, 3)
+    except cv2.error:
+        return scan
+    up = np.diag([1 / ALIGN_SCALE, 1 / ALIGN_SCALE, 1]).astype(np.float32)
+    warp = up @ warp @ np.linalg.inv(up)
+    h, w = scan.shape[:2]
+    box = np.array([[0, 0], [w, 0], [w, h], [0, h]], np.float32).reshape(-1, 1, 2)
+    moved = cv2.perspectiveTransform(box, warp).reshape(-1, 2)
+    if np.abs(moved - box.reshape(-1, 2)).max() > ALIGN_MOST_MOVE * h:
+        return scan
+    return cv2.warpPerspective(scan, warp, (w, h), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
+                               borderMode=cv2.BORDER_REPLICATE)
+
+
+DETAIL_BLUR = 6.0      # what changes over more than this many pixels is light, not detail
+
+
+def _detail(picture: np.ndarray) -> np.ndarray:
+    picture = picture.astype(np.float32)
+    return picture - cv2.GaussianBlur(picture, (0, 0), DETAIL_BLUR)
 
 
 def _upright(scan: np.ndarray, stock: np.ndarray) -> np.ndarray:

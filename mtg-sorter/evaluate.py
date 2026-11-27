@@ -56,7 +56,7 @@ def main():
     matcher = Matcher(connect(config.DB_PATH))
     if args.plain:     # learned fingerprints come after the cards
         ids, hashes, names = matcher._table
-        n = matcher.card_count
+        n = getattr(matcher, "_stock", matcher.card_count)   # the cards (and their backs), not what was learned
         matcher._table = ids[:n], tuple(h[:n] for h in hashes), names[:n]
         matcher.learned_count = 0
 

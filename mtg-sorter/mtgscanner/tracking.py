@@ -73,6 +73,7 @@ class Track:
     number: int                     # shown on the picture and in the list
     corners: np.ndarray
     card: Card | None = None        # the card shown for it, once recognized
+    filled: bool = False            # it fills the whole picture (app.FilledFrame): no edge of its own
     status: str = "recognizing"     # "recognizing", "locked", "unsure" or "unknown"
     distance: int | None = None
     margin: int | None = None

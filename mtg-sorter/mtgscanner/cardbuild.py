@@ -62,6 +62,7 @@ class CardBuild:
                                 + f"{result['total']:,} cards in the database"
                                 + (f", {result['added']:,} new" if result["added"] else "")
                                 + (f", {result['upgraded']:,} given the newer fingerprint" if result["upgraded"] else "")
+                                + (f", {result['backs']:,} double-faced backs" if result.get("backs") else "")
                                 + (f". {result['skipped']:,} pictures didn't download: press it again later to retry"
                                    if result["skipped"] else "") + ".")
         except Exception as e:   # no internet, Scryfall down, disk full: say so on the page

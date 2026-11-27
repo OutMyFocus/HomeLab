@@ -185,9 +185,10 @@ def test_another_card_still_replaces_the_one_before(db, monkeypatch, tmp_path):
     assert t.card.id == "other" and not t.saved
 
 
-def test_the_scan_bed_reads_cards_the_way_it_always_has(db, monkeypatch, tmp_path):
-    """"Whole cards only" (the machine's bed) gets no nudged outlines and no printing
-    check: those were measured on phone pictures only."""
+def test_the_scan_bed_gets_the_printing_check_but_no_nudging(db, monkeypatch, tmp_path):
+    """"Whole cards only" (the machine's bed) gets no nudged outlines before a card reads
+    (measured on phone pictures only), but it does get the printing check: the price
+    belongs to the printing."""
     import app as app_module
     from app import Scanner
     monkeypatch.setattr(app_module, "SETTINGS_FILE", tmp_path / "app_settings.json")
@@ -195,7 +196,8 @@ def test_the_scan_bed_reads_cards_the_way_it_always_has(db, monkeypatch, tmp_pat
     real = app_module.identify_outlines
 
     def spy(matcher, frame, outlines, refine=True, **kw):
-        asked.append(refine)
+        if not isinstance(outlines, app_module.FilledFrame):
+            asked.append((refine, kw.get("printing")))
         return real(matcher, frame, outlines, refine=refine, **kw)
     monkeypatch.setattr(app_module, "identify_outlines", spy)
     photo = photograph(printing(0))
@@ -204,7 +206,7 @@ def test_the_scan_bed_reads_cards_the_way_it_always_has(db, monkeypatch, tmp_pat
     bed = Scanner(db, None, source=None)
     bed.min_card = 0.05
     bed.process(photo)
-    assert asked == [True, False]
+    assert asked == [(True, True), (False, True)]
     assert phone.tracks[0].card.name == bed.tracks[0].card.name == "Twin"
 
 
