@@ -145,6 +145,15 @@ def image_url(card: dict) -> str | None:
     return None
 
 
+def back_url(card: dict) -> str | None:
+    """The picture of a double-faced card's back face (None: one face, or one picture
+    for both, as on a split or flip card)."""
+    faces = card.get("card_faces") or []
+    if "image_uris" in card or len(faces) < 2 or "image_uris" not in faces[1]:
+        return None
+    return faces[1]["image_uris"].get("small")
+
+
 def price(card: dict, key: str) -> float | None:
     value = card.get("prices", {}).get(key)
     return float(value) if value else None
@@ -214,7 +223,8 @@ def build(source: Iterator[dict], db_path: Path | None = None, progress: Callabl
     """
     conn = connect(db_path or config.DB_PATH)
     known = {row[0]: len(row[1]) for row in conn.execute("SELECT id, fingerprint FROM cards")}
-    todo, refreshed, seen = [], 0, set()
+    backs_known = {row[0] for row in conn.execute("SELECT card_id FROM faces")}
+    todo, backs, refreshed, seen = [], [], 0, set()
     for card in source:
         if card.get("digital") or card.get("layout") == "art_series" or card["id"] in seen:
             continue   # (a search can list the same printing twice)
@@ -226,9 +236,12 @@ def build(source: Iterator[dict], db_path: Path | None = None, progress: Callabl
             refreshed += 1
         if (have is None or have < FINGERPRINT_BYTES) and (url := image_url(card)):
             todo.append(_todo(card, url, have is not None))
+        if card["id"] not in backs_known and (url := back_url(card)) and (have is not None or image_url(card)):
+            backs.append((card["id"], url))     # a double-faced card's back, read on its own
     conn.commit()
     progress(f"Refreshed prices for {refreshed:,} cards already in the database. "
-             f"Fingerprinting {len(todo):,} cards.")
+             f"Fingerprinting {len(todo):,} cards"
+             + (f" and the backs of {len(backs):,} double-faced ones." if backs else "."))
 
     added = upgraded = skipped = 0
     started = time.monotonic()
@@ -261,9 +274,29 @@ def build(source: Iterator[dict], db_path: Path | None = None, progress: Callabl
         if on_batch and n % 5000 == 0:
             on_batch()
     conn.commit()
+    # The backs of double-faced cards, once their fronts are in (a card's back only counts
+    # with its front's row to name it).
+    have_fronts = {row[0] for row in conn.execute("SELECT id FROM cards")}
+    backs = [(card_id, url) for card_id, url in backs if card_id in have_fronts]
+    backs_added = 0
+    if backs and not (stop is not None and stop.is_set()):
+        with ThreadPoolExecutor(max_workers=IMAGE_THREADS) as pool:
+            for i in range(0, len(backs), 500):
+                if stop is not None and stop.is_set():
+                    break
+                chunk = backs[i:i + 500]
+                for (card_id, _), fp in zip(chunk, pool.map(fetch_fingerprint, [u for _, u in chunk])):
+                    if fp is not None:
+                        conn.execute("INSERT OR REPLACE INTO faces VALUES (?, ?)", (card_id, fp))
+                        backs_added += 1
+                conn.commit()
+                progress(f"Fingerprinted the backs of {min(i + 500, len(backs)):,} of {len(backs):,} double-faced cards")
+        if on_batch:
+            on_batch()
     total = conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
     conn.close()
-    return {"added": added, "upgraded": upgraded, "refreshed": refreshed, "skipped": skipped, "total": total}
+    return {"added": added, "upgraded": upgraded, "refreshed": refreshed, "skipped": skipped, "total": total,
+            "backs": backs_added}
 
 
 def main() -> None:
@@ -286,6 +319,7 @@ def main() -> None:
     done = build(source)
     print(f"Done. Added {done['added']:,} cards, gave {done['upgraded']:,} the newer fingerprint"
           + (f", skipped {done['skipped']:,} whose picture didn't download" if done["skipped"] else "")
+          + (f", read the backs of {done['backs']:,} double-faced cards" if done.get("backs") else "")
           + f". The database now has {done['total']:,} cards.")
 
 

@@ -7,8 +7,8 @@ import numpy as np
 
 from . import config, printings
 from .database import Card, Hit, Matcher
-from .vision import (SIDES_GOOD_FIT, boost_contrast, find_scored_candidates, fingerprint, grow, tame_glare,
-                     warp_card)
+from .vision import (SIDES_GOOD_FIT, boost_contrast, fill_outlines, find_scored_candidates, fingerprint, grow,
+                     tame_glare, warp_card)
 
 GOOD_ENOUGH = 40   # a match this close is certain: stop trying other outlines
 
@@ -169,6 +169,17 @@ def identify_card(matcher: Matcher, frame, outlines: list[np.ndarray],
     return [(outlines, match)]
 
 
+def identify_filled(matcher: Matcher, frame, **kw) -> Match | None:
+    """The card that fills the whole picture (held close to the camera, its edges at or
+    past the picture's), if it reads surely; None otherwise. Only worth a try when no
+    card was found or read the usual way: see vision.fill_outlines. kw goes to
+    identify_outlines."""
+    match = identify_outlines(matcher, frame, fill_outlines(frame.shape), **kw)
+    if match.card is None or match.confidence != "sure":
+        return None
+    return match
+
+
 def find_card_in_slot(frame, slot: list[float]) -> list[np.ndarray] | None:
     """The card in one slot of the picture (the app's Slots mode).
 
@@ -265,13 +276,15 @@ def refine_outline(matcher: Matcher, frame, corners: np.ndarray, card_id: str) -
 
 
 def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray], refine: bool = True,
-                      wait: float = printings.LIVE_WAIT) -> Match:
+                      wait: float = printings.LIVE_WAIT, printing: bool | None = None) -> Match:
     """Recognize one card from its outlines.
 
     With refine, an outline that reads as a card but not surely is nudged onto the card's
-    real edge (see refine_outline), and a card with look-alike printings is told from
-    them by the details that differ (see printings.py; `wait` is how long that may wait
-    for stock pictures it hasn't got yet)."""
+    real edge (see refine_outline). With printing (same as refine unless given), a card
+    with look-alike printings is told from them by the details that differ (see
+    printings.py; `wait` is how long that may wait for stock pictures it hasn't got yet)."""
+    if printing is None:
+        printing = refine
     best: tuple[np.ndarray, Hit | None] = (outlines[0], None)
     # The outlines are compared plainly first; the slower second looks (more contrast,
     # glare painted over) are only for the one that came closest. Running them on every
@@ -313,20 +326,35 @@ def identify_outlines(matcher: Matcher, frame, outlines: list[np.ndarray], refin
         # dark or plain card: an outline that leaves the picture has to be sure, or it's
         # only a guess to offer.
         return Match(corners, None, hit.distance, hit.margin, None, [(match.card, hit.distance), *match.candidates])
-    if refine and match.card is not None:
+    if printing and match.card is not None:
         _choose_printing(matcher, frame, match, wait)
     return match
+
+
+PRINTING_NUDGE_OVER = 20    # a match further than this has its outline nudged before choosing its printing
 
 
 def _choose_printing(matcher: Matcher, frame, match: Match, wait: float):
     """Note the card's look-alike printings (same art and frame, another set) and, with
     stock pictures to go by, choose among them by the details that differ: see
     printings.py. Changes match in place."""
-    card_img = warp_card(frame, match.corners)
+    corners = match.corners
+    if match.distance > PRINTING_NUDGE_OVER:
+        # Not a close read: the outline is likely a little off, which hides the small
+        # details that tell printings apart, and can leave the right printing out of the
+        # look-alikes altogether. Lay it onto the card first.
+        better = refine_outline(matcher, frame, corners, match.card.id)
+        if better is not None:
+            corners = better
+    card_img = warp_card(frame, corners)
     turned = cv2.rotate(card_img, cv2.ROTATE_180)
     near, far = fingerprint(card_img), fingerprint(turned)
     if (matcher.distance_to(match.card.id, far) or 0) < (matcher.distance_to(match.card.id, near) or 0):
         card_img, near = turned, far            # the card is upside down in the picture
+    front, back = (matcher.face_distances(match.card.id, near) if hasattr(matcher, "face_distances")
+                   else (None, None))
+    if back is not None and front is not None and back < front:
+        return      # the back of a double-faced card is up: the stock pictures show fronts
     alike = matcher.lookalikes(match.card.id, near, printings.WINDOW, printings.MOST)
     if len(alike) < 2:
         return

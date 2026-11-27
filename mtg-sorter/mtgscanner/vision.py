@@ -121,6 +121,13 @@ def _masks(small_bgr: np.ndarray):
     _, dark = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     yield cv2.morphologyEx(cv2.morphologyEx(dark, cv2.MORPH_OPEN, k, iterations=2), cv2.MORPH_CLOSE, k, iterations=3)
 
+    # 4. Brightness: a white border (old sets, some promos) on a darker, textured surface
+    # such as a carpet or a mat, where the edges drown in the texture and white is as
+    # grey as the surface to the saturation mask (a real photo, 2026-11-27: a white-bordered
+    # card on a carpet only ever showed its art box).
+    _, bright = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    yield cv2.morphologyEx(cv2.morphologyEx(bright, cv2.MORPH_OPEN, k, iterations=2), cv2.MORPH_CLOSE, k, iterations=3)
+
 
 def _refine_corners(contour: np.ndarray, approx: np.ndarray) -> np.ndarray | None:
     """Sharpen a rough 4-corner outline by fitting a straight line to each side.
@@ -334,6 +341,16 @@ def _cards_from_sides(pts: np.ndarray, near: tuple, min_area: float, shape) -> l
     return out[:2]
 
 
+BRIGHT_MASK = 4          # which of _masks is the brightness one, tried after the rest
+LAST_RESORT_FIT = 0.8    # its outlines' fit is scaled by this, so they sort behind the others
+
+
+def _already(corners: np.ndarray, found: list[tuple[float, np.ndarray]], share: float = 0.02) -> bool:
+    """Whether an outline is nearly one already found (every corner within a share of its size)."""
+    size = float(np.linalg.norm(corners[0] - corners[2])) or 1.0
+    return any(np.abs(_order_corners(corners) - _order_corners(o)).max() <= share * size for _, o in found)
+
+
 def find_card_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05) -> list[np.ndarray]:
     """Return every card-shaped outline (4 corners each) found by any of the methods."""
     return [corners for _, corners in find_scored_candidates(frame_bgr, min_area_frac, rebuild=False)]
@@ -355,7 +372,8 @@ def find_scored_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05,
 
     found = []
     rebuilt = []   # (how well it fits, corners): whole cards put back together from their sides
-    for mask in _masks(small):
+    for n, mask in enumerate(_masks(small)):
+        last_resort = n == BRIGHT_MASK
         # RETR_LIST also returns shapes inside other shapes: a card in a sleeve, or a card
         # whose outline merged with its neighbours on a crowded table.
         # Every point of each outline (CHAIN_APPROX_NONE), so the sides can be fitted exactly.
@@ -387,12 +405,19 @@ def find_scored_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05,
                         corners = None
                 # else it touches the photo's edge: the whole background, not a card
             if not rebuild:
-                if corners is not None:
-                    found.append((1.0, corners / scale))
+                if corners is not None and not (last_resort and _already(corners / scale, found)):
+                    found.append((LAST_RESORT_FIT if last_resort else 1.0, corners / scale))
                 continue
             pts = c.reshape(-1, 2).astype("float32")
             near = _distance_map(pts)
             fit = _fit(corners, near) if corners is not None else 0.0
+            if last_resort:
+                # The brightness mask's clean shapes only, and behind every other outline
+                # of the card: on a busy table it also outlines light patches around a
+                # card, which must not push the card's own outline out of the ones tried.
+                if fit >= SIDES_GOOD_FIT and not _already(corners / scale, found):
+                    found.append((fit * LAST_RESORT_FIT, corners / scale))
+                continue
             if fit >= SIDES_GOOD_FIT:
                 found.append((fit, corners / scale))   # the shape is a card as it stands
                 continue
@@ -408,14 +433,54 @@ def find_scored_candidates(frame_bgr: np.ndarray, min_area_frac: float = 0.05,
     return found + rebuilt[:SIDES_MOST]
 
 
-def grow(corners: np.ndarray, factor: float) -> np.ndarray:
+def grow(corners: np.ndarray, factor) -> np.ndarray:
     """Push the 4 corners outward from the center (factor 1.04 = 4% bigger).
 
     Detection often lands a little inside the card's real edge, and fingerprints
     are sensitive to that, so the scanner also tries slightly bigger outlines.
+    factor can also be (across, along): how much wider and how much taller the card
+    gets, along its own short and long sides. A black border is the same few mm all
+    round, so the coloured frame inside it is relatively narrower than it is short:
+    on a black table or the black bed that frame is all the camera finds.
     """
+    corners = np.asarray(corners, np.float32)
     center = corners.mean(axis=0)
-    return ((corners - center) * factor + center).astype("float32")
+    if np.isscalar(factor):
+        return ((corners - center) * factor + center).astype("float32")
+    across, along = factor
+    tl, tr, br, bl = corners
+    a = (tr - tl) + (br - bl)           # one pair of sides...
+    b = (bl - tl) + (br - tr)           # ...and the other
+    na, nb = float(np.linalg.norm(a)), float(np.linalg.norm(b))
+    if na < 1e-6 or nb < 1e-6:
+        return grow(corners, (across + along) / 2)
+    a, b = a / na, b / nb
+    fa, fb = (across, along) if na <= nb else (along, across)
+    rel = corners - center
+    out = center + np.outer(rel @ a, a) * fa + np.outer(rel @ b, b) * fb
+    return out.astype("float32")
+
+
+# A card held close to the phone fills the picture: its edges are the picture's own, or
+# just past them, so no outline is found at all (real photos, 2026-11-27: 37 of 589 Reddit
+# photos read only this way). These are where such a card would lie: centred, as wide or
+# as tall as the picture allows, upright or sideways, and a little smaller in case a
+# narrow strip of table shows around it.
+FILL_SCALES = (0.97, 0.87)
+
+
+def fill_outlines(shape) -> list[np.ndarray]:
+    """Card-shaped outlines for a card that fills the picture, likeliest first."""
+    h, w = shape[:2]
+    out = []
+    for scale in FILL_SCALES:
+        for upright in (h >= w, h < w):
+            cw, ch = (w, w / CARD_RATIO) if upright else (w, w * CARD_RATIO)
+            fit = min(1.0, h / ch) * scale
+            cw, ch = cw * fit, ch * fit
+            x0, y0 = (w - cw) / 2, (h - ch) / 2
+            out.append(np.array([[x0, y0], [x0 + cw, y0], [x0 + cw, y0 + ch], [x0, y0 + ch]], np.float32))
+    return out
 
 
 def find_card(frame_bgr: np.ndarray):

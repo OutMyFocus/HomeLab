@@ -223,7 +223,7 @@ def pick_printing(card_bgr: np.ndarray, lookalikes: list[tuple[str, int]],
     if int(differ.sum()) < DIFFER_PIXELS:
         return None
     ys, xs = np.nonzero(differ)
-    scan = prepare(card_bgr).astype(np.float32)
+    scan = align(prepare(card_bgr), stock[ids[0]]).astype(np.float32)
     # The scan's pixels for every small shift, each with its average taken off: the same
     # for every look-alike, so made once.
     shifted = []
@@ -248,6 +248,39 @@ def pick_printing(card_bgr: np.ndarray, lookalikes: list[tuple[str, int]],
         scores.append(likeness - BIT_COST * bits[card_id])
     order = np.argsort(scores)[::-1]
     return ids[int(order[0])], float(scores[order[0]] - scores[order[1]])
+
+
+# The outline the camera found is often a few pixels off the card's real edge, more than
+# SHIFT makes up for where it's also a touch too big or turned, and the details that tell
+# look-alike printings apart (the set symbol, the small print) are only a few pixels
+# across. So the scan is first laid exactly over the stock picture (OpenCV's ECC image
+# alignment, at half size). Only the look-alikes' shared look is used for that, so it
+# favours none of them.
+ALIGN_SCALE = 0.5
+ALIGN_STEPS = 40
+ALIGN_MOST_MOVE = 0.06     # an alignment that moves the card more than this share of it is ignored
+
+
+def align(scan: np.ndarray, stock: np.ndarray) -> np.ndarray:
+    """The prepared scan moved (shifted, turned, scaled, tilted a little) to lie exactly
+    over a prepared stock picture of the same size. The scan as it was when that fails."""
+    try:
+        small = [cv2.resize(p, None, fx=ALIGN_SCALE, fy=ALIGN_SCALE, interpolation=cv2.INTER_AREA).astype(np.float32)
+                 for p in (scan, stock)]
+        warp = np.eye(3, dtype=np.float32)
+        criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, ALIGN_STEPS, 1e-4)
+        _, warp = cv2.findTransformECC(small[1], small[0], warp, cv2.MOTION_HOMOGRAPHY, criteria, None, 3)
+    except cv2.error:
+        return scan
+    up = np.diag([1 / ALIGN_SCALE, 1 / ALIGN_SCALE, 1]).astype(np.float32)
+    warp = up @ warp @ np.linalg.inv(up)
+    h, w = scan.shape[:2]
+    box = np.array([[0, 0], [w, 0], [w, h], [0, h]], np.float32).reshape(-1, 1, 2)
+    moved = cv2.perspectiveTransform(box, warp).reshape(-1, 2)
+    if np.abs(moved - box.reshape(-1, 2)).max() > ALIGN_MOST_MOVE * h:
+        return scan
+    return cv2.warpPerspective(scan, warp, (w, h), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
+                               borderMode=cv2.BORDER_REPLICATE)
 
 
 def _upright(scan: np.ndarray, stock: np.ndarray) -> np.ndarray:
