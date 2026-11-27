@@ -695,3 +695,63 @@ def test_new_columns_are_added_to_an_old_file(client):
     client.post("/api/add", json={"id": "id2"})                      # a scan rewrites the header first
     assert list(rows()[0]) == library.COLUMNS and len(rows()) == 2
     assert client.get("/api/collection").get_json()["cards"][0]["condition"] == "NM"
+
+
+# --- Proxies ---------------------------------------------------------------------------------
+
+def test_proxy_keys():
+    assert library.make_key("id1", False, True) == "id1#normal#proxy"
+    assert library.split_key("id1#foil#proxy") == ("id1", True, True)
+    assert library.split_key("id1#normal") == ("id1", False, False)
+    assert library.row_proxy({"Proxy": "yes"}) and not library.row_proxy({"Proxy": ""}) and not library.row_proxy({})
+
+
+def test_a_proxy_is_kept_but_not_counted_in_the_value(client):
+    client.post("/api/add", json={"id": "id1"})
+    real = client.get("/api/collection").get_json()["summary"]
+    client.post("/api/collection/add", json={"id": "id1", "qty": 2, "proxy": True})
+    js = client.get("/api/collection").get_json()
+    cards = {c["key"]: c for c in js["cards"]}
+    assert set(cards) == {"id1#normal", "id1#normal#proxy"}       # kept apart from the real copy
+    p = cards["id1#normal#proxy"]
+    assert p["proxy"] and p["qty"] == 2 and p["value"] == 0.0 and p["price"] == cards["id1#normal"]["price"]
+    s = js["summary"]
+    assert s["value"] == real["value"] and s["cards"] == 3 and s["proxies"] == 2
+    assert s["proxy_value"] == round(p["price"] * 2, 2) and s["top"] == ["id1#normal"] and s["unpriced"] == 0
+    assert js["history"][-1]["value"] == real["value"]             # the value chart leaves it out too
+    assert [r["Proxy"] for r in rows()] == ["", "yes", "yes"]
+
+
+def test_mark_cards_as_proxies_and_back(client):
+    client.post("/api/add", json={"id": "id1"})
+    client.post("/api/add", json={"id": "id2"})
+    js = client.post("/api/collection/details", json={"keys": ["id1#normal", "id2#normal"], "proxy": True}).get_json()
+    assert sorted(c["key"] for c in js["cards"]) == ["id1#normal#proxy", "id2#normal#proxy"]
+    assert js["summary"]["value"] == 0 and js["summary"]["proxies"] == 2
+    # the proxy's own key works for every other change
+    client.post("/api/collection/edit", json={"key": "id1#normal#proxy", "step": 1})
+    client.post("/api/collection/edit", json={"key": "id1#normal#proxy", "foil": True})
+    js = client.post("/api/collection/details", json={"keys": ["id2#normal#proxy"], "proxy": False}).get_json()
+    assert {c["key"]: c["qty"] for c in js["cards"]} == {"id1#foil#proxy": 2, "id2#normal": 1}
+    assert js["summary"]["value"] > 0
+    assert client.post("/api/collection/details", json={"keys": ["id2#normal"], "proxy": "yes"}).status_code == 400
+    res = client.post("/api/collection/delete", json={"cards": {"id1#foil#proxy": 2}})
+    assert res.status_code == 200 and [c["key"] for c in res.get_json()["cards"]] == ["id2#normal"]
+
+
+def test_the_scanner_saves_proxies_when_asked(client):
+    assert client.post("/api/settings", json={"proxy": True}).get_json()["proxy"] is True
+    s = client.post("/api/add", json={"id": "id1"}).get_json()
+    assert s["session"][0]["proxy"] is True and s["totals"]["value"] == 0
+    client.post("/api/settings", json={"proxy": False})
+    client.post("/api/add", json={"id": "id2"})
+    assert [r["Proxy"] for r in rows()] == ["yes", ""]
+    assert [c["key"] for c in client.get("/api/collection").get_json()["cards"] if c["proxy"]] == ["id1#normal#proxy"]
+
+
+def test_exports_mark_proxies(client):
+    client.post("/api/collection/add", json={"id": "id1", "proxy": True})
+    mox = client.get("/api/collection/export?format=moxfield").get_data(as_text=True).splitlines()
+    assert mox[1].split(",")[11] == "True"                          # Moxfield's Proxy column
+    sheet = client.get("/api/collection/export?format=prices").get_data(as_text=True).splitlines()
+    assert sheet[0].endswith(",Proxy") and sheet[1].endswith(",yes")

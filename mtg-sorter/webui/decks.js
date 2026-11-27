@@ -112,7 +112,7 @@
     $("result").hidden = false;
     $("rPercent").textContent = r.percent + "%";
     $("rBar").style.width = r.percent + "%";
-    $("rHave").textContent = `${r.have} of ${r.need}`;
+    $("rHave").textContent = `${r.have} of ${r.need}` + (r.proxies ? ` (${r.proxies} prox${r.proxies === 1 ? "y" : "ies"})` : "");
     $("rHaveSub").textContent = r.missing ? "" : "You own every card!";
     $("rMissing").textContent = r.missing;
     $("rMissingSub").textContent = `${r.lines.filter(x => x.missing).length} different cards`;
@@ -127,7 +127,7 @@
     if (view === "pics") return renderPics(rows);
     $("rRows").innerHTML = rows.length ? rows.map(x => {
       const cls = x.extra ? "" : !x.found ? "unknown" : x.missing ? "short" : "ok";
-      const where = x.where.map(w => `<span class="pill bin-${w.bin}" title="${esc(w.sorted_into || "")}">${esc(w.set)} #${esc(w.number)}${w.foil ? " foil" : ""} ×${w.qty}</span>`).join("");
+      const where = x.where.map(w => `<span class="pill bin-${w.bin}" title="${esc(w.sorted_into || "")}">${esc(w.set)} #${esc(w.number)}${w.foil ? " foil" : ""}${w.proxy ? " proxy" : ""} ×${w.qty}</span>`).join("");
       const img = x.image ? `<img class="thumb" src="${esc(x.image.replace("version=normal", "version=small"))}" alt="" loading="lazy">` : '<span class="thumb"></span>';
       return `<tr class="${cls}"><td class="card-cell">${img}<span><span class="nm">${esc(x.name)}</span><span class="sec">${esc(x.section)}${x.extra ? " · not counted" : x.basic ? " · basic land" : ""}</span></span></td>
         <td class="num">${x.need}</td><td class="num">${x.have}<span class="of">/${x.need}</span></td>

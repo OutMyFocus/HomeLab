@@ -46,7 +46,7 @@ import time
 
 from flask import jsonify, request
 
-from . import accounts, config, health, sort_rules
+from . import accounts, config, health, machine_account, sort_rules
 from .machine import claim, release
 
 log = logging.getLogger(__name__)
@@ -541,12 +541,15 @@ class SortRun:
                 saved = self.scanner.session[-1] if self.scanner.session else {}
                 if saved.get("track") != track.id:
                     saved = {}
+                # A proxy (the scanner's Proxy switch) is worth nothing and never a wanted card
+                proxy = bool(saved.get("proxy"))
                 # this run's rules (and wanted copies left), not the bin the scan was saved with
-                wanted = sort_rules.wanted_for(shown, rules, self.taken)
+                wanted = None if proxy else sort_rules.wanted_for(shown, rules, self.taken)
                 key = sort_rules.name_key(shown.name)
                 self.seen[key] = self.seen.get(key, 0) + 1
                 copy = self.owned.get(key, 0) + self.seen[key]
-                bin_no, label = sort_rules.pick(shown, foil, saved.get("price"), rules, self.taken, copy,
+                bin_no, label = sort_rules.pick(shown, foil, 0.0 if proxy else saved.get("price"),
+                                                {**rules, "wanted": {}} if proxy else rules, self.taken, copy,
                                                 getattr(self.scanner, "live", None))
                 if wanted:
                     self.taken[wanted] = self.taken.get(wanted, 0) + 1
@@ -582,9 +585,15 @@ def add_sort_run_routes(app, watcher, scanner, machine):
         body = request.get_json(silent=True) or {}
         if run is None:
             # the Pi sorts by the rules (and wanted list) on this server's Bins page
-            # with this server's decks, wishlist and copies written in: the Pi has its own
-            rules = sort_rules.resolve(sort_rules.load(), accounts.collection_csv())
-            return answer(lambda: machine.sort_start({**body, "rules": rules}))
+            # with the decks, wishlist and copies of the account the machine scans into
+            # (machine_account.py) written in: the Pi has its own. The Pi is told that
+            # account too, so the cards it saves are filed under it here.
+            who = machine_account.for_machine(accounts.current())
+            rules = sort_rules.resolve(sort_rules.load(), accounts.collection_csv(who))
+            return answer(lambda: machine.sort_start({**body, "rules": rules,
+                                                      "account": machine_account.header_value()}))
+        if "account" in body:   # started from the server: whose account its cards are for
+            machine_account.heard(body.get("account"))
         return answer(lambda: run.start(body.get("speed"), body.get("max_cards"), body.get("rules")), 409)
 
     @app.get("/api/machine/sort")

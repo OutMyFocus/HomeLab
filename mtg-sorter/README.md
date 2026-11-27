@@ -93,7 +93,8 @@ Then open **http://localhost:5000** in your browser. You get:
   a number on the picture and a row in **On the table**, with its price (CAD) and bin. Click a
   row to see that card big. **Save all** (Space) saves every recognized card, or save them one
   at a time with the check button. **Foil** (F) and **Auto-save** (A) are toggles: with
-  auto-save on, each card is saved as soon as it's recognized. Spread the cards out so they
+  auto-save on, each card is saved as soon as it's recognized. **Proxies** (X) saves every card
+  as a proxy while it's on (handy for a proxy deck). Spread the cards out so they
   don't overlap. Cards in a pile or cut off at the edge of the picture can't be read.
 - **This session**: every card you've saved, with totals per bin, **Undo last**, and
   **Download CSV** for ManaBox or Moxfield.
@@ -144,7 +145,9 @@ Then open **http://localhost:5000** in your browser. You get:
   filters, sorts and a breakdown for them. With **Select**, **Tag, condition…** changes all the
   picked cards at once. ManaBox imports bring their condition, language and purchase price, and the
   Moxfield, Archidekt, Deckbox and ManaBox exports send them back out. Tap a card to change how many you have, mark it foil, pick a different
-  printing or delete it. **Add a card** adds one you didn't scan. It shows the total value,
+  printing or delete it. **Proxy** marks it as a proxy (Select can mark many at once): proxies are
+  kept and shown with a PROXY badge, but left out of the value, its charts, the most valuable
+  cards, set completion, spares and the wishlist. **Add a card** adds one you didn't scan. It shows the total value,
   how much it changed since you scanned the cards, a value-over-time chart, a breakdown by
   color, rarity, bin and set, and your 10 most valuable cards. Each printing's price is also noted
   once a day (`data/card_prices.json`, about a year kept), so a card's page shows a small price

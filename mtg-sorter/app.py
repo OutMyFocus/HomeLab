@@ -42,7 +42,7 @@ from mtgscanner.collection import add_card, remove_entry, remove_last
 from mtgscanner.database import Card, Matcher, connect, fingerprint_distance
 from mtgscanner.vision import fill_outlines, fingerprint, warp_card
 from mtgscanner.exchange import load_rate
-from mtgscanner import accounts, assets, logins, pi_sync, security, sort_rules, wishlist
+from mtgscanner import accounts, assets, logins, machine_account, pi_sync, security, sort_rules, wishlist
 from mtgscanner.decks import name_key
 from mtgscanner.history import add_history_routes
 from mtgscanner.home import add_home_routes
@@ -209,6 +209,7 @@ class Scanner:
         self._ids = itertools.count(1)
         self._table = 0   # goes up each time the tracks are forgotten (see process)
         self.foil = False
+        self.proxy = False  # every card saved is marked a proxy (scanning a proxy deck)
         self.auto = False
         self.mode = "auto"  # "auto": cards anywhere in the picture; "slots": only in the boxes you drew
         self.slots: list[
@@ -857,13 +858,14 @@ class Scanner:
         path = self.collection()
         bin_no, bin_label = choose_bin(card, foil, self.vault, self.live, path)
         price = card_price(card, foil, self.vault, self.live)
-        scanned_at = add_card(path, card, foil, bin_label, price, self.owner)
+        scanned_at = add_card(path, card, foil, bin_label, price, self.owner, proxy=self.proxy)
         with accounts.acting_as(self.account):   # their own alerts and wishlist
-            special = self._special(card, price[0])
+            special = not self.proxy and self._special(card, price[0])
         self._light("valuable" if special else "saved")
         self.session.append(
             card_info(card, foil, self.vault, live=self.live)
             | {
+                "proxy": self.proxy,
                 "time": time.strftime("%H:%M:%S"),
                 "scanned_at": scanned_at,
                 "track": track.id if track else None,
@@ -961,7 +963,7 @@ class Scanner:
         with self.lock:
             totals = {
                 "count": len(self.session),
-                "value": round(sum(c["price"] or 0 for c in self.session), 2),
+                "value": round(sum(c["price"] or 0 for c in self.session if not c.get("proxy")), 2),
                 "bins": {},
             }
             for c in self.session:
@@ -1021,6 +1023,7 @@ class Scanner:
                     for t in visible
                 ],
                 "foil": self.foil,
+                "proxy": self.proxy,
                 "auto": self.auto,
                 "mode": self.mode,
                 "slots": self.slots,
@@ -1134,6 +1137,9 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
     # On the server, MTG_MACHINE_URL points at the sorter's Pi, which does the moving.
     machine = machine or (RemoteMachine(remote_url()) if remote_url() else Machine())
     scanner.lights = lights or scanner.lights or make_lights()
+    machine_account.install(app)  # whose account the machine scans into
+    machine_account.listeners[:] = [lambda user: setattr(scanner, "account", user)]
+    scanner.account = machine_account.picked() or scanner.account
     pi_sync.install(app)  # the Pi follows the server: its cards copied there, its pages sent there
     assets.install(app, WEB)  # versioned script and style links, so caches never mix old and new
     logins.install(app, WEB)  # user accounts, once they're on: logging in, and who may do what
@@ -1221,7 +1227,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         if sc is scanner:
             if not accounts.can("machine"):
                 refuse("The machine is for people with the machine permission: pick This device's camera")
-            sc.account = me
+            sc.account = machine_account.for_machine(me)   # the account picked for the machine
         elif sc.account != me and not accounts.can("admin"):
             refuse("That's someone else's scanner")
         return sc
@@ -1305,7 +1311,7 @@ def create_app(scanner: Scanner, machine: Machine | None = None, lights: Lights 
         sc = acting()
         remember = sc is scanner   # a phone's choices last as long as its page does
         with sc.lock:
-            for key in ("foil", "auto", "collect", "learn"):
+            for key in ("foil", "proxy", "auto", "collect", "learn"):
                 if key in body:
                     setattr(sc, key, bool(body[key]))
             if "collect" in body and not sc.collect:

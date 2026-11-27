@@ -62,7 +62,8 @@
   function renderTiles() {
     const s = data.summary;
     $("tCards").textContent = s.cards.toLocaleString();
-    $("tCardsSub").textContent = `${s.names.toLocaleString()} different cards · ${s.foils.toLocaleString()} foil`;
+    $("tCardsSub").textContent = `${s.names.toLocaleString()} different cards · ${s.foils.toLocaleString()} foil${s.proxies ? ` · ${s.proxies.toLocaleString()} prox${s.proxies === 1 ? "y" : "ies"}` : ""}`;
+    $("tCardsSub").title = s.proxies ? `Proxies aren't counted in the value (the real cards would be ${money(s.proxy_value)})` : "";
     $("tValue").textContent = money(s.value);
     const ch = $("tValueSub");
     ch.className = "sub " + (s.change > 0 ? "up" : s.change < 0 ? "down" : "");
@@ -169,11 +170,14 @@
     const b = [c.condition && c.condition !== "NM" ? (c.mixed ? c.condition + "+" : c.condition) : "", c.language && c.language !== "EN" ? c.language : ""].filter(Boolean);
     return b.length ? `<span class="cond-badge" title="${esc([data?.conditions?.[c.condition], data?.languages?.[c.language]].filter(Boolean).join(", "))}">${b.map(esc).join(" · ")}</span>` : "";
   };
+  // A proxy: kept, but worth nothing to the collection (its price is the real card's)
+  const proxyBadge = c => c.proxy ? '<span class="proxy-badge" title="Proxy: not counted in the value">PROXY</span>' : "";
+  const proxyKey = (key, on) => key.replace(/#proxy$/, "") + (on ? "#proxy" : "");
   const PICK_MARK = '<i class="pick-mark" aria-hidden="true"><svg><use href="#i-check"/></svg></i>';
   function tile(c, extra = "", sizes = "(max-width: 600px) 46vw, 170px") {
     const on = selecting && picked.has(c.key);
-    return `<button class="tile${c.foil ? " foil" : ""}${on ? " picked" : ""}${extra}" data-key="${esc(c.key)}" title="${esc(c.name)}"${selecting && !extra ? ` aria-pressed="${on}"` : ""}>
-      <span class="art">${picture(c, sizes)}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${badges(c)}${selecting && !extra ? PICK_MARK : ""}</span>
+    return `<button class="tile${c.foil ? " foil" : ""}${c.proxy ? " proxy" : ""}${on ? " picked" : ""}${extra}" data-key="${esc(c.key)}" title="${esc(c.name)}"${selecting && !extra ? ` aria-pressed="${on}"` : ""}>
+      <span class="art">${picture(c, sizes)}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${badges(c)}${proxyBadge(c)}${selecting && !extra ? PICK_MARK : ""}</span>
       <b>${esc(c.name)}</b><span>${esc(c.set)} #${esc(c.number)}<em>${money(c.price)}</em></span></button>`;
   }
   function renderTop() {
@@ -183,7 +187,7 @@
   $("topStrip").onclick = e => { const t = e.target.closest(".tile"); if (t) openDetail(t.dataset.key); };
 
   // ---------- filters and sorting ----------
-  const FILTER_IDS = ["q", "fColor", "fRarity", "fSet", "fBin", "fTag", "fCond", "fLang", "fFoil", "fMin", "fMax"];
+  const FILTER_IDS = ["q", "fColor", "fRarity", "fSet", "fBin", "fTag", "fCond", "fLang", "fFoil", "fProxy", "fMin", "fMax"];
   function fillSelect(id, options, first) {
     const sel = $(id), keep = sel.value;
     sel.innerHTML = `<option value="">${first}</option>` + options.map(([v, label]) => `<option value="${esc(v)}">${esc(label)}</option>`).join("");
@@ -208,6 +212,7 @@
     const langs = data.langOrder.map(([k]) => k).filter(k => cards.some(c => c.language === k));
     fillSelect("fLang", langs.map(k => [k, data.languages[k]]), "Any language");
     $("fLang").hidden = langs.length < 2 && !$("fLang").value;
+    $("fProxy").hidden = !cards.some(c => c.proxy) && !$("fProxy").value;
     $("sort").value = prefs.sort;
   }
   const SORTS = {
@@ -237,6 +242,7 @@
       (!f("fTag") || (c.tags || []).includes(f("fTag"))) && (!f("fCond") || c.condition === f("fCond")) &&
       (!f("fLang") || c.language === f("fLang")) &&
       (!f("fFoil") || c.foil === (f("fFoil") === "foil")) &&
+      (!f("fProxy") || !!c.proxy === (f("fProxy") === "proxy")) &&
       (isNaN(min) || (c.price ?? -1) >= min) && (isNaN(max) || (c.price != null && c.price <= max))
     ).sort((a, b) => SORTS[prefs.sort](a, b) || a.name.localeCompare(b.name));
   }
@@ -247,7 +253,7 @@
 
   // The filters live in the address too, so Back, a refresh or a bookmark keeps them
   // (/collection?color=U&rarity=mythic&min=5).
-  const URL_KEYS = { q: "q", color: "fColor", rarity: "fRarity", set: "fSet", bin: "fBin", tag: "fTag", cond: "fCond", lang: "fLang", foil: "fFoil", min: "fMin", max: "fMax" };
+  const URL_KEYS = { q: "q", color: "fColor", rarity: "fRarity", set: "fSet", bin: "fBin", tag: "fTag", cond: "fCond", lang: "fLang", foil: "fFoil", proxy: "fProxy", min: "fMin", max: "fMax" };
   function syncUrl() {
     const ps = new URLSearchParams();
     for (const [k, id] of Object.entries(URL_KEYS)) if ($(id).value.trim()) ps.set(k, $(id).value.trim());
@@ -269,6 +275,7 @@
     if (f("fCond")) out.push(["fCond", label("fCond")]);
     if (f("fLang")) out.push(["fLang", label("fLang")]);
     if (f("fFoil")) out.push(["fFoil", label("fFoil")]);
+    if (f("fProxy")) out.push(["fProxy", label("fProxy")]);
     const lo = f("fMin"), hi = f("fMax");
     if (lo || hi) out.push(["price", lo && hi ? `$${lo} to $${hi}` : lo ? `$${lo} and up` : `Up to $${hi}`]);
     return out;
@@ -309,7 +316,7 @@
     else $("results").innerHTML = `<div class="table-wrap"><table class="list"><thead><tr>
         <th>Card</th><th class="hide-sm">Set</th><th class="hide-sm">Rarity</th><th>Copies</th><th class="num">Price</th><th class="num" title="Face to Face Games, or the next Montreal store">Montreal</th><th class="num hide-sm">Value</th><th class="num hide-sm">Since scanned</th><th class="num hide-sm" title="What you paid for each, and the gain since">Paid</th><th class="hide-sm">Bin</th></tr></thead><tbody>
       ${page.map(c => `<tr data-key="${esc(c.key)}"${selecting && picked.has(c.key) ? ' class="picked"' : ""}>
-        <td class="card-cell">${c.image ? `<img class="thumb" src="${esc(small(c.image))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}<span><span class="dotc" style="background:var(--mana-${esc(c.color)})" title="${esc(COLORS[c.color] ?? "")}"></span><span class="nm">${esc(c.name)}</span>${c.foil ? '<span class="foil-tag">foil</span>' : ""}${c.condition !== "NM" || c.language !== "EN" ? `<span class="foil-tag cond-tag">${esc([c.condition !== "NM" ? c.condition : "", c.language !== "EN" ? c.language : ""].filter(Boolean).join(" · "))}</span>` : ""}${(c.tags || []).map(t => `<span class="tag-pill">${esc(t)}</span>`).join("")}<small class="sub show-sm">${esc(c.set)} #${esc(c.number)}</small></span></td>
+        <td class="card-cell">${c.image ? `<img class="thumb" src="${esc(small(c.image))}" alt="" loading="lazy">` : '<span class="thumb"></span>'}<span><span class="dotc" style="background:var(--mana-${esc(c.color)})" title="${esc(COLORS[c.color] ?? "")}"></span><span class="nm">${esc(c.name)}</span>${c.foil ? '<span class="foil-tag">foil</span>' : ""}${c.proxy ? '<span class="proxy-tag" title="Proxy: not counted in the value">proxy</span>' : ""}${c.condition !== "NM" || c.language !== "EN" ? `<span class="foil-tag cond-tag">${esc([c.condition !== "NM" ? c.condition : "", c.language !== "EN" ? c.language : ""].filter(Boolean).join(" · "))}</span>` : ""}${(c.tags || []).map(t => `<span class="tag-pill">${esc(t)}</span>`).join("")}<small class="sub show-sm">${esc(c.set)} #${esc(c.number)}</small></span></td>
         <td class="hide-sm">${esc(c.set)} #${esc(c.number)}</td>
         <td class="rar hide-sm">${esc(c.rarity)}</td>
         <td class="qty-cell"><button data-step="-1" aria-label="One fewer"><svg><use href="#i-minus"/></svg></button><b>${c.qty}</b><button data-step="1" aria-label="One more"><svg><use href="#i-plus"/></svg></button></td>
@@ -343,8 +350,8 @@
       if (p >= pages) return '<div class="binder-page blank" aria-hidden="true"></div>';
       return `<div class="binder-page" aria-label="Page ${p + 1}">${cards.map(c => {
         const on = selecting && picked.has(c.key);
-        return `<button class="pocket${c.foil ? " foil" : ""}${on ? " picked" : ""}" data-key="${esc(c.key)}" title="${esc(c.name)} · ${esc(c.set)} #${esc(c.number)} · ${esc(money(c.price))}"${selecting ? ` aria-pressed="${on}"` : ""}>
-          ${picture(c, "(max-width: 900px) 30vw, 180px")}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${badges(c)}${selecting ? PICK_MARK : ""}
+        return `<button class="pocket${c.foil ? " foil" : ""}${c.proxy ? " proxy" : ""}${on ? " picked" : ""}" data-key="${esc(c.key)}" title="${esc(c.name)} · ${esc(c.set)} #${esc(c.number)} · ${esc(money(c.price))}"${selecting ? ` aria-pressed="${on}"` : ""}>
+          ${picture(c, "(max-width: 900px) 30vw, 180px")}${c.qty > 1 ? `<span class="qty">×${c.qty}</span>` : ""}${c.foil ? '<span class="foil-badge">FOIL</span>' : ""}${badges(c)}${proxyBadge(c)}${selecting ? PICK_MARK : ""}
           <span class="pocket-price">${esc(money(c.price))}</span></button>`;
       }).join("")}${'<span class="pocket empty" aria-hidden="true"></span>'.repeat(POCKETS - cards.length)}<small class="page-no">${p + 1}</small></div>`;
     };
@@ -515,8 +522,9 @@
     $("dImg").alt = c.name;
     $("dArt").classList.toggle("foil", c.foil);
     $("dSet").textContent = `${c.set_name || c.set} · ${c.set} #${c.number}${c.rarity ? " · " + c.rarity : ""}`;
-    $("dPrice").textContent = money(c.price) + (c.qty > 1 && c.value != null ? `  ×${c.qty} = ${money(c.value)}` : "");
-    $("dSource").textContent = c.price_source || "";
+    $("dPrice").textContent = money(c.price) + (!c.proxy && c.qty > 1 && c.value != null ? `  ×${c.qty} = ${money(c.value)}` : "");
+    $("dSource").textContent = c.proxy ? "Proxy: that's the real card's price, not counted in your collection's value" : "";
+    if (!c.proxy) $("dSource").textContent = c.price_source || "";
     renderSpark(c);
     window.Montreal?.show($("dMontreal"), c);
     const facts = [
@@ -530,6 +538,7 @@
     $("dFacts").innerHTML = facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
     $("dQty").textContent = c.qty;
     $("dFoil").setAttribute("aria-pressed", c.foil);
+    $("dProxy").setAttribute("aria-pressed", !!c.proxy);
     $("dScryfall").hidden = !c.scryfall; $("dScryfall").href = c.scryfall || "#";
     $("dLookup").href = "/cards?card=" + encodeURIComponent(c.name);
     $("dTrade").setAttribute("aria-pressed", tradeKeys.has(tradeKey(c)));
@@ -652,6 +661,8 @@
     if (isNaN(v) || v < 0) return toast("Type what you paid for each, like 4.50");
     bulk({ paid: v }, `Paid ${money(v)} each`);
   };
+  $("bProxyOn").onclick = () => markProxy([...picked], true, `${picked.size.toLocaleString()} marked as proxies`);
+  $("bProxyOff").onclick = () => markProxy([...picked], false, `${picked.size.toLocaleString()} marked as real cards`);
   $("bPaidClear").onclick = () => bulk({ paid: null }, "Price paid cleared");
   // The trade binder (shown on the Wishlist page).
   let tradeKeys = new Set(), tradeIds = new Map();
@@ -676,8 +687,22 @@
   };
   $("dFoil").onclick = () => {
     const c = byKey(detailKey);
-    detailKey = c.key.replace(/#(foil|normal)$/, c.foil ? "#normal" : "#foil");   // joins any copies already there
+    detailKey = c.key.replace(/#(foil|normal)(#proxy)?$/, (_, f, p) => (c.foil ? "#normal" : "#foil") + (p || ""));   // joins any copies already there
     edit({ key: c.key, foil: !c.foil }, c.foil ? "Marked as normal" : "Marked as foil");
+  };
+  // Proxy or real: the copies move to a key of their own (id#normal#proxy), joining any there
+  async function markProxy(keys, on, message) {
+    try {
+      const js = await api("/api/collection/details", { keys, proxy: on });
+      for (const k of keys) if (picked.delete(k)) picked.add(proxyKey(k, on));
+      if (detailKey && keys.includes(detailKey)) detailKey = proxyKey(detailKey, on);
+      setData(js); toast(message);
+      if (!$("bulk").hidden) renderBulk();
+    } catch (e) { toast(e.message); }
+  }
+  $("dProxy").onclick = () => {
+    const c = byKey(detailKey); if (!c) return;
+    markProxy([c.key], !c.proxy, c.proxy ? "Marked as the real card" : "Marked as a proxy: not counted in the value");
   };
   $("dDelete").onclick = () => {
     const c = byKey(detailKey);
@@ -696,7 +721,7 @@
   $("dPrintList").onclick = e => {
     const t = e.target.closest(".tile"), c = byKey(detailKey);
     if (!t || t.dataset.key === c.id) return;
-    detailKey = `${t.dataset.key}#${c.foil ? "foil" : "normal"}`;
+    detailKey = `${t.dataset.key}#${c.foil ? "foil" : "normal"}${c.proxy ? "#proxy" : ""}`;
     $("dPrintList").hidden = true;
     edit({ key: c.key, printing: t.dataset.key }, "Printing changed");
   };
@@ -732,8 +757,8 @@
     const b = e.target.closest(".pick-card"); if (!b) return;
     const qty = Math.max(1, Math.min(100, parseInt($("addQty").value) || 1));
     try {
-      setData(await api("/api/collection/add", { id: b.dataset.id, qty, foil: $("addFoil").checked }));
-      toast(`Added ${qty > 1 ? qty + " × " : ""}${b.dataset.name}`);
+      setData(await api("/api/collection/add", { id: b.dataset.id, qty, foil: $("addFoil").checked, proxy: $("addProxy").checked }));
+      toast(`Added ${qty > 1 ? qty + " × " : ""}${b.dataset.name}${$("addProxy").checked ? " (proxy)" : ""}`);
       $("addInput").select();
     } catch (err) { toast(err.message); }
   };
@@ -835,7 +860,7 @@
     if (sort && [...$("sort").options].some(o => o.value === sort)) { prefs.sort = sort; $("sort").value = sort; }
     // Home links here with one filter set (/collection?color=U, ?bin=3); applied once the lists are filled.
     var linked = { fColor: ps.get("color"), fBin: ps.get("bin"), fRarity: ps.get("rarity"), fSet: ps.get("set"), fFoil: ps.get("foil"),
-      fTag: ps.get("tag"), fCond: ps.get("cond"), fLang: ps.get("lang") }; }
+      fTag: ps.get("tag"), fCond: ps.get("cond"), fLang: ps.get("lang"), fProxy: ps.get("proxy") }; }
   // The search palette's "Export the collection" and "Add a card" land here as #export / #add.
   load().then(() => {
     let changed = false;

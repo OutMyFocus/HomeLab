@@ -6,6 +6,10 @@ today's prices, and can change it: quantities, foil, the printing, deleting, add
 by hand. Exports turn it into the formats other sites import (Moxfield, Archidekt,
 Deckbox, TCGplayer, plain text).
 
+A proxy (a printed copy standing in for the real card, Proxy column "yes") is kept and
+shown like any card, marked PROXY, but it's worth nothing: it's left out of the
+collection's value, its charts and the most valuable cards.
+
 The collection's total value is noted once a day in data/price_history.json, for the
 value-over-time chart, and each printing's own price in data/card_prices.json, for its price
 chart and the cards that moved the most this week.
@@ -115,6 +119,10 @@ def row_foil(row: dict) -> bool:
     return (row.get("Foil") or "").strip().lower() in ("foil", "etched", "yes", "true", "1")
 
 
+def row_proxy(row: dict) -> bool:
+    return (row.get("Proxy") or "").strip().lower() in ("yes", "true", "1", "proxy")
+
+
 def qty(row: dict) -> int:
     try:
         return max(1, int(float(row.get("Quantity") or 1)))
@@ -122,15 +130,31 @@ def qty(row: dict) -> int:
         return 1
 
 
-def make_key(card_id: str, foil: bool) -> str:
-    return f"{card_id}#{'foil' if foil else 'normal'}"
+def make_key(card_id: str, foil: bool, proxy: bool = False) -> str:
+    """A printing and finish: id#foil or id#normal, with #proxy after it for proxies (they're
+    kept apart from the real copies of the same printing)."""
+    return f"{card_id}#{'foil' if foil else 'normal'}{'#proxy' if proxy else ''}"
 
 
-def split_key(key: str) -> tuple[str, bool]:
-    card_id, _, finish = str(key).rpartition("#")
+def row_key(row: dict) -> str:
+    return make_key(row_id(row), row_foil(row), row_proxy(row))
+
+
+def split_key(key: str) -> tuple[str, bool, bool]:
+    """(card id, foil, proxy) for a key from make_key."""
+    key = str(key)
+    proxy = key.endswith("#proxy")
+    if proxy:
+        key = key[:-len("#proxy")]
+    card_id, _, finish = key.rpartition("#")
     if not card_id:
         raise ValueError("Unknown card")
-    return card_id, finish == "foil"
+    return card_id, finish == "foil", proxy
+
+
+def _same(row: dict) -> tuple[str, bool, bool]:
+    """What split_key gives for the row's own key."""
+    return row_id(row), row_foil(row), row_proxy(row)
 
 
 def _float(text) -> float | None:
@@ -154,7 +178,7 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
     """One entry per printing and finish, with how many you have and what they're worth."""
     groups: dict[str, dict] = {}
     for r in rows:
-        key = make_key(row_id(r), row_foil(r))
+        key = row_key(r)
         g = groups.setdefault(key, {"rows": [], "qty": 0, "paid_sum": 0.0, "paid_n": 0, "bought_sum": 0.0,
                                     "bought_n": 0, "cond": {}, "lang": {}, "tags": set()})
         g["rows"].append(r)
@@ -176,7 +200,7 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
     items = []
     for key, g in groups.items():
         last = g["rows"][-1]
-        card_id, foil = split_key(key)
+        card_id, foil, proxy = split_key(key)
         card = matcher.find_card(card_id) if matcher else None
         known = card is not None
         if card is None:
@@ -208,17 +232,19 @@ def holdings(rows: list[dict], matcher, vault=None, live=None) -> list[dict]:
             "colors": card.colors.split(",") if card.colors else [],
             "color": color_group(card.colors) if known else "",
             "foil": foil,
+            # A proxy keeps the real card's price (good to know), but it's worth nothing to you
+            "proxy": proxy,
             "qty": g["qty"],
             "price": price,
             "price_source": source,
             "mtl": montreal.first(vault, card.name, foil),  # Face to Face Games, else the next Montreal store
-            "value": None if price is None else round(price * g["qty"], 2),
+            "value": 0.0 if proxy else None if price is None else round(price * g["qty"], 2),
             "scanned_price": scanned_price,
-            "change": None if price is None or scanned_price is None else round(price - scanned_price, 2),
+            "change": None if proxy or price is None or scanned_price is None else round(price - scanned_price, 2),
             # What you paid (each, for the copies you entered it for), and what those copies gained
             "paid": paid,
             "paid_qty": g["bought_n"],
-            "gain": None if price is None or paid is None else round((price - paid) * g["bought_n"], 2),
+            "gain": None if proxy or price is None or paid is None else round((price - paid) * g["bought_n"], 2),
             "condition": conds[0][0],
             "mixed": len(conds) > 1,   # copies in different conditions
             "language": max(g["lang"].items(), key=lambda kv: kv[1])[0],
@@ -255,7 +281,9 @@ def summarize(items: list[dict]) -> dict:
         s = sets.setdefault(it["set"], {"set": it["set"], "name": it["set_name"], "cards": 0, "value": 0.0})
         s["cards"] += it["qty"]
         s["value"] = round(s["value"] + (it["value"] or 0), 2)
-    priced = [it for it in items if it["value"] is not None]
+    real = [it for it in items if not it.get("proxy")]
+    proxies = [it for it in items if it.get("proxy")]
+    priced = [it for it in real if it["value"] is not None]
     bought = [it for it in priced if it["paid"] is not None]
     paid = sum(it["paid"] * it["paid_qty"] for it in bought)
     tags: dict[str, dict] = {}
@@ -271,7 +299,10 @@ def summarize(items: list[dict]) -> dict:
         "unique": len(items),
         "names": len({it["name"] for it in items}),
         "value": round(sum(it["value"] for it in priced), 2),
-        "unpriced": sum(it["qty"] for it in items if it["value"] is None),
+        "unpriced": sum(it["qty"] for it in real if it["value"] is None),
+        # Proxies: how many, and what the real cards would cost (none of it in "value")
+        "proxies": sum(it["qty"] for it in proxies),
+        "proxy_value": round(sum((it["price"] or 0) * it["qty"] for it in proxies), 2),
         "foils": sum(it["qty"] for it in items if it["foil"]),
         "change": round(now - then, 2),
         "by_color": tally("color", COLOR_ORDER),
@@ -450,25 +481,23 @@ def add_trends(items: list[dict], data: dict) -> list[dict]:
 
 # --- Changes ----------------------------------------------------------------------------
 
-def _matching(rows, card_id, foil):
-    return [i for i, r in enumerate(rows) if row_id(r) == card_id and row_foil(r) == foil]
+def _matching(rows, card_id, foil, proxy=False):
+    return [i for i, r in enumerate(rows) if _same(r) == (card_id, foil, proxy)]
 
 
 def quantity(path: Path, key: str) -> int:
     """How many copies of this printing and finish the file has now (0 if none)."""
-    card_id, foil = split_key(key)
     with COLLECTION_LOCK:
         rows = read_rows(path)
-    return sum(qty(rows[i]) for i in _matching(rows, card_id, foil))
+    return sum(qty(rows[i]) for i in _matching(rows, *split_key(key)))
 
 
 def set_quantity(path: Path, key: str, count: int) -> bool:
     """Keep exactly count copies (0 deletes it). Copies are added or removed newest first."""
-    card_id, foil = split_key(key)
     count = max(0, int(count))
     with COLLECTION_LOCK:
         rows = read_rows(path)
-        found = _matching(rows, card_id, foil)
+        found = _matching(rows, *split_key(key))
         if not found:
             return False
         have = sum(qty(rows[i]) for i in found)
@@ -501,19 +530,18 @@ def delete_many(path: Path, seen: dict[str, int]) -> tuple[int, dict[str, int]]:
     (how many printings were deleted, {key: count now} for the ones that changed)."""
     keys = {}
     for key, count in seen.items():
-        card_id, foil = split_key(key)
-        keys[(card_id, foil)] = (key, int(count))
+        keys[split_key(key)] = (key, int(count))
     with COLLECTION_LOCK:
         rows = read_rows(path)
         have: dict[tuple, int] = {}
         for r in rows:
-            k = (row_id(r), row_foil(r))
+            k = _same(r)
             if k in keys:
                 have[k] = have.get(k, 0) + qty(r)
         changed = {key: have.get(k, 0) for k, (key, count) in keys.items() if have.get(k, 0) not in (count, 0)}
         if changed:
             return 0, changed
-        keep = [r for r in rows if (row_id(r), row_foil(r)) not in keys]
+        keep = [r for r in rows if _same(r) not in keys]
         if len(keep) != len(rows):
             write_rows(path, keep)
     return len(have), {}
@@ -521,10 +549,11 @@ def delete_many(path: Path, seen: dict[str, int]) -> tuple[int, dict[str, int]]:
 
 def set_details(path: Path, keys: list[str], condition: str | None = None, language: str | None = None,
                 paid: float | None | bool = False, tags: list[str] | None = None,
-                add_tag: str = "", remove_tag: str = "") -> int:
+                add_tag: str = "", remove_tag: str = "", proxy: bool | None = None) -> int:
     """Change every copy of these printings at once: their condition, language, the price
-    paid for each (None clears it; False leaves it), their tags (a whole new list), or add
-    or take off one tag. Returns how many printings were found."""
+    paid for each (None clears it; False leaves it), their tags (a whole new list), add
+    or take off one tag, or mark them proxies (proxy True) or real cards (False). Returns
+    how many printings were found."""
     wanted = set()
     for key in keys:
         wanted.add(split_key(key))
@@ -532,7 +561,7 @@ def set_details(path: Path, keys: list[str], condition: str | None = None, langu
         rows = read_rows(path)
         found = set()
         for r in rows:
-            k = (row_id(r), row_foil(r))
+            k = _same(r)
             if k not in wanted:
                 continue
             found.add(k)
@@ -548,6 +577,8 @@ def set_details(path: Path, keys: list[str], condition: str | None = None, langu
                 if add_tag and add_tag.lower() not in (t.lower() for t in have):
                     have.append(add_tag)
                 r["Tags"] = ", ".join(have[:MAX_TAGS])
+            if proxy is not None:
+                r["Proxy"] = "yes" if proxy else ""
         if found:
             write_rows(path, rows)
     return len(found)
@@ -577,10 +608,10 @@ def _set_price(row: dict, price: tuple[float | None, str] | None):
 
 def set_foil(path: Path, key: str, foil: bool, price: tuple[float | None, str] | None = None) -> bool:
     """price: (CAD, source) for the new finish, or None to keep the saved price."""
-    card_id, was = split_key(key)
+    card_id, was, proxy = split_key(key)
     with COLLECTION_LOCK:
         rows = read_rows(path)
-        found = _matching(rows, card_id, was)
+        found = _matching(rows, card_id, was, proxy)
         for i in found:
             rows[i]["Foil"] = "foil" if foil else "normal"
             _set_price(rows[i], price)
@@ -592,10 +623,9 @@ def set_foil(path: Path, key: str, foil: bool, price: tuple[float | None, str] |
 def set_printing(path: Path, key: str, card: Card, price: tuple[float | None, str] | None = None) -> bool:
     """These copies are really another printing (same card, different set). price: (CAD,
     source) for that printing, or None to keep the saved price."""
-    card_id, foil = split_key(key)
     with COLLECTION_LOCK:
         rows = read_rows(path)
-        found = _matching(rows, card_id, foil)
+        found = _matching(rows, *split_key(key))
         for i in found:
             rows[i].update({"Name": card.name, "Set code": card.set_code.upper(), "Set name": card.set_name,
                             "Collector number": card.collector_number, "Rarity": card.rarity,
@@ -650,7 +680,8 @@ def export_moxfield(items):
     return _csv(["Count", "Tradelist Count", "Name", "Edition", "Condition", "Language", "Foil", "Tags",
                  "Last Modified", "Collector Number", "Alter", "Proxy", "Purchase Price"],
                 [[i["qty"], 0, i["name"], i["set"].lower(), CONDITIONS[_cond(i)], LANGUAGES[_lang(i)],
-                  "foil" if i["foil"] else "", ", ".join(i.get("tags") or []), "", i["number"], "False", "False",
+                  "foil" if i["foil"] else "", ", ".join(i.get("tags") or []), "", i["number"], "False",
+                  "True" if i.get("proxy") else "False",
                   _bought(i)] for i in items])
 
 
@@ -691,11 +722,11 @@ def export_prices(items):
     money = lambda v: "" if v is None else f"{v:.2f}"   # noqa: E731
     return _csv(["Name", "Set", "Set name", "Number", "Rarity", "Foil", "Quantity", "Price CAD", "Value CAD",
                  "Price when scanned", "Paid each", "Gain on what you paid", "Condition", "Language", "Tags",
-                 "Price source", "Bin now", "First scanned"],
+                 "Price source", "Bin now", "First scanned", "Proxy"],
                 [[i["name"], i["set"], i["set_name"], i["number"], i["rarity"], "yes" if i["foil"] else "",
                   i["qty"], money(i["price"]), money(i["value"]), money(i["scanned_price"]),
                   money(i.get("paid")), money(i.get("gain")), _cond(i), _lang(i), ", ".join(i.get("tags") or []),
-                  i["price_source"], i["bin_label"], i["first"]] for i in items])
+                  i["price_source"], i["bin_label"], i["first"], "yes" if i.get("proxy") else ""] for i in items])
 
 
 # id: (what the menu says, what it's for, file extension, function)
@@ -810,7 +841,7 @@ def add_collection_routes(app, scanner, web_dir):
         key = str(js.get("key", ""))
         live = getattr(scanner, "live", None)
         try:
-            card_id, was_foil = split_key(key)
+            card_id, was_foil, _ = split_key(key)
             new_card = lookup(scanner, js["printing"]) if js.get("printing") else None
             if js.get("printing") and new_card is None:
                 return jsonify({"error": "Couldn't find that printing"}), 404
@@ -877,9 +908,10 @@ def add_collection_routes(app, scanner, web_dir):
 
     @app.post("/api/collection/details")
     def collection_details():
-        """Condition, language, price paid and tags, for one card or many (Select):
+        """Condition, language, price paid, tags and proxy, for one card or many (Select):
         {keys: [...], condition: "LP", language: "JA", paid: 4.5 (null clears it),
-        tags: [...] (the whole list), add_tag: "...", remove_tag: "..."}."""
+        tags: [...] (the whole list), add_tag: "...", remove_tag: "...",
+        proxy: true (they're proxies) or false (real cards)}."""
         js = body()
         keys = js.get("keys")
         if not isinstance(keys, list) or not keys or len(keys) > 20_000:
@@ -913,6 +945,10 @@ def add_collection_routes(app, scanner, web_dir):
         for k in ("add_tag", "remove_tag"):
             if js.get(k):
                 change[k] = clean_tag(js[k])
+        if js.get("proxy") is not None:
+            if not isinstance(js["proxy"], bool):
+                return jsonify({"error": "proxy is true or false"}), 400
+            change["proxy"] = js["proxy"]
         if not change:
             return jsonify({"error": "Nothing to change"}), 400
         try:
@@ -926,7 +962,7 @@ def add_collection_routes(app, scanner, web_dir):
 
     @app.post("/api/collection/add")
     def collection_add():
-        """Add a card by hand (one you didn't scan): {id, foil, qty}."""
+        """Add a card by hand (one you didn't scan): {id, foil, qty, proxy}."""
         js = body()
         card = lookup(scanner, js.get("id"))
         if card is None:
@@ -940,7 +976,8 @@ def add_collection_routes(app, scanner, web_dir):
         price = card_price(card, foil, scanner.vault, live)
         with scanner.lock:
             for _ in range(count):
-                add_card(accounts.collection_csv(), card, foil, bin_for(card, foil, price[0])[1], price)
+                add_card(accounts.collection_csv(), card, foil, bin_for(card, foil, price[0])[1], price,
+                         proxy=bool(js.get("proxy")))
         return everything()
 
     @app.post("/api/collection/refresh")

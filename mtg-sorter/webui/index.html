@@ -141,6 +141,10 @@
           fill="currentColor"
           opacity=".7" />
       </symbol>
+      <symbol id="i-proxy" viewBox="0 0 24 24">
+        <rect x="8" y="3" width="12" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2" />
+        <path d="M5 7v12a2 2 0 0 0 2 2h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </symbol>
       <symbol id="i-bolt" viewBox="0 0 24 24">
         <path
           d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z"
@@ -483,6 +487,16 @@
                 <button class="toggle" id="autoBtn" aria-pressed="false">
                   <svg><use href="#i-bolt" /></svg>Auto-save <kbd>A</kbd>
                 </button>
+                <button class="toggle wide" id="proxyBtn" aria-pressed="false"
+                  title="Cards saved while this is on are marked as proxies: kept, but worth nothing">
+                  <svg><use href="#i-proxy" /></svg>Proxies <kbd>X</kbd>
+                </button>
+              </div>
+              <div id="scanForWrap" hidden>
+                <label class="scan-for" id="scanForRow" hidden>
+                  <span>Cards go into</span>
+                  <select id="scanFor" aria-label="Whose account the machine scans into"></select>
+                </label>
               </div>
               <button class="collect" id="collectBtn" aria-pressed="false">
                 <span class="rec"></span>
@@ -807,6 +821,7 @@
     <div id="toastLive" class="sr-only" role="status" aria-live="polite"></div>
     <script src="/static/chime.js"></script>
     <script src="/static/montreal.js"></script>
+    <script src="/static/scan_for.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>
